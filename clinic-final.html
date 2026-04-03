@@ -1481,30 +1481,28 @@ window.addEventListener('fb-ready', function(){
   // Firebase에서 설정값 불러오기 (로컬보다 Firebase 우선)
   if(window.fbLoadSettings){
     window.fbLoadSettings().then(function(cfg){
-      if(cfg){
-        // 비어있는 항목은 기본값으로 채우기
-        if(!cfg.procedures||!Object.keys(cfg.procedures).length)
-          cfg.procedures=Object.assign({},DEFAULT_PROCEDURES);
-        if(!cfg.routes||!Object.keys(cfg.routes).length)
-          cfg.routes=Object.assign({},DEFAULT_ROUTES);
-        if(!cfg.fixedCosts||!cfg.fixedCosts.length)
-          cfg.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
-        localStorage.setItem(SKEY, JSON.stringify(cfg));
-        // 채워진 설정을 Firebase에 다시 저장
-        window.fbSaveSettings(cfg);
-        renderCfgUI();
-        renderFixedDisplay();
-        renderSummary();
-      } else {
-        // Firebase에 설정 없음 → 로컬 캐시 지우고 기본값으로 초기화
-        localStorage.removeItem(SKEY);
-        var localCfg = loadCfg(); // 이제 기본값 반환
-        window.fbSaveSettings(localCfg);
-        localStorage.setItem(SKEY, JSON.stringify(localCfg));
-        renderCfgUI();
-        renderFixedDisplay();
-        renderSummary();
-      }
+      if(!cfg) cfg = {};
+      // procedures: 기본값 항목은 가격 0이어도 강제 적용
+      if(!cfg.procedures) cfg.procedures = {};
+      Object.keys(DEFAULT_PROCEDURES).forEach(function(k){
+        if(!cfg.procedures[k]||cfg.procedures[k].price===0)
+          cfg.procedures[k]=Object.assign({},DEFAULT_PROCEDURES[k]);
+      });
+      // routes: 기본값 경로는 value 0이어도 강제 적용
+      if(!cfg.routes) cfg.routes = {};
+      Object.keys(DEFAULT_ROUTES).forEach(function(k){
+        if(!cfg.routes[k]||cfg.routes[k].value===0)
+          cfg.routes[k]=Object.assign({},DEFAULT_ROUTES[k]);
+      });
+      // 고정비: 비어있으면 기본값
+      if(!cfg.fixedCosts||!cfg.fixedCosts.length)
+        cfg.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
+      // 저장 및 반영
+      localStorage.setItem(SKEY,JSON.stringify(cfg));
+      window.fbSaveSettings(cfg);
+      renderCfgUI();
+      renderFixedDisplay();
+      renderSummary();
     });
   }
 });
