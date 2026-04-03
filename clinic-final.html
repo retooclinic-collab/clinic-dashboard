@@ -1448,15 +1448,21 @@ window.addEventListener('fb-ready', function(){
   if(window.fbLoadSettings){
     window.fbLoadSettings().then(function(cfg){
       if(cfg){
+        // 비어있는 항목은 기본값으로 채우기
+        if(!cfg.procedures||!Object.keys(cfg.procedures).length)
+          cfg.procedures=Object.assign({},DEFAULT_PROCEDURES);
+        if(!cfg.routes||!Object.keys(cfg.routes).length)
+          cfg.routes=Object.assign({},DEFAULT_ROUTES);
+        if(!cfg.fixedCosts||!cfg.fixedCosts.length)
+          cfg.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
         localStorage.setItem(SKEY, JSON.stringify(cfg));
+        // 채워진 설정을 Firebase에 다시 저장
+        window.fbSaveSettings(cfg);
         renderCfgUI();
         renderSummary();
-        console.log('설정값 Firebase에서 불러옴');
       } else {
-        // Firebase에 설정 없으면 현재 로컬 설정을 Firebase에 저장
         var localCfg = loadCfg();
         window.fbSaveSettings(localCfg);
-        console.log('로컬 설정값 Firebase에 초기 저장');
       }
     });
   }
