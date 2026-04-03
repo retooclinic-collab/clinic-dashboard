@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>클리닉 경영분석</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Noto Sans KR','Apple SD Gothic Neo',sans-serif;background:#f0f2f7;color:#1a2035;min-height:100vh;}
+#shell{display:flex;min-height:100vh;}
+#sb{width:240px;min-width:240px;background:#0f172a;display:flex;flex-direction:column;}
+.sb-hd{padding:20px 16px 14px;border-bottom:1px solid rgba(255,255,255,.07);}
+.sb-logo{font-size:9px;letter-spacing:4px;color:#38bdf8;font-weight:700;margin-bottom:4px;}
+.sb-title{font-size:15px;font-weight:700;color:#fff;line-height:1.4;}
+.sb-nav{padding:10px 8px;border-bottom:1px solid rgba(255,255,255,.07);}
+.sbn{display:block;width:100%;padding:9px 12px;border-radius:8px;font-size:13px;font-family:inherit;cursor:pointer;text-align:left;border:none;background:transparent;color:#94a3b8;margin-bottom:2px;}
+.sbn:hover,.sbn.on{background:rgba(56,189,248,.12);color:#38bdf8;font-weight:600;}
+.sb-arc{flex:1;padding:12px 8px;overflow-y:auto;}
+.sbl{font-size:9px;letter-spacing:2px;color:#334155;font-weight:700;text-transform:uppercase;margin-bottom:8px;padding-left:4px;}
+.sbm{border:1px solid transparent;border-radius:8px;padding:9px 10px;margin-bottom:4px;cursor:pointer;transition:all .15s;}
+.sbm:hover{background:rgba(255,255,255,.07);border-color:rgba(56,189,248,.15);}
+.sbm.on{background:rgba(56,189,248,.09);border-color:rgba(56,189,248,.25);}
+.sbm-name{font-size:12px;color:#e2e8f0;font-weight:600;margin-bottom:2px;}
+.sbm-sub{font-size:10px;color:#475569;}
+.sbm-del{float:right;font-size:10px;color:#334155;padding:1px 5px;border-radius:3px;cursor:pointer;}
+.sbm-del:hover{background:rgba(239,68,68,.12);color:#ef4444;}
+.sb-empty{font-size:11px;color:#334155;text-align:center;padding:16px 6px;line-height:1.7;}
+.sb-foot{padding:10px 8px;border-top:1px solid rgba(255,255,255,.07);}
+#main{flex:1;overflow-y:auto;padding:24px 28px 60px;}
+.card{background:#fff;border-radius:14px;padding:20px 22px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.05);}
+.kgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px;}
+.kpi{background:#fff;border-radius:12px;padding:15px 18px;box-shadow:0 1px 4px rgba(0,0,0,.05);border-top:3px solid #e2e8f0;}
+.kpi-l{font-size:10px;color:#94a3b8;font-weight:700;letter-spacing:.8px;margin-bottom:6px;text-transform:uppercase;}
+.kpi-v{font-size:19px;font-weight:800;color:#0f172a;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{font-size:10px;color:#94a3b8;font-weight:700;padding:8px 10px;border-bottom:1.5px solid #f1f5f9;text-align:left;white-space:nowrap;letter-spacing:.5px;}
+td{padding:10px 10px;border-bottom:1px solid #f8fafc;vertical-align:middle;}
+tr:last-child td{border:none;}
+.r{text-align:right;}.ce{text-align:center;}
+.green{color:#10b981;font-weight:700;}.muted{color:#64748b;}.bold{font-weight:700;}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;}
+.rowtotal{background:#f8fafc;}
+.sdiv{font-size:10px;letter-spacing:3px;color:#94a3b8;font-weight:700;text-transform:uppercase;margin:20px 0 12px;display:flex;align-items:center;gap:10px;}
+.sdiv::after{content:'';flex:1;height:1px;background:#e8eef5;}
+input[type=text],input[type=number],select,textarea{width:100%;padding:8px 11px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;outline:none;background:#f8fafc;color:#1a2035;}
+input:focus,select:focus{border-color:#3b82f6;background:#fff;}
+.btn{padding:8px 16px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.btn:hover{opacity:.82;}
+.btn-p{background:#3b82f6;color:#fff;}
+.btn-g{background:#10b981;color:#fff;}
+.btn-o{background:transparent;color:#64748b;border:1.5px solid #e2e8f0;}
+.btn-r{background:#fee2e2;color:#dc2626;border:none;}
+.btn-sm{padding:6px 11px;font-size:12px;}
+.btn-big{width:100%;padding:12px;font-size:14px;}
+.dz{border:2px dashed #e2e8f0;border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all .2s;background:#fafafa;}
+.dz:hover,.dz.drag{border-color:#3b82f6;background:#eff6ff;}
+.dz.done{border-color:#10b981;background:#f0fdf4;border-style:solid;}
+.warn{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:9px 13px;font-size:12px;color:#92400e;margin-bottom:10px;line-height:1.6;}
+.err-box{background:#fef2f2;border-radius:8px;padding:9px 13px;font-size:12px;color:#dc2626;margin-top:8px;display:none;}
+.badge-blue{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:#dbeafe;color:#1d4ed8;}
+.badge-green{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;background:#dcfce7;color:#16a34a;}
+/* settings */
+.stbl{width:100%;border-collapse:collapse;}
+.stbl th{background:#f8fafc;padding:8px 10px;font-size:11px;color:#64748b;font-weight:600;text-align:left;border-bottom:1px solid #e2e8f0;}
+.stbl td{padding:6px 7px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
+.stbl tr:last-child td{border:none;}
+.stbl input[type=number],.stbl select{font-size:12px;padding:6px 9px;}
+/* modal */
+.mbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:center;justify-content:center;}
+.mbg.on{display:flex;}
+.mbox{background:#fff;border-radius:16px;padding:24px;width:420px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2);}
+.mfield{margin-bottom:13px;}
+.mfield label{display:block;font-size:11px;color:#64748b;font-weight:600;margin-bottom:5px;}
+.chkrow{display:flex;align-items:flex-start;gap:10px;padding:10px 13px;background:#f8fafc;border-radius:8px;margin-bottom:13px;}
+.chkrow input[type=checkbox]{width:16px;height:16px;margin-top:1px;flex-shrink:0;cursor:pointer;}
+.prev-box{background:#f1f5f9;border-radius:8px;padding:10px 12px;font-size:12px;color:#475569;margin-bottom:13px;min-height:48px;line-height:1.8;}
+.saved-badge{display:inline-block;background:#dcfce7;color:#16a34a;font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;margin-left:8px;opacity:0;transition:opacity .3s;}
+.saved-badge.show{opacity:1;}
+@media print{#sb,#upload-section{display:none;}#main{padding:12px;}.no-print{display:none!important;}}
+</style>
+</head>
+<body>
+
+<!-- ═══ 로그인 화면 ═══ -->
+<div id="login-screen" style="position:fixed;inset:0;background:#0f172a;z-index:9999;display:flex;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border-radius:18px;padding:44px 36px;width:320px;text-align:center;box-shadow:0 24px 80px rgba(0,0,0,0.5);">
+    <div style="font-size:10px;letter-spacing:4px;color:#38bdf8;font-weight:700;margin-bottom:8px;">CLINIC MGMT</div>
+    <div style="font-size:22px;font-weight:800;color:#fff;margin-bottom:6px;">경영분석 대시보드</div>
+    <div style="font-size:12px;color:#475569;margin-bottom:28px;">청담리투의원</div>
+    <input type="password" id="pw-input" placeholder="비밀번호"
+      style="width:100%;padding:12px 16px;border-radius:10px;border:1.5px solid #334155;background:#0f172a;color:#fff;font-size:15px;outline:none;text-align:center;letter-spacing:4px;margin-bottom:10px;"
+      onkeydown="if(event.key==='Enter')checkPw()">
+    <div id="pw-err" style="color:#ef4444;font-size:12px;margin-bottom:10px;display:none;">비밀번호가 틀렸어요</div>
+    <button onclick="checkPw()"
+      style="width:100%;padding:13px;border-radius:10px;background:#38bdf8;color:#0f172a;font-size:14px;font-weight:800;border:none;cursor:pointer;">
+      접속
+    </button>
+  </div>
+</div>
+
+<div id="shell">
+
+<div id="sb">
+  <div class="sb-hd"><div class="sb-logo">CLINIC MGMT</div><div class="sb-title">경영분석<br>대시보드</div><div id="fb-status" style="font-size:10px;margin-top:6px;color:#334155;">☁ 연결 중...</div></div>
+  <div class="sb-nav">
+    <button class="sbn on" id="nav-an" onclick="goTab('an')">📊 월별 분석</button>
+    <button class="sbn" id="nav-cfg" onclick="goTab('cfg')">⚙️ 설정</button>
+  </div>
+  <div class="sb-arc">
+    <div class="sbl">월별 아카이브</div>
+    <div id="arc-list"></div>
+  </div>
+  <div class="sb-foot">
+    <button class="btn btn-o btn-sm" style="width:100%;color:#475569;border-color:#1e293b;" onclick="resetAll()">새 분석 시작</button>
+  </div>
+</div>
+
+<div id="main">
+
+  <!-- 분석 탭 -->
+  <div id="tab-an">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;">
+      <div><h2 style="font-size:20px;font-weight:800;margin-bottom:3px;">월별 분석</h2><p style="color:#64748b;font-size:13px;">3개 파일 모두 업로드하면 통합 리포트 완성</p></div>
+      <div class="no-print" style="display:flex;gap:8px;">
+        <button class="btn btn-o btn-sm" onclick="window.print()">🖨 인쇄</button>
+        <button class="btn btn-g btn-sm" onclick="openSaveMdl()">💾 이달 저장</button>
+      </div>
+    </div>
+
+    <div id="upload-section" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:22px;" class="no-print">
+      <div class="card" style="padding:14px;">
+        <div style="font-size:11px;font-weight:700;color:#3b82f6;margin-bottom:10px;">① 수납기록 (상담리스트)</div>
+        <div class="dz" id="dz-c" onclick="T('fi-c')" ondragover="dg(this,event)" ondragleave="dl(this)" ondrop="dd(this,event,'c')">
+          <div style="font-size:20px;margin-bottom:5px;">📄</div>
+          <div style="font-size:12px;color:#475569;" id="dz-c-t">클릭 또는 드래그</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px;">.csv · .xlsx · .xls</div>
+        </div>
+        <input type="file" id="fi-c" accept=".csv,.xlsx,.xls" style="display:none" onchange="onFile(this.files[0],'c')">
+        <div id="err-c" class="err-box"></div>
+      </div>
+      <div class="card" style="padding:14px;">
+        <div style="font-size:11px;font-weight:700;color:#8b5cf6;margin-bottom:10px;">② 시술별집계 (재료비)</div>
+        <div class="dz" id="dz-a" onclick="T('fi-a')" ondragover="dg(this,event)" ondragleave="dl(this)" ondrop="dd(this,event,'a')">
+          <div style="font-size:20px;margin-bottom:5px;">🧪</div>
+          <div style="font-size:12px;color:#475569;" id="dz-a-t">클릭 또는 드래그</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px;">파일명에 "시술별집계" 포함</div>
+        </div>
+        <input type="file" id="fi-a" accept=".csv,.xlsx,.xls" style="display:none" onchange="onFile(this.files[0],'a')">
+        <div id="err-a" class="err-box"></div>
+      </div>
+      <div class="card" style="padding:14px;">
+        <div style="font-size:11px;font-weight:700;color:#f59e0b;margin-bottom:10px;">③ 구분별집계 (수수료)</div>
+        <div class="dz" id="dz-b" onclick="T('fi-b')" ondragover="dg(this,event)" ondragleave="dl(this)" ondrop="dd(this,event,'b')">
+          <div style="font-size:20px;margin-bottom:5px;">🌐</div>
+          <div style="font-size:12px;color:#475569;" id="dz-b-t">클릭 또는 드래그</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px;">파일명에 "구분별집계" 포함</div>
+        </div>
+        <input type="file" id="fi-b" accept=".csv,.xlsx,.xls" style="display:none" onchange="onFile(this.files[0],'b')">
+        <div id="err-b" class="err-box"></div>
+      </div>
+      <div class="card" style="padding:14px;">
+        <div style="font-size:11px;font-weight:700;color:#0891b2;margin-bottom:10px;">④ 거래내역 (계좌출금내역)</div>
+        <div class="dz" id="dz-k" onclick="T('fi-k')" ondragover="dg(this,event)" ondragleave="dl(this)" ondrop="dd(this,event,'k')">
+          <div style="font-size:20px;margin-bottom:5px;">🏦</div>
+          <div style="font-size:12px;color:#475569;" id="dz-k-t">클릭 또는 드래그</div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px;">은행 거래내역 xlsx</div>
+        </div>
+        <input type="file" id="fi-k" accept=".csv,.xlsx,.xls" style="display:none" onchange="onFile(this.files[0],'k')">
+        <div id="err-k" class="err-box"></div>
+      </div>
+    </div>
+
+    <div id="results"></div>
+    <div id="bank-section"></div>
+    <div id="card-section"></div>
+    <div id="summary-section"></div>
+  </div>
+
+  <!-- 설정 탭 -->
+  <div id="tab-cfg" style="display:none;">
+    <h2 style="font-size:20px;font-weight:800;margin-bottom:4px;">설정</h2>
+    <p style="color:#64748b;font-size:13px;margin-bottom:20px;">② ③ 파일 업로드 후 항목이 자동으로 추가됩니다. 값 입력 후 <b>저장 및 반영</b>을 눌러주세요.</p>
+
+    <!-- 시술별 단가 -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+        <span style="font-size:15px;font-weight:700;">🧪 시술별 재료비 단가</span>
+        <span class="saved-badge" id="proc-saved">✓ 저장됨</span>
+      </div>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">각 시술의 재료비 단가(원)를 입력하세요. 0이면 0으로 계산됩니다.</div>
+      <div style="overflow-x:auto;margin-bottom:14px;">
+        <table class="stbl">
+          <thead><tr><th style="width:50%;">시술 이름</th><th>재료비 단가 (원)</th><th style="width:60px;"></th></tr></thead>
+          <tbody id="proc-body"></tbody>
+        </table>
+      </div>
+      <!-- 새 항목 추가 -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
+        <div style="flex:1;min-width:160px;"><div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">새 시술 이름</div><input type="text" id="new-p-nm" placeholder="시술 이름 직접 추가"></div>
+        <div style="width:140px;"><div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">단가 (원)</div><input type="number" id="new-p-pr" placeholder="0" min="0"></div>
+        <button class="btn btn-o btn-sm" style="margin-bottom:1px;" onclick="addProc()">+ 추가</button>
+      </div>
+      <button class="btn btn-p btn-big" onclick="applyProc()">🧪 재료비 단가 저장 및 반영</button>
+
+      <!-- 일괄 입력 -->
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f1f5f9;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px;">📋 일괄 붙여넣기</div>
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;line-height:1.6;">
+          엑셀에서 복사한 내용을 그대로 붙여넣으세요.<br>
+          <b>형식:</b> 단가(만원)시술명 — 예: <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;">12.5울쎄라(100샷)</code><br>
+          단가 없는 항목은 0으로 처리돼요. 파싱 후 미리보기에서 수정 가능해요.
+        </div>
+        <textarea id="bulk-input" rows="4" placeholder="여기에 붙여넣기..." style="font-size:12px;resize:vertical;margin-bottom:8px;"></textarea>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <button class="btn btn-o btn-sm" onclick="parseBulk()">🔍 파싱 미리보기</button>
+          <button class="btn btn-o btn-sm" style="color:#94a3b8;" onclick="document.getElementById('bulk-preview').innerHTML='';document.getElementById('bulk-input').value=''">초기화</button>
+        </div>
+        <div id="bulk-preview"></div>
+      </div>
+    </div>
+
+    <!-- 내원경로 수수료 -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+        <span style="font-size:15px;font-weight:700;">🌐 내원경로별 수수료</span>
+        <span class="saved-badge" id="route-saved">✓ 저장됨</span>
+      </div>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:6px;line-height:1.7;">
+        <b>비율(%)</b>: 해당 경로의 수납금액 × % = 수수료<br>
+        <b>고정값 차감(₩)</b>: 입력한 금액 자체가 수수료 (수납금액 무관)
+      </div>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">값 입력 후 아래 <b>저장 및 반영</b> 버튼을 눌러야 결과에 반영됩니다.</div>
+      <div style="overflow-x:auto;margin-bottom:14px;">
+        <table class="stbl">
+          <thead><tr><th style="width:35%;">내원 경로</th><th style="width:30%;">수수료 방식</th><th>값</th><th style="width:60px;"></th></tr></thead>
+          <tbody id="route-body"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
+        <div style="flex:1;min-width:140px;"><div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">새 경로 이름</div><input type="text" id="new-r-nm" placeholder="경로 이름 직접 추가"></div>
+        <div style="width:150px;"><div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">방식</div><select id="new-r-tp"><option value="percent">비율 (%)</option><option value="fixed">고정값 차감 (₩)</option></select></div>
+        <div style="width:110px;"><div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">값</div><input type="number" id="new-r-vl" placeholder="0" min="0"></div>
+        <button class="btn btn-o btn-sm" style="margin-bottom:1px;" onclick="addRoute()">+ 추가</button>
+      </div>
+      <button class="btn btn-g btn-big" onclick="applyRoute()">🌐 수수료 설정 저장 및 반영</button>
+    </div>
+
+    <!-- 고정비 -->
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+        <span style="font-size:15px;font-weight:700;">📌 고정비 항목</span>
+        <span class="saved-badge" id="fixed-saved">✓ 저장됨</span>
+      </div>
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:12px;">매달 동일하게 지출되는 고정비를 등록하세요. 합계가 분석 탭에 자동 반영됩니다.</div>
+      <div id="fixed-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;margin-bottom:12px;"></div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button class="btn btn-o btn-sm" onclick="addFixed()">+ 항목 추가</button>
+        <button class="btn btn-o btn-sm" style="color:#94a3b8;" onclick="addFixedSep()">— 구분선 추가</button>
+        <button class="btn btn-o btn-sm" style="color:#ef4444;border-color:#fecaca;" onclick="if(confirm('기본값으로 초기화할까요?')){resetFixedToDefault()}">기본값 초기화</button>
+      </div>
+      <button class="btn btn-sm" style="background:#374151;color:#fff;width:100%;padding:10px;" onclick="applyFixed()">📌 고정비 저장 및 반영</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- 열 선택 모달 -->
+<div class="mbg" id="col-mdl">
+  <div class="mbox">
+    <h3 style="font-size:17px;font-weight:700;margin-bottom:4px;">수납기록 열 선택</h3>
+    <p style="font-size:12px;color:#64748b;margin-bottom:16px;" id="col-mdl-sub">어떤 열이 어떤 데이터인지 직접 선택해주세요</p>
+    <div class="mfield"><label>👤 상담 직원 열</label><select id="pk-st"></select></div>
+    <div class="mfield"><label>📍 내원 경로 열</label><select id="pk-ch"></select></div>
+    <div class="mfield"><label>💰 결제 금액 열</label><select id="pk-am"></select></div>
+    <div class="chkrow">
+      <input type="checkbox" id="pk-mw">
+      <div><b style="font-size:13px;">금액 단위가 만원 (×10,000)</b><br><small style="font-size:11px;color:#64748b;">체크 시 모든 금액에 10,000을 곱해 계산</small></div>
+    </div>
+    <div class="prev-box" id="col-prev">금액 열을 선택하면 미리보기가 나와요</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-o" onclick="closeColMdl()">취소</button>
+      <button class="btn btn-p" style="flex:1;" onclick="confirmCol()">이걸로 분석하기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 저장 모달 -->
+<div class="mbg" id="save-mdl">
+  <div class="mbox">
+    <h3 style="font-size:17px;font-weight:700;margin-bottom:4px;">이달 저장</h3>
+    <p style="font-size:12px;color:#64748b;margin-bottom:16px;">분석 결과를 아카이브에 저장해요</p>
+    <div class="mfield"><label>저장 이름</label><input type="text" id="save-lbl" placeholder="예: 2025년 3월"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-o" onclick="closeSaveMdl()">취소</button>
+      <button class="btn btn-g" style="flex:1;" onclick="doSave()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ FIREBASE ═══ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
+import { getFirestore, collection, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+
+const cfg = {
+  apiKey: "AIzaSyBNxqXjGqhPghOC-Wztt0CQR_08MKzbikA",
+  authDomain: "analysis-rt.firebaseapp.com",
+  projectId: "analysis-rt",
+  storageBucket: "analysis-rt.firebasestorage.app",
+  messagingSenderId: "794818965711",
+  appId: "1:794818965711:web:b0947b2afaa5f037f9c7ba"
+};
+
+try {
+  const app = initializeApp(cfg);
+  const db = getFirestore(app);
+  const col = collection(db, 'clinic_archive');
+  const settingsDoc = doc(db, 'clinic_settings', 'main');
+
+  // ── 아카이브 저장/삭제/리스너 ──
+  window.fbSave = async function(entry) {
+    try { await setDoc(doc(col, entry.label), entry); return true; }
+    catch(e) { console.error('fbSave:', e); alert('저장 실패: ' + e.message); return false; }
+  };
+  window.fbDelete = async function(label) {
+    try { await deleteDoc(doc(col, label)); return true; }
+    catch(e) { console.error('fbDelete:', e); return false; }
+  };
+  window.fbListen = function(cb) {
+    return onSnapshot(col, function(snap) {
+      var arr = [];
+      snap.forEach(function(d) { arr.push(d.data()); });
+      arr.sort(function(a,b) { return (b.savedAt||'').localeCompare(a.savedAt||''); });
+      cb(arr);
+    }, function(err) {
+      console.error('fbListen error:', err);
+      var st=document.getElementById('fb-status');
+      if(st){st.textContent='⚠ 연결 오류';st.style.color='#ef4444';}
+    });
+  };
+
+  // ── 설정값 저장/불러오기 ──
+  window.fbSaveSettings = async function(s) {
+    try { await setDoc(settingsDoc, s); }
+    catch(e) { console.error('fbSaveSettings:', e); }
+  };
+  window.fbLoadSettings = async function() {
+    try {
+      const snap = await getDoc(settingsDoc);
+      return snap.exists() ? snap.data() : null;
+    } catch(e) { console.error('fbLoadSettings:', e); return null; }
+  };
+
+  window.dispatchEvent(new CustomEvent('fb-ready'));
+} catch(e) {
+  console.error('Firebase init failed:', e);
+  window.dispatchEvent(new CustomEvent('fb-error', {detail: e.message}));
+}
+</script>
+
+<script>
+/* ═══ STATE ═══ */
+var G = {
+  cRows:null, aRows:null, bRows:null,
+  cData:null, aData:null, bData:null,
+  cFile:'', aFile:'', bFile:'',
+  cCols:null,
+  cardRows:[{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''}],
+  bankData:null, bankFile:'',
+  bankManualCards:[],
+  arc:[],
+  charts:{}
+};
+var SKEY='cl_s5', AKEY='cl_a5';
+var COLS=['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316','#84cc16','#6366f1'];
+
+/* ═══ DEFAULT 고정비 ═══ */
+var DEFAULT_FIXED=[
+  {name:'고정비 항목',amount:0,isSep:true},
+  {name:'리스',amount:31093105},
+  {name:'국내마케팅',amount:28380000},
+  {name:'임대',amount:48400000},
+  {name:'',amount:0,isSep:true},
+  {name:'삼성카드 4대',amount:43620000},
+  {name:'인건비',amount:80000000},
+  {name:'사근복',amount:10000000},
+  {name:'퇴직연금',amount:4960000},
+  {name:'',amount:0,isSep:true},
+  {name:'발렛',amount:2420000},
+  {name:'세무',amount:550000},
+  {name:'손경호',amount:1500000},
+  {name:'케이비클린_청소',amount:2420000},
+  {name:'넘버트랙',amount:1320000},
+  {name:'일본비요네즈',amount:8294280},
+  {name:'포레스트',amount:3520000},
+  {name:'변동/잡비',amount:0,isSep:true},
+  {name:'관리비',amount:3000000},
+  {name:'발렛 추가',amount:0},
+  {name:'메디팔-h1',amount:110000},
+  {name:'TNH',amount:500000},
+  {name:'위비케어_닥팔',amount:117975},
+  {name:'KT',amount:158950},
+  {name:'db손',amount:81910},
+  {name:'케어랩스',amount:22000},
+  {name:'원픽아이디어스',amount:0},
+  {name:'시아마케팅',amount:0},
+  {name:'코웨이-하나아멕/국민',amount:0},
+  {name:'세스코-하나아멕',amount:0},
+  {name:'기타',amount:0,isSep:true},
+  {name:'박찬익',amount:4840000},
+  {name:'하나캐피탈_포르',amount:4242300},
+  {name:'아노블리 관리',amount:750000}
+];
+
+/* ═══ DEFAULT 수수료 경로 ═══ */
+var DEFAULT_ROUTES={
+  '중국(기타)':{type:'percent',value:22},
+  '중국(마)':{type:'percent',value:25},
+  '중국(강)':{type:'percent',value:25},
+  '중국(따)':{type:'percent',value:25},
+  '일본(통)':{type:'fixed',value:8000000}
+};
+
+/* ═══ STORAGE ═══ */
+function loadCfg(){
+  try{
+    var raw=localStorage.getItem(SKEY);
+    var c=raw?JSON.parse(raw):{};
+    if(!c.procedures)c.procedures={};
+    // 수수료 경로: 비어있으면 기본값
+    if(!c.routes||!Object.keys(c.routes).length)c.routes=Object.assign({},DEFAULT_ROUTES);
+    // 고정비: 비어있으면 기본값
+    if(!c.hasOwnProperty('fixedCosts')||!c.fixedCosts||!c.fixedCosts.length)c.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
+    return c;
+  }catch(e){return{procedures:{},routes:Object.assign({},DEFAULT_ROUTES),fixedCosts:DEFAULT_FIXED.map(function(f){return Object.assign({},f)})}}
+}
+function saveCfg(c){
+  localStorage.setItem(SKEY,JSON.stringify(c));
+  if(window.fbSaveSettings) window.fbSaveSettings(c);
+}
+function loadArc(){try{return JSON.parse(localStorage.getItem(AKEY)||'[]')}catch(e){return[]}}
+function saveArc(a){localStorage.setItem(AKEY,JSON.stringify(a))}
+
+/* ═══ FORMAT ═══ */
+function won(n){
+  if(typeof n!=='number'||isNaN(n))return '₩0';
+  var s=n<0?'-':'',a=Math.abs(n);
+  var d=a%1!==0?2:0;
+  return s+'₩'+a.toLocaleString('ko-KR',{minimumFractionDigits:d,maximumFractionDigits:d});
+}
+function nf(n){return (n%1!==0)?n.toLocaleString('ko-KR',{maximumFractionDigits:2}):n.toLocaleString('ko-KR')}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+/* ═══ NUMBER PARSE (safe) ═══ */
+function pn(v){
+  if(v===null||v===undefined||v==='')return NaN;
+  var s=String(v).trim().replace(/[₩원\s,]/g,'');
+  var n=Number(s);
+  if(isNaN(n)){s=s.replace(/[^0-9.\-]/g,'');n=parseFloat(s);}
+  if(!isNaN(n)&&Math.abs(n)>1000000000)return NaN;
+  return n;
+}
+
+/* ═══ DRAG/DROP ═══ */
+function T(id){document.getElementById(id).click()}
+function dg(el,e){e.preventDefault();el.classList.add('drag')}
+function dl(el){el.classList.remove('drag')}
+function dd(el,e,t){e.preventDefault();el.classList.remove('drag');onFile(e.dataTransfer.files[0],t)}
+function setErr(t,m){var el=document.getElementById('err-'+t);el.textContent=m;el.style.display=m?'block':'none'}
+function markDone(t,fn){document.getElementById('dz-'+t).classList.add('done');document.getElementById('dz-'+t+'-t').textContent='✓ '+fn}
+
+/* ═══ FILE READ ═══ */
+function onFile(file,type){
+  if(!file)return;
+  var fn=file.name;
+  if(fn.match(/\.(xlsx|xls|xlsm)$/i)){
+    var r=new FileReader();
+    r.onload=function(e){
+      try{
+        var wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+        var ws=wb.Sheets[wb.SheetNames[0]];
+        if(type==='k'){
+          // 거래내역: raw arrays to detect header row
+          var raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+          afterRead(raw,fn,type);
+        }else{
+          afterRead(XLSX.utils.sheet_to_json(ws,{defval:''}),fn,type);
+        }
+      }catch(err){setErr(type,'읽기 오류: '+err.message)}};
+    r.readAsArrayBuffer(file);
+  }else{
+    var r2=new FileReader();
+    r2.onload=function(e){var p=Papa.parse(e.target.result,{header:true,skipEmptyLines:true});afterRead(p.data,fn,type)};
+    r2.readAsText(file,'UTF-8');
+  }
+}
+
+function afterRead(rows,fn,type){
+  if(!rows||!rows.length){setErr(type,'데이터 없음');return}
+  setErr(type,'');
+  if(type==='c'){G.cRows=rows;G.cFile=fn;openColMdl(rows,fn)}
+  if(type==='a'){G.aRows=rows;G.aFile=fn;markDone('a',fn);computeA();render();renderSummary()}
+  if(type==='b'){G.bRows=rows;G.bFile=fn;markDone('b',fn);computeB();render();renderSummary()}
+  if(type==='k'){G.bankFile=fn;markDone('k',fn);processBankFile(rows);renderBankSection();renderSummary()}
+}
+
+/* ═══ COL PICKER ═══ */
+function openColMdl(rows,fn){
+  var heads=Object.keys(rows[0]||{});
+  var opts='<option value="">-- 선택 안 함 --</option>'+heads.map(function(h){return'<option value="'+h.replace(/"/g,'&quot;')+'">'+esc(h)+'</option>'}).join('');
+  ['pk-st','pk-ch','pk-am'].forEach(function(id){document.getElementById(id).innerHTML=opts});
+  // 열 자동선택: 정확한 이름 우선, 없으면 패턴 매칭
+  function findCol(exact, pattern){
+    return heads.find(function(h){return h.trim()===exact})
+      || heads.find(function(h){return h.replace(/\s+/g,'').trim()===exact.replace(/\s+/g,'')})
+      || heads.find(function(h){return pattern.test(h)})
+      || '';
+  }
+  document.getElementById('pk-st').value=findCol('', /직원|상담|담당|staff/i);
+  document.getElementById('pk-ch').value=findCol('분 류 1', /경로|유입|채널|출처|분류|channel/i);
+  document.getElementById('pk-am').value=findCol('결제금액', /결제금액|금액|수납|amount|price|fee/i);
+  document.getElementById('col-mdl-sub').textContent=fn+' · '+rows.length+'행';
+  updatePrev();
+  document.getElementById('pk-am').onchange=updatePrev;
+  document.getElementById('pk-mw').onchange=updatePrev;
+  document.getElementById('col-mdl').classList.add('on');
+}
+function updatePrev(){
+  var rows=G.cRows;if(!rows)return;
+  var col=document.getElementById('pk-am').value;
+  var mw=document.getElementById('pk-mw').checked;
+  var pv=document.getElementById('col-prev');
+  if(!col){pv.textContent='금액 열을 선택하면 미리보기';return}
+  var lines=rows.slice(0,6).map(function(r){
+    var raw=r[col];var n=pn(raw);
+    if(isNaN(n))return esc(String(raw||''))+' → ❌ 숫자 아님';
+    return esc(String(raw||''))+' → '+won(mw?n*10000:n);
+  });
+  pv.innerHTML='<b>상위 미리보기:</b><br>'+lines.join('<br>');
+}
+function closeColMdl(){document.getElementById('col-mdl').classList.remove('on')}
+function confirmCol(){
+  var am=document.getElementById('pk-am').value;
+  if(!am){alert('결제금액 열을 선택해주세요');return}
+  G.cCols={staff:document.getElementById('pk-st').value,channel:document.getElementById('pk-ch').value,amount:am,manwon:document.getElementById('pk-mw').checked};
+  closeColMdl();markDone('c',G.cFile);computeC();render();renderCardSection();renderSummary();
+}
+
+/* ═══ COMPUTE ═══ */
+
+function computeC(){
+  if(!G.cRows||!G.cCols)return;
+  var cols=G.cCols,mult=cols.manwon?10000:1;
+  var sMap={},cMap={},tot=0,cnt=0,skip=0;
+  G.cRows.forEach(function(r){
+    var n=pn(r[cols.amount]);
+    if(isNaN(n)){skip++;return}
+    var amt=n*mult;
+    var sv=String(r[cols.staff]||'미지정').trim()||'미지정';
+    var cv=String(r[cols.channel]||'미지정').trim()||'미지정';
+    tot+=amt;cnt++;
+    if(!sMap[sv])sMap[sv]={tot:0,cnt:0};sMap[sv].tot+=amt;sMap[sv].cnt++;
+    if(!cMap[cv])cMap[cv]={tot:0,cnt:0};cMap[cv].tot+=amt;cMap[cv].cnt++;
+  });
+  G.cData={total:tot,count:cnt,avg:tot/cnt,
+    byStaff:Object.entries(sMap).map(function(e){return{name:e[0],total:e[1].tot,count:e[1].cnt,avg:e[1].tot/e[1].cnt}}).sort(function(a,b){return b.total-a.total}),
+    byChannel:Object.entries(cMap).map(function(e){return{name:e[0],total:e[1].tot,count:e[1].cnt,avg:e[1].tot/e[1].cnt}}).sort(function(a,b){return b.avg-a.avg}),
+    skip:skip,manwon:cols.manwon};
+}
+
+function computeA(){
+  if(!G.aRows){return}
+  var cfg=loadCfg();
+  var fcol=Object.keys(G.aRows[0]||{})[0];
+  var items=[],newProcs={};
+  G.aRows.forEach(function(r){
+    var cell=String(r[fcol]||'').trim();
+    var m=cell.match(/^(.*)\((\d+(?:\.\d+)?)\)\s*$/);
+    if(!m||!m[1].trim())return;
+    var nm=m[1].trim();
+    var cnt=parseFloat(m[2]);
+    if(isNaN(cnt)||cnt<0)return;
+    var pr=0;
+    if(cfg.procedures.hasOwnProperty(nm)){
+      pr=parseFloat(cfg.procedures[nm].price);
+      if(isNaN(pr))pr=0;
+    }else{
+      newProcs[nm]={price:0};
+    }
+    items.push({name:nm,count:cnt,price:pr,subtotal:cnt*pr});
+  });
+  if(Object.keys(newProcs).length){
+    Object.assign(cfg.procedures,newProcs);
+    saveCfg(cfg);
+    renderCfgUI();
+  }
+  G.aData={items:items,totalCost:items.reduce(function(s,i){return s+i.subtotal},0)};
+}
+
+function computeB(){
+  if(!G.bRows)return;
+  var cfg=loadCfg();
+  var heads=Object.keys(G.bRows[0]||{});
+  var fcol=heads[0];
+  var sunapCol=heads.find(function(h){return h.trim()==='수납'})
+    ||heads.find(function(h){return/수납/.test(h)})
+    ||heads.find(function(h){return/납부|결제/.test(h)})
+    ||'';
+  var items=[],newRoutes={};
+  G.bRows.forEach(function(r){
+    var route=String(r[fcol]||'').trim();
+    if(!route||/합계|총계|소계/.test(route))return;
+    var amt=sunapCol?pn(r[sunapCol]):0;
+    if(isNaN(amt))amt=0;
+    var rc=cfg.routes[route];
+    if(!rc){newRoutes[route]={type:'percent',value:0};rc=newRoutes[route]}
+    var v=parseFloat(rc.value)||0;
+    var comm=rc.type==='percent'?amt*(v/100):v;
+    items.push({route:route,amount:amt,type:rc.type,value:v,commission:comm});
+  });
+  if(Object.keys(newRoutes).length){
+    Object.assign(cfg.routes,newRoutes);
+    saveCfg(cfg);
+    renderCfgUI();
+  }
+  var totA=items.reduce(function(s,i){return s+i.amount},0);
+  var totC=items.reduce(function(s,i){return s+i.commission},0);
+  G.bData={items:items,totalAmount:totA,totalCommission:totC,sunapCol:sunapCol};
+}
+
+/* ═══ RENDER ═══ */
+function render(){
+  var el=document.getElementById('results');
+  var cd=G.cData,ad=G.aData,bd=G.bData;
+  if(!cd&&!ad&&!bd){
+    el.innerHTML='<div class="card" style="text-align:center;padding:40px;color:#94a3b8;"><div style="font-size:32px;margin-bottom:10px;">📂</div><div style="font-size:15px;font-weight:700;">파일을 업로드해주세요</div></div>';
+    return;
+  }
+  var h='';
+  // summary KPIs
+  var kpis=[];
+  if(cd)kpis.push({l:'총 수납 매출',v:won(cd.total),c:'#3b82f6'});
+  if(ad)kpis.push({l:'재료비 총액',v:won(ad.totalCost),c:'#8b5cf6'});
+  if(bd)kpis.push({l:'수수료 총액',v:won(bd.totalCommission),c:'#f59e0b'});
+  if(cd&&ad&&bd)kpis.push({l:'추정 순매출',v:won(cd.total-ad.totalCost-bd.totalCommission),c:'#10b981'});
+  if(kpis.length)h+='<div class="kgrid">'+kpis.map(function(k){return'<div class="kpi" style="border-top-color:'+k.c+'"><div class="kpi-l">'+k.l+'</div><div class="kpi-v">'+k.v+'</div></div>'}).join('')+'</div>';
+
+  /* ① 수납기록 → 직원별/경로별 */
+  if(cd){
+    h+='<div class="sdiv">① 수납기록 분석 — 직원별·경로별 ('+esc(G.cFile)+(cd.manwon?' · 만원×10,000':'')+' · '+nf(cd.count)+'건'+(cd.skip?' · '+cd.skip+'행 제외':'')+' )</div>';
+    h+='<div class="kgrid">';
+    h+=K('전체 수납 매출',won(cd.total),'#3b82f6');
+    h+=K('전체 객단가',won(cd.avg),'#10b981');
+    h+=K('총 내원 건수',nf(cd.count)+'건','#f59e0b');
+    h+=K('상담 직원 수',cd.byStaff.length+'명','#8b5cf6');
+    h+='</div>';
+
+    h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">직원별 분석</div>';
+    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">① 상담리스트 기준 · 상담 건수 · 총 결제액 · 객단가</div>';
+    h+='<canvas id="ch-staff" style="max-height:200px;margin-bottom:16px;"></canvas>';
+    h+='<table><thead><tr><th>직원명</th><th class="r">건수</th><th class="r">총 결제액</th><th class="r">객단가</th><th class="r">매출 비중</th></tr></thead><tbody>';
+    cd.byStaff.forEach(function(s,i){
+      h+='<tr><td><span class="dot" style="background:'+COLS[i%COLS.length]+'"></span><b>'+esc(s.name)+'</b></td>';
+      h+='<td class="r muted">'+nf(s.count)+'건</td><td class="r bold">'+won(s.total)+'</td>';
+      h+='<td class="r green">'+won(s.avg)+'</td><td class="r muted">'+(cd.total?(s.total/cd.total*100).toFixed(2):0)+'%</td></tr>';
+    });
+    h+='</tbody></table></div>';
+
+    h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">내원경로별 객단가</div>';
+    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">① 상담리스트 기준 · 경로별 수납금액 및 평균 결제액</div>';
+    h+='<canvas id="ch-chan" style="max-height:180px;margin-bottom:16px;"></canvas>';
+    h+='<table><thead><tr><th>내원 경로</th><th class="r">건수</th><th class="r">비율</th><th class="r">총 수납</th><th class="r">객단가</th></tr></thead><tbody>';
+    cd.byChannel.forEach(function(c,i){
+      h+='<tr><td><span class="dot" style="background:'+COLS[(i+3)%COLS.length]+'"></span><b>'+esc(c.name)+'</b></td>';
+      h+='<td class="r muted">'+nf(c.count)+'건</td><td class="r muted">'+(cd.count?(c.count/cd.count*100).toFixed(2):0)+'%</td>';
+      h+='<td class="r bold">'+won(c.total)+'</td><td class="r green">'+won(c.avg)+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+
+  /* ② 시술별집계 → 재료비 */
+  if(ad){
+    h+='<div class="sdiv">② 시술별 재료비 ('+esc(G.aFile)+')</div>';
+    var unp=ad.items.filter(function(i){return i.price===0});
+    if(unp.length)h+='<div class="warn">단가 미설정: <b>'+unp.map(function(i){return esc(i.name)}).join(', ')+'</b> → 설정 탭에서 단가 입력 후 <b>저장 및 반영</b> 버튼 클릭</div>';
+    h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">시술별 재료비 집계</div>';
+    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">시술이름(건수) 자동 파싱 · 건수 × 단가 = 소계</div>';
+    h+='<table><thead><tr><th>시술 이름</th><th class="r">건수</th><th class="r">단가 (원)</th><th class="r">소계</th></tr></thead><tbody>';
+    ad.items.forEach(function(i){
+      h+='<tr><td><b>'+esc(i.name)+'</b></td><td class="r muted">'+nf(i.count)+'건</td>';
+      h+='<td class="r">'+(i.price?won(i.price):'<span style="color:#f59e0b;font-weight:600;">미설정</span>')+'</td>';
+      h+='<td class="r '+(i.price?'bold':'muted')+'">'+won(i.subtotal)+'</td></tr>';
+    });
+    h+='<tr class="rowtotal"><td colspan="3" class="bold">재료비 합계</td>';
+    h+='<td class="r bold" style="color:#8b5cf6;font-size:15px;">'+won(ad.totalCost)+'</td></tr>';
+    h+='</tbody></table></div>';
+  }
+
+  /* ③ 구분별집계 → 수수료 */
+  if(bd){
+    h+='<div class="sdiv">③ 내원경로별 수수료 ('+esc(G.bFile)+(bd.sunapCol?' · 수납열: '+esc(bd.sunapCol):' · ⚠ 수납열 미감지')+')</div>';
+    if(!bd.sunapCol)h+='<div class="warn">파일에서 "수납" 열을 찾지 못했어요. 파일 열 이름을 확인해주세요.</div>';
+    var uns=bd.items.filter(function(i){return !i.value});
+    if(uns.length)h+='<div class="warn">수수료 미설정: <b>'+uns.map(function(i){return esc(i.route)}).join(', ')+'</b> → 설정 탭에서 입력 후 <b>저장 및 반영</b> 버튼 클릭</div>';
+    h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">내원경로별 수수료 계산</div>';
+    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">비율: 수납×% | 고정값: 입력액 자체가 수수료</div>';
+    h+='<table><thead><tr><th>내원 경로</th><th class="r">수납금액</th><th class="ce">방식</th><th class="r">설정값</th><th class="r">수수료</th></tr></thead><tbody>';
+    bd.items.forEach(function(i,idx){
+      var tb=i.type==='percent'?'<span class="badge-blue">비율</span>':'<span class="badge-green">고정차감</span>';
+      var vs=i.type==='percent'?i.value+'%':won(i.value);
+      h+='<tr><td><span class="dot" style="background:'+COLS[(idx+2)%COLS.length]+'"></span><b>'+esc(i.route)+'</b></td>';
+      h+='<td class="r">'+won(i.amount)+'</td><td class="ce">'+tb+'</td>';
+      h+='<td class="r muted">'+vs+'</td><td class="r bold" style="color:#f59e0b;">'+won(i.commission)+'</td></tr>';
+    });
+    h+='<tr class="rowtotal"><td class="bold">합계</td>';
+    h+='<td class="r bold">'+won(bd.totalAmount)+'</td>';   // 수납합계
+    h+='<td colspan="2"></td>';
+    h+='<td class="r bold" style="color:#ef4444;font-size:15px;">'+won(bd.totalCommission)+'</td>';  // 수수료합계
+    h+='</tr></tbody></table></div>';
+  }
+
+  el.innerHTML=h;
+  if(cd){
+    drawBar('ch-staff',cd.byStaff.map(function(s){return s.name}),cd.byStaff.map(function(s){return s.total}),cd.byStaff.map(function(_,i){return COLS[i%COLS.length]}));
+    drawBar('ch-chan',cd.byChannel.map(function(c){return c.name}),cd.byChannel.map(function(c){return c.avg}),cd.byChannel.map(function(_,i){return COLS[(i+3)%COLS.length]}));
+  }
+}
+
+function K(l,v,c){return'<div class="kpi" style="border-top-color:'+c+'"><div class="kpi-l">'+l+'</div><div class="kpi-v">'+v+'</div></div>'}
+
+function drawBar(id,labels,values,colors){
+  var ctx=document.getElementById(id);if(!ctx)return;
+  if(G.charts[id])G.charts[id].destroy();
+  G.charts[id]=new Chart(ctx.getContext('2d'),{type:'bar',
+    data:{labels:labels,datasets:[{data:values,backgroundColor:colors,borderRadius:5,borderSkipped:false}]},
+    options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return won(c.raw)}}}},
+      scales:{x:{ticks:{color:'rgba(100,116,139,.9)',font:{size:11}}},
+        y:{ticks:{color:'rgba(100,116,139,.9)',font:{size:10},callback:function(v){return v>=100000000?(v/100000000).toFixed(1)+'억':v>=10000?(v/10000).toFixed(0)+'만':v}},grid:{color:'rgba(0,0,0,.04)'}}}}});
+}
+
+/* ═══ SETTINGS UI ═══ */
+function renderCfgUI(){
+  var cfg=loadCfg();
+  /* 시술 단가 */
+  var pb=document.getElementById('proc-body');
+  var procs=Object.entries(cfg.procedures);
+  pb.innerHTML=procs.length?procs.map(function(e,i){
+    return'<tr><td><b>'+esc(e[0])+'</b></td>'+
+      '<td><input type="number" class="proc-price" data-idx="'+i+'" value="'+(parseFloat(e[1].price)||0)+'" min="0" placeholder="0"></td>'+
+      '<td><button class="btn btn-r btn-sm" onclick="delProc('+i+')">삭제</button></td></tr>';
+  }).join(''):'<tr><td colspan="3" style="color:#94a3b8;font-size:12px;padding:12px;">② 파일 업로드 후 자동 추가됩니다</td></tr>';
+
+  /* 경로 수수료 */
+  var rb=document.getElementById('route-body');
+  var routes=Object.entries(cfg.routes);
+  rb.innerHTML=routes.length?routes.map(function(e,i){
+    var opts=['percent','fixed'].map(function(t){return'<option value="'+t+'"'+(e[1].type===t?' selected':'')+'>'+( t==='percent'?'비율 (%)':'고정값 차감 (₩)')+'</option>'}).join('');
+    return'<tr><td><b>'+esc(e[0])+'</b></td>'+
+      '<td><select class="route-type" data-idx="'+i+'">'+opts+'</select></td>'+
+      '<td><input type="number" class="route-val" data-idx="'+i+'" value="'+(parseFloat(e[1].value)||0)+'" min="0" placeholder="0"></td>'+
+      '<td><button class="btn btn-r btn-sm" onclick="delRoute('+i+')">삭제</button></td></tr>';
+  }).join(''):'<tr><td colspan="4" style="color:#94a3b8;font-size:12px;padding:12px;">③ 파일 업로드 후 자동 추가됩니다</td></tr>';
+
+  /* 고정비 */
+  renderFixedUI();
+}
+
+/* ── APPLY (button-based, reads all inputs at once) ── */
+function applyProc(){
+  var cfg=loadCfg();
+  var procs=Object.keys(cfg.procedures);
+  document.querySelectorAll('.proc-price').forEach(function(inp){
+    var idx=parseInt(inp.getAttribute('data-idx'));
+    if(idx>=0&&idx<procs.length){
+      cfg.procedures[procs[idx]].price=parseFloat(inp.value)||0;
+    }
+  });
+  saveCfg(cfg);
+  computeA();
+  render();
+  renderCardSection();
+  renderSummary();
+  flashSaved('proc-saved');
+  goTab('an');
+}
+
+function applyRoute(){
+  var cfg=loadCfg();
+  var routes=Object.keys(cfg.routes);
+  document.querySelectorAll('.route-type').forEach(function(sel){
+    var idx=parseInt(sel.getAttribute('data-idx'));
+    if(idx>=0&&idx<routes.length)cfg.routes[routes[idx]].type=sel.value;
+  });
+  document.querySelectorAll('.route-val').forEach(function(inp){
+    var idx=parseInt(inp.getAttribute('data-idx'));
+    if(idx>=0&&idx<routes.length)cfg.routes[routes[idx]].value=parseFloat(inp.value)||0;
+  });
+  saveCfg(cfg);
+  computeB();
+  render();
+  renderCardSection();
+  renderSummary();
+  flashSaved('route-saved');
+  goTab('an');
+}
+
+function flashSaved(id){
+  var el=document.getElementById(id);
+  el.classList.add('show');
+  setTimeout(function(){el.classList.remove('show')},2500);
+}
+
+/* ── ADD / DELETE ── */
+function addProc(){
+  var nm=document.getElementById('new-p-nm').value.trim();
+  var pr=parseFloat(document.getElementById('new-p-pr').value)||0;
+  if(!nm)return;
+  var cfg=loadCfg();cfg.procedures[nm]={price:pr};saveCfg(cfg);
+  document.getElementById('new-p-nm').value='';document.getElementById('new-p-pr').value='';
+  renderCfgUI();
+}
+function delProc(i){
+  var cfg=loadCfg();var keys=Object.keys(cfg.procedures);
+  if(!confirm('"'+keys[i]+'" 삭제?'))return;
+  // 삭제 전에 현재 화면에 입력된 모든 단가를 먼저 저장
+  document.querySelectorAll('.proc-price').forEach(function(inp){
+    var idx=parseInt(inp.getAttribute('data-idx'));
+    if(idx>=0&&idx<keys.length)cfg.procedures[keys[idx]].price=parseFloat(inp.value)||0;
+  });
+  delete cfg.procedures[keys[i]];saveCfg(cfg);renderCfgUI();computeA();render();
+}
+function addRoute(){
+  var nm=document.getElementById('new-r-nm').value.trim();
+  var tp=document.getElementById('new-r-tp').value;
+  var vl=parseFloat(document.getElementById('new-r-vl').value)||0;
+  if(!nm)return;
+  var cfg=loadCfg();cfg.routes[nm]={type:tp,value:vl};saveCfg(cfg);
+  document.getElementById('new-r-nm').value='';document.getElementById('new-r-vl').value='';
+  renderCfgUI();
+}
+function delRoute(i){
+  var cfg=loadCfg();var keys=Object.keys(cfg.routes);
+  if(!confirm('"'+keys[i]+'" 삭제?'))return;
+  // 삭제 전에 현재 화면에 입력된 모든 수수료 설정을 먼저 저장
+  document.querySelectorAll('.route-type').forEach(function(sel){
+    var idx=parseInt(sel.getAttribute('data-idx'));
+    if(idx>=0&&idx<keys.length)cfg.routes[keys[idx]].type=sel.value;
+  });
+  document.querySelectorAll('.route-val').forEach(function(inp){
+    var idx=parseInt(inp.getAttribute('data-idx'));
+    if(idx>=0&&idx<keys.length)cfg.routes[keys[idx]].value=parseFloat(inp.value)||0;
+  });
+  delete cfg.routes[keys[i]];saveCfg(cfg);renderCfgUI();computeB();render();
+}
+
+/* ═══ ARCHIVE ═══ */
+function renderArcList(){
+  var arr=G.arc; var el=document.getElementById('arc-list');
+  if(!arr.length){el.innerHTML='<div class="sb-empty">저장된 데이터 없음<br><span style="font-size:10px">분석 후 저장하면<br>여기 쌓여요</span></div>';return}
+  el.innerHTML=arr.map(function(a,i){
+    var sub=[];
+    if(a.cData)sub.push(won(a.cData.total));
+    if(a.aData)sub.push('재료 '+won(a.aData.totalCost));
+    if(a.bData)sub.push('수수료 '+won(a.bData.totalCommission));
+    return'<div class="sbm" id="sbm-'+i+'" onclick="viewArc('+i+')">'+'<span class="sbm-del" onclick="event.stopPropagation();delArc('+i+')" title="삭제">✕</span>'+'<div class="sbm-name">'+esc(a.label)+'</div>'+'<div class="sbm-sub">'+sub.join(' · ')+'</div></div>';
+  }).join('');
+}
+function viewArc(i){
+  var a=G.arc[i]; if(!a)return;
+  G.cData=a.cData||null;G.aData=a.aData||null;G.bData=a.bData||null;
+  G.cFile=a.label;G.aFile=a.label;G.bFile=a.label;
+  G.cardRows=a.cardRows||[{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''}];
+  G.bankData=a.bankData||null;
+  G.bankManualCards=a.bankManualCards||[];
+  document.querySelectorAll('.sbm').forEach(function(el){el.classList.remove('on')});
+  var el=document.getElementById('sbm-'+i);if(el)el.classList.add('on');
+  goTab('an');render();renderBankSection();renderCardSection();renderSummary();
+}
+function delArc(i){
+  var a=G.arc[i]; if(!a)return;
+  if(!confirm('"'+a.label+'" 삭제할까요?'))return;
+  if(window.fbDelete) window.fbDelete(a.label);
+}
+function openSaveMdl(){
+  if(!G.cData&&!G.aData&&!G.bData&&!G.bankData){alert('분석 데이터가 없어요');return}
+  saveBankManualFromDOM();
+  var now=new Date();document.getElementById('save-lbl').value=now.getFullYear()+'년 '+(now.getMonth()+1)+'월';
+  document.getElementById('save-mdl').classList.add('on');
+  setTimeout(function(){document.getElementById('save-lbl').select()},80);
+}
+function closeSaveMdl(){document.getElementById('save-mdl').classList.remove('on')}
+async function doSave(){
+  var lbl=document.getElementById('save-lbl').value.trim();
+  if(!lbl){alert('이름을 입력해주세요');return}
+  if(G.arc.find(function(a){return a.label===lbl})){
+    if(!confirm('"'+lbl+'" 덮어쓸까요?'))return;
+  }
+  var entry={
+    label:lbl, savedAt:new Date().toISOString(),
+    cData:G.cData, aData:G.aData, bData:G.bData,
+    cardRows:G.cardRows, bankData:G.bankData, bankManualCards:G.bankManualCards
+  };
+  var btn=document.querySelector('#save-mdl .btn-g');
+  if(btn){btn.textContent='저장 중...';btn.disabled=true;}
+  if(window.fbSave){
+    var ok=await window.fbSave(entry);
+    if(ok)closeSaveMdl();
+  } else {
+    alert('Firebase 연결을 기다리는 중이에요. 잠시 후 다시 시도해주세요.');
+  }
+  if(btn){btn.textContent='저장';btn.disabled=false;}
+}
+document.getElementById('save-mdl').addEventListener('click',function(e){if(e.target===this)closeSaveMdl()});
+document.getElementById('save-lbl').addEventListener('keydown',function(e){if(e.key==='Enter')doSave()});
+document.getElementById('col-mdl').addEventListener('click',function(e){if(e.target===this)closeColMdl()});
+
+/* ═══ NAV ═══ */
+function goTab(t){
+  document.getElementById('tab-an').style.display=t==='an'?'block':'none';
+  document.getElementById('tab-cfg').style.display=t==='cfg'?'block':'none';
+  document.getElementById('nav-an').classList.toggle('on',t==='an');
+  document.getElementById('nav-cfg').classList.toggle('on',t==='cfg');
+}
+function resetAll(){
+  Object.assign(G,{cRows:null,aRows:null,bRows:null,cData:null,aData:null,bData:null,cFile:'',aFile:'',bFile:'',cCols:null,
+    cardRows:[{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''}],
+    bankData:null,bankFile:'',bankManualCards:[]});
+  ['c','a','b','k'].forEach(function(t){
+    var dz=document.getElementById('dz-'+t);
+    var dt=document.getElementById('dz-'+t+'-t');
+    if(dz)dz.classList.remove('done');
+    if(dt)dt.textContent='클릭 또는 드래그';
+    var fi=document.getElementById('fi-'+t);if(fi)fi.value='';
+    setErr(t,'');
+  });
+  document.querySelectorAll('.sbm').forEach(function(el){el.classList.remove('on')});
+  render();renderBankSection();renderCardSection();renderSummary();goTab('an');
+}
+
+/* ═══ CARD WITHDRAWAL SECTION ═══ */
+function saveCardRowsFromDOM(){
+  G.cardRows=[];
+  document.querySelectorAll('.card-row').forEach(function(row){
+    G.cardRows.push({
+      co:row.querySelector('.card-co').value,
+      amt:row.querySelector('.card-amt').value
+    });
+  });
+}
+
+function getCardTotal(){
+  var t = G.bankData ? G.bankData.cardTotal : 0;
+  document.querySelectorAll('.manual-card-amt').forEach(function(inp){
+    t += parseFloat(inp.value)||0;
+  });
+  return t;
+}
+
+function renderCardSection(){ document.getElementById('card-section').innerHTML=''; }
+
+/* ═══ FIXED COSTS (settings) ═══ */
+function getFixedTotal(){
+  var cfg=loadCfg();
+  return (cfg.fixedCosts||[]).reduce(function(s,f){
+    return s+(f.isSep?0:(parseFloat(f.amount)||0));
+  },0);
+}
+
+function renderFixedUI(){
+  var cfg=loadCfg();
+  var fc=cfg.fixedCosts||[];
+  var el=document.getElementById('fixed-body');
+  if(!el)return;
+  if(!fc.length){
+    el.innerHTML='<div style="font-size:12px;color:#94a3b8;grid-column:1/-1;">등록된 고정비 없음</div>';
+    return;
+  }
+  var h='';
+  fc.forEach(function(f,i){
+    if(f.isSep){
+      // 구분선/섹션헤더: 전체 너비 차지
+      h+='<div style="grid-column:1/-1;display:flex;align-items:center;gap:8px;margin:6px 0 2px;">';
+      if(f.name){
+        h+='<span style="font-size:11px;font-weight:700;color:#475569;white-space:nowrap;background:#e2e8f0;padding:2px 8px;border-radius:4px;">'+esc(f.name)+'</span>';
+      }
+      h+='<div style="flex:1;height:1px;background:#e2e8f0;"></div>';
+      h+='<button class="btn btn-r btn-sm" style="padding:2px 7px;font-size:10px;" onclick="delFixed('+i+')">×</button>';
+      h+='</div>';
+    }else{
+      h+='<div style="display:flex;gap:5px;align-items:center;background:#f8fafc;border-radius:8px;padding:6px 8px;">'
+        +'<input type="text" class="fx-nm" data-idx="'+i+'" placeholder="항목명" value="'+esc(f.name||'')+'" style="flex:1;font-size:12px;padding:5px 7px;">'
+        +'<input type="number" class="fx-am" data-idx="'+i+'" placeholder="금액" value="'+(f.amount||'')+'" min="0" style="width:110px;font-size:12px;padding:5px 7px;">'
+        +'<button class="btn btn-r btn-sm" style="padding:3px 7px;font-size:11px;flex-shrink:0;" onclick="delFixed('+i+')">×</button>'
+        +'</div>';
+    }
+  });
+  el.innerHTML=h;
+}
+
+function saveFixedFromDOM(){
+  var cfg=loadCfg();
+  // 입력 필드의 data-idx로 원래 배열 위치를 찾아 업데이트 (구분선 항목 보존)
+  document.querySelectorAll('.fx-nm').forEach(function(inp){
+    var idx=parseInt(inp.getAttribute('data-idx'));
+    var amEl=document.querySelector('.fx-am[data-idx="'+idx+'"]');
+    if(idx>=0&&idx<cfg.fixedCosts.length&&!cfg.fixedCosts[idx].isSep){
+      cfg.fixedCosts[idx].name=inp.value.trim();
+      cfg.fixedCosts[idx].amount=parseFloat(amEl?amEl.value:0)||0;
+    }
+  });
+  saveCfg(cfg);
+}
+
+function addFixed(){
+  saveFixedFromDOM();
+  var cfg=loadCfg();
+  cfg.fixedCosts.push({name:'',amount:0});
+  saveCfg(cfg);renderFixedUI();
+}
+
+function addFixedSep(){
+  saveFixedFromDOM();
+  var cfg=loadCfg();
+  cfg.fixedCosts.push({name:'구분',amount:0,isSep:true});
+  saveCfg(cfg);renderFixedUI();
+}
+
+function delFixed(i){
+  saveFixedFromDOM();
+  var cfg=loadCfg();
+  cfg.fixedCosts.splice(i,1);
+  saveCfg(cfg);renderFixedUI();
+}
+
+function applyFixed(){
+  saveFixedFromDOM();
+  renderFixedUI();
+  flashSaved('fixed-saved');
+  renderSummary();
+}
+
+/* ═══ BANK TRANSACTION FILE ═══ */
+function saveBankManualFromDOM(){
+  G.bankManualCards=[];
+  document.querySelectorAll('.mc-row').forEach(function(row){
+    G.bankManualCards.push({
+      name:row.querySelector('.manual-card-nm').value,
+      date:row.querySelector('.manual-card-dt').value,
+      amount:row.querySelector('.manual-card-amt').value
+    });
+  });
+}
+
+function addBankManualCard(){
+  saveBankManualFromDOM();
+  G.bankManualCards.push({name:'',date:'',amount:''});
+  renderBankSection();renderSummary();
+}
+
+function delBankManualCard(btn){
+  saveBankManualFromDOM();
+  var rows=Array.from(document.querySelectorAll('.mc-row'));
+  var idx=rows.indexOf(btn.closest('.mc-row'));
+  if(idx>=0)G.bankManualCards.splice(idx,1);
+  renderBankSection();renderSummary();
+}
+
+function renderBankSection(){
+  var el=document.getElementById('bank-section');
+  if(!el)return;
+  var bd=G.bankData;
+  var mc=G.bankManualCards||[];
+
+  var h='<div class="sdiv">💳 카드 출금 내역 <span style="font-size:10px;color:#cbd5e1;">'+(bd?'('+esc(G.bankFile)+')':'수동 입력')+'</span></div>';
+  h+='<div class="card">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">';
+  h+='<div><div style="font-size:14px;font-weight:700;margin-bottom:2px;">카드 출금 합계</div>';
+  h+='<div style="font-size:12px;color:#94a3b8;">'+(bd?'거래내역 자동추출 + 수동추가':'직접 입력')+'</div></div>';
+  if(bd)h+='<button class="btn btn-sm no-print" style="background:#0891b2;color:#fff;font-size:11px;" onclick="applyBankToCard()">↓ 수동칸에 복사</button>';
+  h+='</div>';
+
+  // 자동 추출 rows (날짜 오름차순 정렬)
+  if(bd&&bd.cardRows.length){
+    var sorted=bd.cardRows.slice().sort(function(a,b){return (a.date||'').localeCompare(b.date||'')});
+    h+='<table style="margin-bottom:10px;"><thead><tr>';
+    h+='<th>카드사명</th><th style="color:#94a3b8;">날짜</th><th class="r">출금액</th></tr></thead><tbody>';
+    sorted.forEach(function(r){
+      h+='<tr>';
+      h+='<td><b>'+esc(r.name)+'</b></td>';
+      h+='<td style="color:#94a3b8;font-size:12px;white-space:nowrap;">'+esc(r.date||'')+'</td>';
+      h+='<td class="r bold">'+won(r.amount)+'</td>';
+      h+='</tr>';
+    });
+    h+='<tr style="background:#f0fdf4;"><td colspan="2" style="font-size:12px;color:#475569;">파일 추출 소계</td>';
+    h+='<td class="r bold" style="color:#10b981;">'+won(bd.cardTotal)+'</td></tr>';
+    h+='</tbody></table>';
+  }else if(!bd){
+    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">④ 거래내역 파일을 업로드하면 자동 추출됩니다</div>';
+  }
+
+  // 수동 추가 rows
+  if(mc.length){
+    h+='<div style="font-size:11px;color:#64748b;font-weight:600;margin-bottom:6px;">수동 추가</div>';
+    mc.forEach(function(r,i){
+      h+='<div class="mc-row" style="display:grid;grid-template-columns:1fr 110px 140px 32px;gap:6px;margin-bottom:6px;">';
+      h+='<input type="text" class="manual-card-nm" placeholder="카드사명" value="'+esc(r.name||'')+'" oninput="renderSummary()">';
+      h+='<input type="text" class="manual-card-dt" placeholder="날짜" value="'+esc(r.date||'')+'" style="font-size:12px;">';
+      h+='<input type="number" class="manual-card-amt" placeholder="출금액" value="'+(r.amount||'')+'" min="0" oninput="renderSummary()">';
+      h+='<button class="btn btn-r btn-sm" style="padding:4px;" onclick="delBankManualCard(this)">×</button>';
+      h+='</div>';
+    });
+  }
+
+  // 추가 버튼 + 합계
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">';
+  h+='<button class="btn btn-o btn-sm" onclick="addBankManualCard()">+ 수동 추가</button>';
+  h+='<div style="font-size:13px;font-weight:700;">카드 출금 합계: <span id="bank-card-total" style="color:#3b82f6;font-size:16px;">'+won(getCardTotal())+'</span></div>';
+  h+='</div>';
+
+  // 현금흐름 요약 (파일 있을 때만)
+  if(bd){
+    h+='<div style="margin-top:16px;padding-top:14px;border-top:1px solid #f1f5f9;">';
+    h+='<div style="font-size:12px;font-weight:700;color:#475569;margin-bottom:10px;">📊 해당 월 현금흐름</div>';
+    h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">';
+    h+='<div style="background:#f8fafc;border-radius:8px;padding:12px;border-left:3px solid #ef4444;">';
+    h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:4px;">총 출금합계</div>';
+    h+='<div style="font-size:17px;font-weight:800;color:#ef4444;">'+won(bd.totalOut)+'</div></div>';
+    h+='<div style="background:#f8fafc;border-radius:8px;padding:12px;border-left:3px solid #10b981;">';
+    h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:4px;">총 입금합계</div>';
+    h+='<div style="font-size:17px;font-weight:800;color:#10b981;">'+won(bd.totalInp)+'</div></div>';
+    h+='</div></div>';
+  }
+  h+='</div>';
+  el.innerHTML=h;
+  // 합계 실시간 업데이트
+  var tot=document.getElementById('bank-card-total');
+  if(tot)tot.textContent=won(getCardTotal());
+}
+
+function processBankFile(rawRows){
+  // rawRows: array of arrays (header:1 mode)
+  // Find the header row containing '적요' and '출금'
+  var headerIdx=-1, colDesc=-1, colOut=-1, colInp=-1, colDate=-1;
+  for(var i=0;i<Math.min(rawRows.length,10);i++){
+    var row=rawRows[i];
+    var hasDesc=row.some(function(c){return String(c||'').trim()==='적요';});
+    if(hasDesc){
+      headerIdx=i;
+      row.forEach(function(h,j){
+        var k=String(h||'').trim();
+        if(k==='적요')colDesc=j;
+        if(k==='출금')colOut=j;
+        if(k==='입금')colInp=j;
+        if(k==='거래일시')colDate=j;
+      });
+      break;
+    }
+  }
+  if(headerIdx<0){setErr('k','적요/출금 열을 찾지 못했어요. 은행 거래내역 파일인지 확인해주세요.');return;}
+
+  var dataRows=rawRows.slice(headerIdx+1);
+  var cardRows=[], totalOut=0, totalInp=0;
+
+  dataRows.forEach(function(r){
+    if(!r||!r.length)return;
+    var desc=String(r[colDesc]||'').trim();
+    // 합계/소계 행 제외
+    if(/합\s*계|소\s*계|합계/i.test(desc))return;
+    if(!desc)return;
+    var outAmt=parseFloat(r[colOut])||0;
+    var inpAmt=parseFloat(r[colInp])||0;
+    if(outAmt>0)totalOut+=outAmt;
+    if(inpAmt>0)totalInp+=inpAmt;
+    // 적요에 '카드' 포함 → 카드 출금
+    if(outAmt>0&&desc.includes('카드')){
+      var dateRaw=String(r[colDate]||'').trim();
+      var dateStr=dateRaw?dateRaw.slice(0,10):''; // "2026-03-28"만
+      cardRows.push({name:desc,amount:outAmt,date:dateStr});
+    }
+  });
+
+  var cardTotal=cardRows.reduce(function(s,r){return s+r.amount;},0);
+  G.bankData={cardRows:cardRows,cardTotal:cardTotal,totalOut:totalOut,totalInp:totalInp,
+    headerFound:true,file:G.bankFile};
+}
+
+function resetFixedToDefault(){
+  var cfg=loadCfg();
+  cfg.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
+  saveCfg(cfg);renderFixedUI();renderSummary();
+  flashSaved('fixed-saved');
+}
+
+/* ═══ SUMMARY SECTION ═══ */
+function renderSummary(){
+  var el=document.getElementById('summary-section');
+  if(!el)return;
+  var cd=G.cData,ad=G.aData,bd=G.bData;
+  if(!cd&&!ad&&!bd&&!G.bankData&&!G.bankManualCards.length){el.innerHTML='';return}
+
+  var rev   = cd ? cd.total : 0;
+  var mat   = ad ? ad.totalCost : 0;
+  var comm  = bd ? bd.totalCommission : 0;
+  var card  = getCardTotal();
+  var fixed = getFixedTotal();
+
+  var calc1 = rev - mat - comm;
+  var calc2 = rev - mat - comm - fixed;
+  var calc3 = rev - card - comm - fixed;
+
+  function colorNum(n){ return '<span style="font-weight:700;color:#1a2035;">'+won(n)+'</span>'; }
+  function resultNum(n){ return '<span style="font-size:20px;font-weight:800;color:'+(n>=0?'#10b981':'#ef4444')+';">'+won(n)+'</span>'; }
+
+  var h='<div class="sdiv">📐 종합 계산</div><div class="card">';
+  h+='<div style="font-size:14px;font-weight:700;margin-bottom:16px;">추정 순매출 계산</div>';
+
+  /* ── ① 재료비·수수료 제외 ── */
+  h+='<div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:10px;">';
+  h+='<div style="font-size:11px;color:#64748b;font-weight:700;letter-spacing:1px;margin-bottom:10px;">① 재료비·수수료 제외 추정</div>';
+  h+='<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
+  h+='<span style="font-size:13px;color:#3b82f6;font-weight:600;">총수납 '+colorNum(rev)+'</span>';
+  h+='<span style="color:#94a3b8;">−</span>';
+  h+='<span style="font-size:13px;color:#8b5cf6;font-weight:600;">재료비 '+colorNum(mat)+'</span>';
+  h+='<span style="color:#94a3b8;">−</span>';
+  h+='<span style="font-size:13px;color:#f59e0b;font-weight:600;">수수료 '+colorNum(comm)+'</span>';
+  h+='<span style="color:#94a3b8;font-size:16px;">=</span>';
+  h+=resultNum(calc1);
+  h+='</div>';
+  h+='<div style="font-size:12px;color:#94a3b8;padding:8px 10px;background:#fff;border-radius:7px;">';
+  h+=won(rev)+' − '+won(mat)+' − '+won(comm)+' = <b style="color:'+(calc1>=0?'#10b981':'#ef4444')+';">'+won(calc1)+'</b>';
+  h+='</div></div>';
+
+  /* ── ② 순세전 재료비 기준 ── */
+  h+='<div style="background:#faf5ff;border-radius:10px;padding:16px;margin-bottom:10px;">';
+  h+='<div style="font-size:11px;color:#6d28d9;font-weight:700;letter-spacing:1px;margin-bottom:10px;">② 순세전 재료비 기준</div>';
+  h+='<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
+  h+='<span style="font-size:13px;color:#3b82f6;font-weight:600;">총수납 '+colorNum(rev)+'</span>';
+  h+='<span style="color:#94a3b8;">−</span>';
+  h+='<span style="font-size:13px;color:#8b5cf6;font-weight:600;">재료비 '+colorNum(mat)+'</span>';
+  h+='<span style="color:#94a3b8;">−</span>';
+  h+='<span style="font-size:13px;color:#f59e0b;font-weight:600;">수수료 '+colorNum(comm)+'</span>';
+  h+='<span style="color:#94a3b8;">−</span>';
+  h+='<span style="font-size:13px;color:#374151;font-weight:600;">고정비 '+colorNum(fixed)+'</span>';
+  h+='<span style="color:#94a3b8;font-size:16px;">=</span>';
+  h+=resultNum(calc2);
+  h+='</div>';
+  h+='<div style="font-size:12px;color:#94a3b8;padding:8px 10px;background:#fff;border-radius:7px;">';
+  h+=won(rev)+' − '+won(mat)+' − '+won(comm)+' − '+won(fixed)+' = <b style="color:'+(calc2>=0?'#10b981':'#ef4444')+';">'+won(calc2)+'</b>';
+  h+='</div></div>';
+
+  /* ── ③ 순세전 출금 기준 ── */
+  h+='<div style="background:#f0f9ff;border-radius:10px;padding:16px;">';
+  h+='<div style="font-size:11px;color:#0369a1;font-weight:700;letter-spacing:1px;margin-bottom:10px;">③ 순세전 출금 기준</div>';
+  h+='<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
+  h+='<span style="font-size:13px;color:#3b82f6;font-weight:600;">총수납 '+colorNum(rev)+'</span>';
+  h+='<span style="color:#94a3b8;">−</span>';
+  h+='<span style="font-size:13px;color:#3b82f6;font-weight:600;">카드출금 '+colorNum(card)+'</span>';
+  h+='<span style="color:#94a3b8;">−</span>';
+  h+='<span style="font-size:13px;color:#f59e0b;font-weight:600;">수수료 '+colorNum(comm)+'</span>';
+  h+='<span style="color:#94a3b8;">−</span>';
+  h+='<span style="font-size:13px;color:#374151;font-weight:600;">고정비 '+colorNum(fixed)+'</span>';
+  h+='<span style="color:#94a3b8;font-size:16px;">=</span>';
+  h+=resultNum(calc3);
+  h+='</div>';
+  h+='<div style="font-size:12px;color:#94a3b8;padding:8px 10px;background:#fff;border-radius:7px;">';
+  h+=won(rev)+' − '+won(card)+' − '+won(comm)+' − '+won(fixed)+' = <b style="color:'+(calc3>=0?'#10b981':'#ef4444')+';">'+won(calc3)+'</b>';
+  h+='</div></div>';
+
+  h+='</div>';
+  el.innerHTML=h;
+}
+
+/* ═══ BULK IMPORT ═══ */
+function parseBulkText(raw){
+  // Insert newline before every "digit(s)+Korean_char" boundary
+  // This splits concatenated items like "4쥬베룩3.3포텐자(모공)" → "4쥬베룩\n3.3포텐자(모공)"
+  var marked = raw
+    .replace(/(\d+(?:\.\d+)?)([가-힣])/g, '\n$1$2')   // 12.5울쎄라 → \n12.5울쎄라
+    .replace(/\((\d+(?:\.\d+)?)\)\s*([가-힣])/g, '\n(0)$2'); // (0)하이쿡스 → \n(0)하이쿡스
+
+  var lines = marked.split('\n').map(function(l){return l.trim();}).filter(Boolean);
+  var items = [];
+
+  lines.forEach(function(line){
+    // Try: leading number + name
+    var m1 = line.match(/^(\d+(?:\.\d+)?)\s*(.+)$/);
+    // Try: (number) + name
+    var m2 = !m1 && line.match(/^\(\d+(?:\.\d+)?\)\s*(.+)$/);
+
+    var price, name;
+    if(m1){ price = parseFloat(m1[1]); name = m1[2].trim(); }
+    else if(m2){ price = 0; name = m2[1].trim(); }
+    else { price = 0; name = line.trim(); }
+
+    if(!name) return;
+
+    // Within the name, check if there are space-separated Korean words
+    // that look like separate unpriced items (e.g. "필러(수입) 보톡스(국산)")
+    // Split at space+Korean ONLY when previous token is a complete-looking word
+    var parts = name.split(/\s+/);
+    if(parts.length > 1){
+      var mainParts = [parts[0]];
+      for(var i=1;i<parts.length;i++){
+        var p=parts[i];
+        // If part starts with Korean AND doesn't look like a unit suffix
+        if(/^[가-힣]/.test(p) && !/^(cc|mg|ml|샷|개|회|cc)$/i.test(p)){
+          // Looks like a new item name — flush current and start new
+          items.push({price: price, name: mainParts.join(' ')});
+          price = 0; mainParts = [p];
+        } else {
+          mainParts.push(p);
+        }
+      }
+      name = mainParts.join(' ');
+    }
+    if(name) items.push({price: price, name: name});
+  });
+
+  // Also handle plain space-separated items that had no leading digit at all
+  // (these appear at the start if the raw text began with a non-priced item)
+  return items.filter(function(i){return i.name;});
+}
+
+function parseBulk(){
+  var raw = document.getElementById('bulk-input').value.trim();
+  if(!raw){ alert('내용을 붙여넣어 주세요'); return; }
+  var items = parseBulkText(raw);
+  if(!items.length){ alert('파싱된 항목이 없어요'); return; }
+
+  var el = document.getElementById('bulk-preview');
+  var h = '<div style="font-size:12px;color:#64748b;margin-bottom:8px;">'+items.length+'개 항목 파싱됨 — 수정 후 <b>전체 적용</b>을 누르세요</div>';
+  h += '<div style="max-height:280px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;">';
+  h += '<table style="font-size:12px;"><thead><tr><th style="width:50%;">시술 이름</th><th style="width:100px;">단가 (만원)</th><th style="width:50px;"></th></tr></thead><tbody>';
+  items.forEach(function(item,i){
+    h += '<tr>';
+    h += '<td><input type="text" class="bulk-nm" data-idx="'+i+'" value="'+esc(item.name)+'" style="font-size:12px;padding:5px 8px;"></td>';
+    h += '<td><input type="number" class="bulk-pr" data-idx="'+i+'" value="'+item.price+'" min="0" style="font-size:12px;padding:5px 8px;"></td>';
+    h += '<td><button class="btn btn-r btn-sm" style="padding:4px 7px;" onclick="delBulkRow('+i+')">×</button></td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+  h += '<div style="display:flex;gap:8px;">';
+  h += '<button class="btn btn-p btn-sm" onclick="applyBulk()">✅ 전체 적용 (설정에 추가)</button>';
+  h += '<button class="btn btn-o btn-sm" onclick="document.getElementById(\'bulk-preview\').innerHTML=\'\'">취소</button>';
+  h += '</div>';
+  el.innerHTML = h;
+}
+
+function delBulkRow(i){
+  var rows = document.querySelectorAll('#bulk-preview tbody tr');
+  if(rows[i]) rows[i].remove();
+}
+
+function applyBulk(){
+  var cfg = loadCfg();
+  var nms = document.querySelectorAll('.bulk-nm');
+  var prs = document.querySelectorAll('.bulk-pr');
+  var added = 0;
+  nms.forEach(function(inp, i){
+    var nm = inp.value.trim();
+    var pr = parseFloat(prs[i] ? prs[i].value : 0) || 0;
+    if(!nm) return;
+    // 만원 → 원 변환 (단가 입력이 만원 단위이므로)
+    cfg.procedures[nm] = {price: pr * 10000};
+    added++;
+  });
+  saveCfg(cfg);
+  renderCfgUI();
+  document.getElementById('bulk-preview').innerHTML = '<div style="color:#10b981;font-size:13px;font-weight:700;padding:10px;">✓ '+added+'개 항목이 설정에 추가됐어요</div>';
+  document.getElementById('bulk-input').value = '';
+  computeA(); render(); renderSummary();
+}
+
+/* ═══ 비밀번호 ═══ */
+var APP_PW = 'retoo2026'; // ← 비밀번호 변경 시 이 값만 수정
+function checkPw(){
+  var v=document.getElementById('pw-input').value;
+  if(v===APP_PW){
+    sessionStorage.setItem('clinic_auth','1');
+    document.getElementById('login-screen').style.display='none';
+  }else{
+    var err=document.getElementById('pw-err');
+    err.style.display='block';
+    document.getElementById('pw-input').value='';
+    document.getElementById('pw-input').focus();
+    setTimeout(function(){err.style.display='none';},2000);
+  }
+}
+// 이미 인증된 세션이면 바로 통과
+if(sessionStorage.getItem('clinic_auth')==='1'){
+  document.getElementById('login-screen').style.display='none';
+}
+
+/* ═══ INIT ═══ */
+renderArcList();renderCfgUI();render();renderBankSection();renderCardSection();renderSummary();
+
+// Firebase 연결 대기 후 실시간 리스너 + 설정 불러오기
+window.addEventListener('fb-ready', function(){
+  var st=document.getElementById('fb-status');
+  if(st){st.textContent='☁ 클라우드 연결됨';st.style.color='#38bdf8';}
+
+  // 아카이브 실시간 리스너
+  window.fbListen(function(arr){
+    G.arc=arr;
+    renderArcList();
+  });
+
+  // Firebase에서 설정값 불러오기 (로컬보다 Firebase 우선)
+  if(window.fbLoadSettings){
+    window.fbLoadSettings().then(function(cfg){
+      if(cfg){
+        localStorage.setItem(SKEY, JSON.stringify(cfg));
+        renderCfgUI();
+        renderSummary();
+        console.log('설정값 Firebase에서 불러옴');
+      } else {
+        // Firebase에 설정 없으면 현재 로컬 설정을 Firebase에 저장
+        var localCfg = loadCfg();
+        window.fbSaveSettings(localCfg);
+        console.log('로컬 설정값 Firebase에 초기 저장');
+      }
+    });
+  }
+});
+window.addEventListener('fb-error', function(e){
+  var st=document.getElementById('fb-status');
+  if(st){st.textContent='⚠ 연결 실패';st.style.color='#ef4444';}
+  console.error('Firebase error:', e.detail);
+});
+</script>
+</body>
+</html>
