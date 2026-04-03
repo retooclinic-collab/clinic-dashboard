@@ -176,6 +176,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
     <div id="results"></div>
     <div id="bank-section"></div>
     <div id="card-section"></div>
+    <div id="fixed-display"></div>
     <div id="summary-section"></div>
   </div>
 
@@ -913,7 +914,7 @@ function viewArc(i){
   G.bankManualCards=a.bankManualCards||[];
   document.querySelectorAll('.sbm').forEach(function(el){el.classList.remove('on')});
   var el=document.getElementById('sbm-'+i);if(el)el.classList.add('on');
-  goTab('an');render();renderBankSection();renderCardSection();renderSummary();
+  goTab('an');render();renderBankSection();renderCardSection();renderFixedDisplay();renderSummary();
 }
 function delArc(i){
   var a=G.arc[i]; if(!a)return;
@@ -973,7 +974,7 @@ function resetAll(){
     setErr(t,'');
   });
   document.querySelectorAll('.sbm').forEach(function(el){el.classList.remove('on')});
-  render();renderBankSection();renderCardSection();renderSummary();goTab('an');
+  render();renderBankSection();renderCardSection();renderFixedDisplay();renderSummary();goTab('an');
 }
 
 /* ═══ CARD WITHDRAWAL SECTION ═══ */
@@ -996,6 +997,34 @@ function getCardTotal(){
 }
 
 function renderCardSection(){ document.getElementById('card-section').innerHTML=''; }
+
+function renderFixedDisplay(){
+  var el=document.getElementById('fixed-display');
+  if(!el)return;
+  var total=getFixedTotal();
+  var cfg=loadCfg();
+  var fc=(cfg.fixedCosts||[]).filter(function(f){return !f.isSep&&(parseFloat(f.amount)||0)>0});
+  var h='<div class="sdiv">📌 고정비 합계</div>';
+  h+='<div class="card">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+  h+='<div><div style="font-size:14px;font-weight:700;">고정비 합계</div>';
+  h+='<div style="font-size:12px;color:#94a3b8;">설정 탭에서 항목 수정 가능</div></div>';
+  h+='<div style="font-size:20px;font-weight:800;color:#374151;">'+won(total)+'</div>';
+  h+='</div>';
+  // 항목 목록 (금액 있는 것만)
+  if(fc.length){
+    h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;">';
+    fc.forEach(function(f){
+      h+='<div style="display:flex;justify-content:space-between;background:#f8fafc;border-radius:7px;padding:6px 10px;font-size:12px;">';
+      h+='<span style="color:#475569;">'+esc(f.name)+'</span>';
+      h+='<span style="font-weight:600;">'+won(parseFloat(f.amount))+'</span>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+  h+='</div>';
+  el.innerHTML=h;
+}
 
 /* ═══ FIXED COSTS (settings) ═══ */
 function getFixedTotal(){
@@ -1074,6 +1103,7 @@ function delFixed(i){
 function applyFixed(){
   saveFixedFromDOM();
   renderFixedUI();
+  renderFixedDisplay();
   flashSaved('fixed-saved');
   renderSummary();
 }
@@ -1154,6 +1184,10 @@ function renderBankSection(){
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">';
   h+='<button class="btn btn-o btn-sm" onclick="addBankManualCard()">+ 수동 추가</button>';
   h+='<div style="font-size:13px;font-weight:700;">카드 출금 합계: <span id="bank-card-total" style="color:#3b82f6;font-size:16px;">'+won(getCardTotal())+'</span></div>';
+  h+='</div>';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed #e2e8f0;">';
+  h+='<span style="font-size:13px;color:#64748b;">📌 고정비 합계</span>';
+  h+='<span style="font-size:16px;font-weight:700;color:#374151;">'+won(getFixedTotal())+'</span>';
   h+='</div>';
 
   // 현금흐름 요약 (파일 있을 때만)
@@ -1431,7 +1465,7 @@ if(sessionStorage.getItem('clinic_auth')==='1'){
 }
 
 /* ═══ INIT ═══ */
-renderArcList();renderCfgUI();render();renderBankSection();renderCardSection();renderSummary();
+renderArcList();renderCfgUI();render();renderBankSection();renderCardSection();renderFixedDisplay();renderSummary();
 
 // Firebase 연결 대기 후 실시간 리스너 + 설정 불러오기
 window.addEventListener('fb-ready', function(){
@@ -1459,10 +1493,17 @@ window.addEventListener('fb-ready', function(){
         // 채워진 설정을 Firebase에 다시 저장
         window.fbSaveSettings(cfg);
         renderCfgUI();
+        renderFixedDisplay();
         renderSummary();
       } else {
-        var localCfg = loadCfg();
+        // Firebase에 설정 없음 → 로컬 캐시 지우고 기본값으로 초기화
+        localStorage.removeItem(SKEY);
+        var localCfg = loadCfg(); // 이제 기본값 반환
         window.fbSaveSettings(localCfg);
+        localStorage.setItem(SKEY, JSON.stringify(localCfg));
+        renderCfgUI();
+        renderFixedDisplay();
+        renderSummary();
       }
     });
   }
