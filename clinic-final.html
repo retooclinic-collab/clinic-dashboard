@@ -415,7 +415,43 @@ var DEFAULT_FIXED=[
   {name:'아노블리 관리',amount:750000}
 ];
 
-/* ═══ DEFAULT 수수료 경로 ═══ */
+/* ═══ DEFAULT 시술 단가 ═══ */
+var DEFAULT_PROCEDURES={
+  '울쎄라(100샷)':{price:125000},
+  '필러(수입)':{price:130000},
+  '보톡스(국산)':{price:10000},
+  '보톡스(수입)':{price:50000},
+  '쥬베룩볼륨':{price:50000},
+  '리쥬란':{price:100000},
+  '쥬베룩':{price:40000},
+  '포텐자(모공)':{price:33000},
+  '포텐자(기미)':{price:33000},
+  '펌핑팁':{price:55000},
+  '포텐자(펌핑)':{price:55000},
+  '써마지300':{price:549000},
+  '아이써마지225':{price:360000},
+  '하이쿡스':{price:0},
+  '리쥬란아이':{price:70000},
+  '써마지600':{price:804000},
+  '리쥬란HB':{price:70000},
+  '소프웨이브(50샷)':{price:70000},
+  '위고비':{price:250000},
+  '미라젯':{price:50000},
+  '엠페이스':{price:135000},
+  '스킨바이브':{price:135000},
+  '써마지900샷':{price:883000},
+  '줄기세포30cc':{price:145000},
+  '줄기세포 60cc':{price:297500},
+  '줄기세포120cc':{price:510000},
+  '줄기세포240cc':{price:765000},
+  'moxi':{price:0},
+  '쥬베룩아이':{price:80000},
+  '리투오':{price:121000},
+  '쥬브아셀':{price:132000},
+  '자가엑소좀':{price:380000},
+  '힐로웨이브':{price:110000},
+  '써마지 아이450':{price:462000}
+};
 var DEFAULT_ROUTES={
   '중국(기타)':{type:'percent',value:22},
   '중국(마)':{type:'percent',value:25},
@@ -429,13 +465,13 @@ function loadCfg(){
   try{
     var raw=localStorage.getItem(SKEY);
     var c=raw?JSON.parse(raw):{};
-    if(!c.procedures)c.procedures={};
+    if(!c.procedures||!Object.keys(c.procedures).length)c.procedures=Object.assign({},DEFAULT_PROCEDURES);
     // 수수료 경로: 비어있으면 기본값
     if(!c.routes||!Object.keys(c.routes).length)c.routes=Object.assign({},DEFAULT_ROUTES);
     // 고정비: 비어있으면 기본값
     if(!c.hasOwnProperty('fixedCosts')||!c.fixedCosts||!c.fixedCosts.length)c.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
     return c;
-  }catch(e){return{procedures:{},routes:Object.assign({},DEFAULT_ROUTES),fixedCosts:DEFAULT_FIXED.map(function(f){return Object.assign({},f)})}}
+  }catch(e){return{procedures:Object.assign({},DEFAULT_PROCEDURES),routes:Object.assign({},DEFAULT_ROUTES),fixedCosts:DEFAULT_FIXED.map(function(f){return Object.assign({},f)})}}
 }
 function saveCfg(c){
   localStorage.setItem(SKEY,JSON.stringify(c));
