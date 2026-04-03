@@ -415,17 +415,27 @@ var DEFAULT_FIXED=[
   {name:'아노블리 관리',amount:750000}
 ];
 
+/* ═══ DEFAULT 수수료 경로 ═══ */
+var DEFAULT_ROUTES={
+  '중국(기타)':{type:'percent',value:22},
+  '중국(마)':{type:'percent',value:25},
+  '중국(강)':{type:'percent',value:25},
+  '중국(따)':{type:'percent',value:25},
+  '일본(통)':{type:'fixed',value:8000000}
+};
+
 /* ═══ STORAGE ═══ */
 function loadCfg(){
   try{
     var raw=localStorage.getItem(SKEY);
     var c=raw?JSON.parse(raw):{};
     if(!c.procedures)c.procedures={};
-    if(!c.routes)c.routes={};
-    // 고정비: 키 자체가 없으면(첫 실행) 기본값 사용, 빈 배열이면 유지
+    // 수수료 경로: 비어있으면 기본값
+    if(!c.routes||!Object.keys(c.routes).length)c.routes=Object.assign({},DEFAULT_ROUTES);
+    // 고정비: 비어있으면 기본값
     if(!c.hasOwnProperty('fixedCosts')||!c.fixedCosts||!c.fixedCosts.length)c.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
     return c;
-  }catch(e){return{procedures:{},routes:{},fixedCosts:DEFAULT_FIXED.map(function(f){return Object.assign({},f)})}}
+  }catch(e){return{procedures:{},routes:Object.assign({},DEFAULT_ROUTES),fixedCosts:DEFAULT_FIXED.map(function(f){return Object.assign({},f)})}}
 }
 function saveCfg(c){
   localStorage.setItem(SKEY,JSON.stringify(c));
@@ -1365,7 +1375,7 @@ function applyBulk(){
 }
 
 /* ═══ 비밀번호 ═══ */
-var APP_PW = 'retoo2026'; // ← 비밀번호 변경 시 이 값만 수정
+var APP_PW = 'reto2025'; // ← 비밀번호 변경 시 이 값만 수정
 function checkPw(){
   var v=document.getElementById('pw-input').value;
   if(v===APP_PW){
