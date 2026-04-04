@@ -249,7 +249,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <div class="parse-wrap">
             <textarea class="form-textarea" id="f-payment-text" placeholder="예: 울쎄라400샷+소프200샷+미라젯38.5+쥬베룩볼륨앞볼3회=445.5m(카)" style="padding-bottom:44px" oninput="onPaymentInput()"></textarea>
             <button class="parse-btn" id="parse-btn" onclick="parsePayment()" disabled>
-              ✨ AI 분석
+              ⚡ 항목 분석
             </button>
           </div>
           <div class="form-hint">입력 후 AI 분석 버튼을 눌러 시술 항목을 추출하세요</div>
@@ -467,108 +467,242 @@ const TREATMENT_ITEMS = [
   '엑소좀','플라즈마엑소좀','MOXI'
 ];
 
-/* ── Claude API 파싱 ── */
+/* ══════════════════════════════════════════════
+   로컬 파서 (API 불필요)
+══════════════════════════════════════════════ */
+function localParse(raw){
+  const text = raw
+    .replace(/[=＝]\s*[\d.,]+\s*[mM].*$/g, '') // =결제금액 제거
+    .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '') // 예약금제외 제거
+    .replace(/[-－]\s*남은.*?(?=[+,\n]|$)/g, '')   // 남은금액 제거
+    .replace(/[-－]\s*할인.*?(?=[+,\n]|$)/g, '')   // 할인 제거
+    .replace(/[34]월[eE]\)?/g, '')   // 3월e) 제거
+    .replace(/\d월[eE]\)?/g, '')
+    .replace(/sv|s\.v|SV/gi, '')    // sv 제거 (카운트는 하되 텍스트 제거)
+    .toLowerCase();
+
+  const results = [];
+  const notes = [];
+
+  // ── 울쎄라 ──
+  const ulcera = text.match(/울쎄라\s*(\d+)\s*샷/);
+  if(ulcera){ results.push({item:'울쎄라(100샷)', qty: Math.round(parseInt(ulcera[1])/100)}); }
+
+  // ── 소프웨이브 ──
+  const sopw = raw.match(/소프(?:웨이브)?\s*(\d+)\s*샷/i);
+  if(sopw){ results.push({item:'소프웨이브(50샷)', qty: Math.round(parseInt(sopw[1])/50)}); }
+
+  // ── 써마지 ──
+  if(/아이써마지\s*450/i.test(raw)) results.push({item:'아이써마지450샷', qty:1});
+  else if(/아이써마지\s*225/i.test(raw)) results.push({item:'아이써마지225', qty:1});
+  if(/써마지\s*900/i.test(raw)) results.push({item:'써마지900샷', qty:1});
+  else if(/써마지\s*600/i.test(raw)) results.push({item:'써마지600', qty:1});
+  else if(/써마지\s*300/i.test(raw)) results.push({item:'써마지300', qty:1});
+
+  // ── 티타튠 (티타늄+튠라이너 조합) ──
+  const titaTune = raw.match(/티타튠(?:max|r|업)?\s*(?:\(.*?\))?\s*(\d+)?\s*회?/i);
+  if(titaTune){
+    const q = titaTune[1] ? parseInt(titaTune[1]) : 1;
+    results.push({item:'티타늄', qty:q});
+    results.push({item:'튠라이너', qty:q});
+  } else {
+    // ── 티타늄 (단독) ──
+    const titanM = raw.match(/티타늄\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
+    const titanS = /티타늄/i.test(raw) && !titanM;
+    if(titanM) results.push({item:'티타늄', qty: titanM[1]?parseInt(titanM[1]):1});
+    else if(titanS) results.push({item:'티타늄', qty:1});
+
+    // ── 튠라이너 ──
+    const tuneL = raw.match(/튠라이너(?:\s*10분)?\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
+    const tuneLs = /튠라이너/i.test(raw) && !tuneL;
+    if(tuneL) results.push({item:'튠라이너', qty: tuneL[1]?parseInt(tuneL[1]):1});
+    else if(tuneLs) results.push({item:'튠라이너', qty:1});
+  }
+
+  // ── 튠페이스 ──
+  if(!/티타튠/i.test(raw)){
+    const tuneF = raw.match(/튠페(?:이스)?\s*(?:b|r|max)?\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)\s*회/i);
+    const tuneFsingle = /튠페(?:이스)?/i.test(raw) && !tuneF;
+    if(tuneF) results.push({item:'튠페이스', qty: parseInt(tuneF[1])});
+    else if(tuneFsingle) results.push({item:'튠페이스', qty:1});
+  }
+
+  // ── 온다 ──
+  const ondaM = raw.match(/(?:바디)?온다\s*\d+\s*kj\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
+  const ondaS = /온다/i.test(raw) && !ondaM;
+  if(ondaM) results.push({item:'온다', qty: ondaM[1]?parseInt(ondaM[1]):1});
+  else if(ondaS) results.push({item:'온다', qty:1});
+
+  // ── 엠페이스 ──
+  const empeM = raw.match(/엠페(?:이스)?\s*(?:\d+분)?\s*(\d+)?\s*회/i);
+  const empeS = /엠페(?:이스)?/i.test(raw) && !empeM;
+  if(empeM) results.push({item:'엠페이스', qty: empeM[1]?parseInt(empeM[1]):1});
+  else if(empeS) results.push({item:'엠페이스', qty:1});
+
+  // ── 오푸스 ──
+  const opusM = raw.match(/오푸스\s*(?:타이트닝|디톡스|리프팅)?\s*(\d+)?\s*회/i);
+  const opusS = /오푸스/i.test(raw) && !opusM;
+  if(opusM) results.push({item:'오푸스', qty: opusM[1]?parseInt(opusM[1]):1});
+  else if(opusS) results.push({item:'오푸스', qty:1});
+
+  // ── 리쥬란 (HB, 아이, 일반) ──
+  const rjHB = raw.match(/리쥬란\s*hb\s*(\d+)\s*cc/i);
+  if(rjHB) results.push({item:'리쥬란HB', qty: parseInt(rjHB[1])});
+  const rjEye = raw.match(/(?:아이리쥬란|리쥬란아이|리쥬란\s*e\s*아이)\s*(\d+)\s*cc/i);
+  if(rjEye) results.push({item:'리쥬란아이', qty: parseInt(rjEye[1])});
+  const rjNorm = raw.match(/리쥬란\s*(\d+)\s*cc/i);
+  if(rjNorm && !rjHB) {
+    const cc = parseInt(rjNorm[1]);
+    results.push({item:'리쥬란', qty: Math.round(cc/2)});
+  } else if(/리쥬란\s*\d+개/i.test(raw)){
+    const m2 = raw.match(/리쥬란\s*(\d+)개/i);
+    if(m2) results.push({item:'리쥬란', qty: parseInt(m2[1])});
+  }
+
+  // ── 힐로웨이브 ──
+  const hilo = raw.match(/힐로웨이브\s*(\d+)\s*cc/i);
+  if(hilo) results.push({item:'힐로웨이브', qty: Math.round(parseInt(hilo[1])/2)});
+  else if(/힐로웨이브\s*(\d+)개/i.test(raw)){
+    const m2 = raw.match(/힐로웨이브\s*(\d+)개/i);
+    if(m2) results.push({item:'힐로웨이브', qty: parseInt(m2[1])});
+  } else if(/힐로웨이브/i.test(raw)) results.push({item:'힐로웨이브', qty:1});
+
+  // ── 미라젯 (sv포함 항상 1) ──
+  if(/미라젯/i.test(raw)) results.push({item:'미라젯', qty:1});
+
+  // ── 쥬베룩볼륨 ──
+  const jbvM = raw.match(/쥬베룩볼륨.*?(\d+)\s*회/i);
+  const jbvB = raw.match(/쥬베룩볼륨.*?(\d+)\s*병/i);
+  if(jbvM) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvM[1])});
+  else if(jbvB) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvB[1])});
+  else if(/쥬베룩볼륨/i.test(raw)) results.push({item:'쥬베룩볼륨', qty:1});
+
+  // ── 쥬베룩아이 ──
+  const jbeyeM = raw.match(/쥬베룩아이.*?(\d+)\s*회/i);
+  if(jbeyeM) results.push({item:'쥬베룩아이', qty: parseInt(jbeyeM[1])});
+  else if(/쥬베룩아이/i.test(raw)) results.push({item:'쥬베룩아이', qty:1});
+
+  // ── 쥬브아셀 ──
+  const jbaM = raw.match(/쥬브아셀\s*(?:\d+%?)?\s*(\d+)\s*[병회]/i);
+  if(jbaM) results.push({item:'쥬브아셀', qty: parseInt(jbaM[1])});
+  else if(/쥬브아셀/i.test(raw)) results.push({item:'쥬브아셀', qty:1});
+
+  // ── 리투오 ──
+  const ltoM = raw.match(/리투오\s*(\d+)\s*병/i);
+  if(ltoM) results.push({item:'리투오', qty: parseInt(ltoM[1])});
+  else if(/리투오/i.test(raw)) results.push({item:'리투오', qty:1});
+
+  // ── BBL ──
+  if(/bbl.*?(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))/i.test(raw)) results.push({item:'BBL(색소)', qty:1});
+  if(/bbl.*?(?:스킨타이트닝)/i.test(raw)) results.push({item:'BBL(스킨타이트닝)', qty:1});
+  if(/bbl.*?여드름/i.test(raw)) results.push({item:'BBL(여드름)', qty:1});
+
+  // ── 듀얼피코 ──
+  const dpM = raw.match(/듀얼피코\s*(\d+)\s*회/i);
+  if(dpM) results.push({item:'듀얼피코', qty: parseInt(dpM[1])});
+  else if(/듀얼피코/i.test(raw)) results.push({item:'듀얼피코', qty:1});
+
+  // ── 포텐자 ──
+  if(/포텐자.*?펌핑|펌핑팁|펌핑쥬베룩/i.test(raw)) results.push({item:'포텐자(펌핑)', qty:1});
+  if(/포텐자.*?모공/i.test(raw)) results.push({item:'포텐자(모공)', qty:1});
+  if(/포텐자.*?기미/i.test(raw)) results.push({item:'포텐자(기미)', qty:1});
+
+  // ── 필러 ──
+  const fillerImp = raw.match(/(?:수입)\s*필러|필러.*?수입|입술필러.*?수입|턱필러.*?수입|목필러.*?수입|눈밑필러.*?수입/i);
+  if(fillerImp){
+    const ccm = raw.match(/필러\s*(\d+)\s*cc/i);
+    results.push({item:'필러(수입)', qty: ccm?parseInt(ccm[1]):1});
+  }
+  const fillerDom = raw.match(/(?:국산|국)\s*필러|필러.*?국산|입술필러.*?국/i);
+  if(fillerDom && !fillerImp){
+    const ccm = raw.match(/필러\s*(\d+)\s*cc/i);
+    results.push({item:'필러(국산)', qty: ccm?parseInt(ccm[1]):1});
+  }
+
+  // ── 보톡스 국산 ──
+  const btxDomParts = raw.match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑)\s*b(?:tx)?\s*\(?국\)?/gi)||[];
+  if(btxDomParts.length>0) results.push({item:'보톡스(국산)', qty: btxDomParts.length});
+  else if(/보톡스.*?국산|국산.*?보톡스/i.test(raw)) results.push({item:'보톡스(국산)', qty:1});
+
+  // ── 보톡스 수입/제오민 ──
+  const btxImpParts = raw.match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑)\s*b(?:tx)?\s*\(?제오민\)?/gi)||[];
+  if(btxImpParts.length>0) results.push({item:'보톡스(수입)', qty: btxImpParts.length});
+  else if(/제오민|보톡스.*?수입/i.test(raw)) results.push({item:'보톡스(수입)', qty:1});
+
+  // ── 줄기세포 ──
+  if(/줄기세포\s*240/i.test(raw)) results.push({item:'줄기세포240cc', qty:1});
+  else if(/줄기세포\s*120/i.test(raw)) results.push({item:'줄기세포120cc', qty:1});
+  else if(/줄기세포\s*60/i.test(raw)) results.push({item:'줄기세포60cc', qty:1});
+  else if(/줄기세포\s*30/i.test(raw)) results.push({item:'줄기세포30cc', qty:1});
+
+  // ── 기타 ──
+  if(/자가엑소좀/i.test(raw)) results.push({item:'자가엑소좀', qty:1});
+  if(/moxi/i.test(raw)) results.push({item:'moxi', qty:1});
+  if(/라라필/i.test(raw)) results.push({item:'라라필', qty:1});
+  if(/아쿠아필/i.test(raw)) results.push({item:'아쿠아필', qty:1});
+  if(/ldm/i.test(raw)) results.push({item:'LDM', qty:1});
+  if(/플라즈마(?!엑소)/i.test(raw)) results.push({item:'플라즈마', qty:1});
+  if(/플라즈마엑소좀/i.test(raw)) results.push({item:'플라즈마엑소좀', qty:1});
+  if(/코레지셀핏/i.test(raw)) results.push({item:'코레지셀핏', qty:1});
+  if(/아이리프팅/i.test(raw)) results.push({item:'아이리프팅', qty:1});
+  if(/아그네스/i.test(raw)) results.push({item:'아그네스', qty:1});
+  if(/피코슈어|피코포커스|피코웨이/i.test(raw)) results.push({item:'피코슈어', qty:1});
+  if(/인텐스울트라|인텐스/i.test(raw)) results.push({item:'인텐스울트라', qty:1});
+  if(/제네시스\s*\+?\s*ptt/i.test(raw)){
+    const gM = raw.match(/제네시스.*?ptt.*?(\d+)?\s*회/i);
+    results.push({item:'제네시스+PTT', qty: gM&&gM[1]?parseInt(gM[1]):1});
+  } else if(/제네시스/i.test(raw)) results.push({item:'제네시스', qty:1});
+  if(/수면/i.test(raw)) results.push({item:'수면비', qty:1});
+  if(/새살주사/i.test(raw)) results.push({item:'새살주사', qty:1});
+  if(/스킨바이브/i.test(raw)){
+    const sbM = raw.match(/스킨바이브\s*(\d+)\s*cc/i);
+    results.push({item:'스킨바이브', qty: sbM?parseInt(sbM[1]):1});
+  }
+  const taM = raw.match(/\bta\s*(\d+)\s*(?:ea|개|p)/i);
+  if(taM) results.push({item:'TA', qty: parseInt(taM[1])});
+  else if(/\bta\b/i.test(raw)) results.push({item:'TA', qty:1});
+  const wgM = raw.match(/위고비.*?(\d+)\s*펜/i);
+  if(wgM) results.push({item:'위고비', qty: parseInt(wgM[1])});
+  else if(/위고비/i.test(raw)) results.push({item:'위고비', qty:1});
+  const rtpM = raw.match(/리투핏주사.*?(\d+)\s*(?:부위|회)/i);
+  if(rtpM) results.push({item:'리투핏주사', qty: parseInt(rtpM[1])});
+  else if(/리투핏주사/i.test(raw)) results.push({item:'리투핏주사', qty:1});
+  if(/vip/i.test(raw) && !/vip재료/i.test(raw)) results.push({item:'VIP회원권', qty:1});
+  if(/상담비|상담만/i.test(raw)) results.push({item:'상담만', qty:1});
+  if(/예약금/i.test(raw) && !/예약금제외|예약금없/i.test(raw)) results.push({item:'예약금', qty:1});
+  const co2M = raw.match(/co2\s*(\d+)\s*(?:ea|개)/i);
+  if(co2M) results.push({item:'CO2', qty: parseInt(co2M[1])});
+  else if(/co2/i.test(raw)) results.push({item:'CO2', qty:1});
+  if(/좌측볼사마귀|사마귀|편사|점\s*\d+개/i.test(raw) && !/제거/i.test(raw)) {}
+
+  // 중복 제거
+  const seen = {};
+  const deduped = [];
+  results.forEach(r=>{
+    if(seen[r.item]){ seen[r.item].qty += r.qty; }
+    else { seen[r.item]=r; deduped.push(r); }
+  });
+
+  return {treatments: deduped, notes: notes.join(', ')};
+}
+
+/* ── 파싱 실행 ── */
 async function parsePayment(){
   const text = document.getElementById('f-payment-text').value.trim();
   if(!text) return;
 
   const btn = document.getElementById('parse-btn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>분석 중...';
-
-  const systemPrompt = `당신은 피부과 수납 내역을 파싱하는 전문가입니다.
-입력된 결제내역 텍스트에서 시술 항목과 수량을 추출하세요.
-
-아래 매핑 규칙을 반드시 따르세요:
-
-1. 울쎄라: "울쎄라(100샷)" 항목에 (샷수÷100)개. 예: 울쎄라400샷→4개
-2. 소프웨이브: "소프웨이브(50샷)" 항목에 (샷수÷50)개. 예: 소프200샷→4개
-3. 써마지300샷→"써마지300" 1개, 써마지600샷→"써마지600" 1개, 써마지900샷→"써마지900샷" 1개
-4. 아이써마지225샷→"아이써마지225" 1개, 아이써마지450샷→"아이써마지450샷" 1개
-5. 튠페이스/튠페: "튠페이스" 회차수. 예: 튠페40kj 3회→3개
-6. 튠라이너: "튠라이너" 회차수. 튠라이너10분도 1회=1개
-7. 티타늄: "티타늄" 회차수 (KJ 무관)
-8. 온다/바디온다: "온다" 회차수
-9. 리쥬란Ncc: "리쥬란" N÷2개. 예: 리쥬란4cc→2개. 개수로쓰면 그대로
-10. 리쥬란HB: "리쥬란HB" cc수=개수. 예: 리쥬란hb2cc→2개
-11. 아이리쥬란/리쥬란아이: "리쥬란아이" cc수=개수
-12. 힐로웨이브Ncc: "힐로웨이브" N÷2개. 예: 힐로웨이브4cc→2개. 개수표현이면 그대로
-13. 미라젯: "미라젯" 1개 (sv/서비스도 포함, 무조건 등장하면 1개)
-14. 쥬베룩볼륨: "쥬베룩볼륨" 회차수 (앞볼3회→3, 1병3회→3, 부위무관)
-15. 쥬베룩아이: "쥬베룩아이" 회차수
-16. 쥬브아셀: "쥬브아셀" 병/회차수
-17. 리투오: "리투오" 병수
-18. 엠페이스: "엠페이스" 회차수 (20분/40분/60분 관계없이 회차)
-19. 오푸스: "오푸스" 회차수
-20. 포텐자펌핑/펌핑쥬베룩/펌핑팁: "포텐자(펌핑)" 1개
-21. 포텐자(모공): "포텐자(모공)" 1개
-22. 포텐자(기미): "포텐자(기미)" 1개
-23. BBL포에버영/색소/홍조/화이트닝: "BBL(색소)" 1개
-24. BBL여드름: "BBL(여드름)" 1개
-25. BBL스킨타이트닝: "BBL(스킨타이트닝)" 1개
-26. 필러(수입): "필러(수입)" 1cc=1개
-27. 필러(국산): "필러(국산)" 1cc=1개
-28. 보톡스국산(이마/미간/눈가/턱/사각턱등): "보톡스(국산)" 부위당 1개
-29. 보톡스제오민/수입: "보톡스(수입)" 부위당 1개
-30. 듀얼피코: "듀얼피코" 회차수
-31. 피코슈어/피코포커스: "피코슈어" 1개
-32. LDM: "LDM" 1개 (sv포함)
-33. 플라즈마: "플라즈마" 1개
-34. 라라필: "라라필" 1개
-35. 수면/수면비: "수면비" 1개
-36. 아이리프팅: "아이리프팅" 1개
-37. 코레지셀핏: "코레지셀핏" 1개
-38. 아그네스: "아그네스" 1개
-39. 리투핏주사: "리투핏주사" 부위/회차수
-40. 줄기세포30cc: "줄기세포30cc" 1개, 60cc→"줄기세포60cc", 120cc→"줄기세포120cc", 240cc→"줄기세포240cc"
-41. 자가엑소좀: "자가엑소좀" 1개
-42. 위고비: "위고비" 펜수
-43. MOXI/moxi: "moxi" 1개
-44. TA: "TA" 개수
-45. 아쿠아필: "아쿠아필" 1개
-46. 제네시스PTT: "제네시스+PTT" 회차수
-47. 제네시스(단독): "제네시스" 1개
-48. 티타튠: "티타늄" 1개 + "튠라이너" 1개 (조합시술)
-49. 스킨바이브: "스킨바이브" 1cc=1개
-50. CO2: "CO2" 1개
-51. 새살주사: "새살주사" 1개
-52. VIP: "VIP회원권" 1개 (금액만 결제, 시술 없음)
-53. 상담비: "상담만" 1개
-54. 예약금: "예약금" 1개
-
-중요 규칙:
-- sv/s.v/SV = 서비스(무료)이지만 시술 카운트는 반드시 포함
-- 예약금제외/할인 등은 무시하고 시술만 추출
-- 3월e)/4월e) 등 이벤트 표시는 무시
-- 마지막 =숫자m은 결제금액, 시술이 아님
-- 괄호 안 부위설명은 무시
-- 회차가 명시된 경우 그 회차를 수량으로
-
-반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트 없이:
-{"treatments":[{"item":"시술항목명","qty":숫자},...],"notes":"파싱 특이사항(없으면 빈문자열)"}`;
+  btn.innerHTML = '⚡ 분석 중...';
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:1000,
-        system: systemPrompt,
-        messages:[{role:'user',content:text}]
-      })
-    });
-    const data = await resp.json();
-    const raw = data.content?.[0]?.text||'{}';
-    let parsed;
-    try { parsed = JSON.parse(raw.replace(/```json|```/g,'')); }
-    catch(e) { parsed = {treatments:[], notes:'파싱 오류'}; }
+    const parsed = localParse(text);
     showParseResult(parsed);
   } catch(e) {
-    showToast('AI 분석 오류: '+e.message, 'error');
+    showToast('분석 오류: '+e.message, 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '✨ AI 분석';
+    btn.innerHTML = '⚡ 분석';
   }
 }
 
