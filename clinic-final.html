@@ -734,13 +734,14 @@ function render(){
     h+='</tbody></table></div>';
 
     h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">내원경로별 객단가</div>';
-    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">① 상담리스트 기준 · 경로별 수납금액 및 평균 결제액</div>';
+    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">① 상담리스트 기준 · 단위: 만원 · 소수점 둘째 자리</div>';
     h+='<canvas id="ch-chan" style="max-height:180px;margin-bottom:16px;"></canvas>';
-    h+='<table><thead><tr><th>내원 경로</th><th class="r">건수</th><th class="r">비율</th><th class="r">총 수납</th><th class="r">객단가</th></tr></thead><tbody>';
+    h+='<table><thead><tr><th>내원 경로</th><th class="r">건수</th><th class="r">비율</th><th class="r">총 수납</th><th class="r">객단가 (만원)</th></tr></thead><tbody>';
     cd.byChannel.forEach(function(c,i){
+      var avgMan=(c.avg/10000).toFixed(2);
       h+='<tr><td><span class="dot" style="background:'+COLS[(i+3)%COLS.length]+'"></span><b>'+esc(c.name)+'</b></td>';
       h+='<td class="r muted">'+nf(c.count)+'건</td><td class="r muted">'+(cd.count?(c.count/cd.count*100).toFixed(2):0)+'%</td>';
-      h+='<td class="r bold">'+won(c.total)+'</td><td class="r green">'+won(c.avg)+'</td></tr>';
+      h+='<td class="r bold">'+won(c.total)+'</td><td class="r green">'+avgMan+'만</td></tr>';
     });
     h+='</tbody></table></div>';
   }
@@ -783,12 +784,20 @@ function render(){
     var uns=bd.items.filter(function(i){return !i.value});
     if(uns.length)h+='<div class="warn">수수료 미설정: <b>'+uns.map(function(i){return esc(i.route)}).join(', ')+'</b> → 설정 탭에서 입력 후 <b>저장 및 반영</b> 버튼 클릭</div>';
     h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">내원경로별 수수료 계산</div>';
-    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">비율: 수납×% | 고정값: 입력액 자체가 수수료</div>';
+    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">비율: 수납×% | 고정값: 입력액 자체가 수수료 · 수수료 내림차순 정렬</div>';
     h+='<table><thead><tr><th>내원 경로</th><th class="r">수납금액</th><th class="ce">방식</th><th class="r">설정값</th><th class="r">수수료</th></tr></thead><tbody>';
-    bd.items.forEach(function(i,idx){
+    // 수수료 내림차순, 0은 아래로
+    var sortedItems=bd.items.slice().sort(function(a,b){
+      if(a.commission===0&&b.commission===0)return 0;
+      if(a.commission===0)return 1;
+      if(b.commission===0)return -1;
+      return b.commission-a.commission;
+    });
+    sortedItems.forEach(function(i,idx){
       var tb=i.type==='percent'?'<span class="badge-blue">비율</span>':'<span class="badge-green">고정차감</span>';
       var vs=i.type==='percent'?i.value+'%':won(i.value);
-      h+='<tr><td><span class="dot" style="background:'+COLS[(idx+2)%COLS.length]+'"></span><b>'+esc(i.route)+'</b></td>';
+      var zeroStyle=i.commission===0?'opacity:0.45;':'';
+      h+='<tr style="'+zeroStyle+'"><td><span class="dot" style="background:'+COLS[(idx+2)%COLS.length]+'"></span><b>'+esc(i.route)+'</b></td>';
       h+='<td class="r">'+won(i.amount)+'</td><td class="ce">'+tb+'</td>';
       h+='<td class="r muted">'+vs+'</td><td class="r bold" style="color:#f59e0b;">'+won(i.commission)+'</td></tr>';
     });
@@ -801,8 +810,12 @@ function render(){
 
   el.innerHTML=h;
   if(cd){
-    drawBar('ch-staff',cd.byStaff.map(function(s){return s.name}),cd.byStaff.map(function(s){return s.total}),cd.byStaff.map(function(_,i){return COLS[i%COLS.length]}));
-    drawBar('ch-chan',cd.byChannel.map(function(c){return c.name}),cd.byChannel.map(function(c){return c.avg}),cd.byChannel.map(function(_,i){return COLS[(i+3)%COLS.length]}));
+    drawBar('ch-staff',cd.byStaff.map(function(s){return s.name}),cd.byStaff.map(function(s){return s.total}),cd.byStaff.map(function(_,i){return COLS[i%COLS.length]}),won);
+    drawBar('ch-chan',
+      cd.byChannel.map(function(c){return c.name}),
+      cd.byChannel.map(function(c){return parseFloat((c.avg/10000).toFixed(2))}),
+      cd.byChannel.map(function(_,i){return COLS[(i+3)%COLS.length]}),
+      function(v){return v.toFixed(2)+'만원'});
     renderCrossTable();
   }
 }
@@ -972,12 +985,13 @@ function renderTrendTab(){
 
 function K(l,v,c){return'<div class="kpi" style="border-top-color:'+c+'"><div class="kpi-l">'+l+'</div><div class="kpi-v">'+v+'</div></div>'}
 
-function drawBar(id,labels,values,colors){
+function drawBar(id,labels,values,colors,fmtFn){
   var ctx=document.getElementById(id);if(!ctx)return;
   if(G.charts[id])G.charts[id].destroy();
+  var fmt=fmtFn||won;
   G.charts[id]=new Chart(ctx.getContext('2d'),{type:'bar',
     data:{labels:labels,datasets:[{data:values,backgroundColor:colors,borderRadius:5,borderSkipped:false}]},
-    options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return won(c.raw)}}}},
+    options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return fmt(c.raw)}}}},
       scales:{x:{ticks:{color:'rgba(100,116,139,.9)',font:{size:11}}},
         y:{ticks:{color:'rgba(100,116,139,.9)',font:{size:10},callback:function(v){return v>=100000000?(v/100000000).toFixed(1)+'억':v>=10000?(v/10000).toFixed(0)+'만':v}},grid:{color:'rgba(0,0,0,.04)'}}}}});
 }
