@@ -387,6 +387,7 @@ var G = {
   bankData:null, bankFile:'',
   bankManualCards:[],
   bankEditedCards:[], // 엑셀 추출 항목 편집본
+  fixedEditedCosts:null, // null이면 settings 그대로, array면 편집본
   arc:[],
   charts:{}
 };
@@ -1131,6 +1132,7 @@ function viewArc(i){
   G.bankData=a.bankData||null;
   G.bankManualCards=a.bankManualCards||[];
   G.bankEditedCards=a.bankEditedCards||(a.bankData?a.bankData.cardRows.map(function(r){return Object.assign({},r);}):[]); 
+  G.fixedEditedCosts=a.fixedEditedCosts!==undefined?a.fixedEditedCosts:null;
   // 원본 rows 복원
   G.cRows=a.cRows||null; G.aRows=a.aRows||null; G.bRows=a.bRows||null;
   G.cCols=a.cCols||null;
@@ -1203,7 +1205,7 @@ async function doSave(){
     label:lbl, savedAt:new Date().toISOString(),
     cData:G.cData, aData:G.aData, bData:G.bData,
     cardRows:G.cardRows, bankData:G.bankData, bankManualCards:G.bankManualCards,
-    bankEditedCards:G.bankEditedCards,
+    bankEditedCards:G.bankEditedCards, fixedEditedCosts:G.fixedEditedCosts,
     // 원본 rows 저장 (재계산, CSV 다운로드용)
     cRows:G.cRows||null, aRows:G.aRows||null, bRows:G.bRows||null,
     cFile:G.cFile, aFile:G.aFile, bFile:G.bFile,
@@ -1236,7 +1238,7 @@ function goTab(t){
 function resetAll(){
   Object.assign(G,{cRows:null,aRows:null,bRows:null,cData:null,aData:null,bData:null,cFile:'',aFile:'',bFile:'',cCols:null,
     cardRows:[{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''}],
-    bankData:null,bankFile:'',bankManualCards:[],bankEditedCards:[]});
+    bankData:null,bankFile:'',bankManualCards:[],bankEditedCards:[],fixedEditedCosts:null});
   ['c','a','b','k'].forEach(function(t){
     var dz=document.getElementById('dz-'+t);
     var dt=document.getElementById('dz-'+t+'-t');
@@ -1271,40 +1273,119 @@ function getCardTotal(){
 
 function renderCardSection(){ document.getElementById('card-section').innerHTML=''; }
 
+function getFixedList(){
+  // 편집본이 있으면 편집본, 없으면 settings에서 (isSep 제외한 실제 항목만)
+  if(G.fixedEditedCosts!==null) return G.fixedEditedCosts;
+  return (loadCfg().fixedCosts||[]).filter(function(f){return !f.isSep;});
+}
+
 function renderFixedDisplay(){
   var el=document.getElementById('fixed-display');
   if(!el)return;
-  var total=getFixedTotal();
-  var cfg=loadCfg();
-  var fc=(cfg.fixedCosts||[]).filter(function(f){return !f.isSep&&(parseFloat(f.amount)||0)>0});
+  var list=getFixedList();
+  var total=list.reduce(function(s,f){return s+(parseFloat(f.amount)||0);},0);
+
   var h='<div class="sdiv">📌 고정비 합계</div>';
   h+='<div class="card">';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
-  h+='<div><div style="font-size:14px;font-weight:700;">고정비 합계</div>';
-  h+='<div style="font-size:12px;color:#94a3b8;">설정 탭에서 항목 수정 가능</div></div>';
-  h+='<div style="font-size:20px;font-weight:800;color:#374151;">'+won(total)+'</div>';
-  h+='</div>';
-  // 항목 목록 (금액 있는 것만)
-  if(fc.length){
-    h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;">';
-    fc.forEach(function(f){
-      h+='<div style="display:flex;justify-content:space-between;background:#f8fafc;border-radius:7px;padding:6px 10px;font-size:12px;">';
-      h+='<span style="color:#475569;">'+esc(f.name)+'</span>';
-      h+='<span style="font-weight:600;">'+won(parseFloat(f.amount))+'</span>';
-      h+='</div>';
-    });
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
+  h+='<div style="font-size:13px;font-weight:700;">고정비 항목</div>';
+  h+='<div style="display:flex;gap:6px;">';
+  h+='<button class="btn btn-o btn-sm" style="font-size:11px;" onclick="restoreFixedDefaults()">↺ 기본값 복원</button>';
+  h+='<button class="btn btn-sm" style="background:#1e3a5f;color:#93c5fd;font-size:11px;" onclick="applyFixedEdits()">✓ 수정값 반영</button>';
+  h+='</div></div>';
+
+  // 편집 가능한 행들
+  h+='<div id="fixed-edit-rows">';
+  list.forEach(function(f,i){
+    h+='<div class="fe-row" style="display:grid;grid-template-columns:1fr 150px 32px;gap:6px;margin-bottom:6px;" data-idx="'+i+'">';
+    h+='<input type="text" class="fe-nm" placeholder="항목명" value="'+esc(f.name||'')+'" oninput="updateFixedTotal()">';
+    h+='<input type="number" class="fe-am" placeholder="금액" value="'+(f.amount||'')+'" min="0" oninput="updateFixedTotal()">';
+    h+='<button class="btn btn-r btn-sm" style="padding:4px;" onclick="delFixedEdit('+i+')">×</button>';
     h+='</div>';
-  }
+  });
+  h+='</div>';
+
+  // 수동 추가 + 합계
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">';
+  h+='<button class="btn btn-o btn-sm" onclick="addFixedEdit()">+ 항목 추가</button>';
+  h+='<div style="font-size:13px;font-weight:700;">고정비 합계: <span id="fixed-total-display" style="color:#374151;font-size:16px;">'+won(total)+'</span></div>';
+  h+='</div>';
   h+='</div>';
   el.innerHTML=h;
 }
 
+function updateFixedTotal(){
+  var t=0;
+  document.querySelectorAll('.fe-am').forEach(function(inp){t+=parseFloat(inp.value)||0;});
+  var el=document.getElementById('fixed-total-display');
+  if(el)el.textContent=won(t);
+  renderSummary();
+}
+
+function applyFixedEdits(){
+  var rows=document.querySelectorAll('.fe-row');
+  var newList=[];
+  rows.forEach(function(row){
+    var nm=row.querySelector('.fe-nm').value.trim();
+    var am=parseFloat(row.querySelector('.fe-am').value)||0;
+    if(nm)newList.push({name:nm,amount:am});
+  });
+  G.fixedEditedCosts=newList;
+  // 설정에도 저장 (isSep 구분선은 유지)
+  var cfg=loadCfg();
+  var seps=cfg.fixedCosts.filter(function(f){return f.isSep;});
+  // 구분선 없이 flat으로 저장 (편집 탭 기준)
+  cfg.fixedCosts=newList;
+  saveCfg(cfg);
+  renderFixedDisplay();
+  renderSummary();
+  flashSaved('fixed-saved');
+}
+
+function restoreFixedDefaults(){
+  if(!confirm('기본값으로 복원할까요? 수정 내용이 사라져요.'))return;
+  G.fixedEditedCosts=null;
+  // 로컬 설정도 기본값으로 초기화
+  var cfg=loadCfg();
+  cfg.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
+  saveCfg(cfg);
+  renderFixedDisplay();
+  renderSummary();
+}
+
+function delFixedEdit(i){
+  saveFixedEditsFromDOM();
+  G.fixedEditedCosts.splice(i,1);
+  renderFixedDisplay();
+  renderSummary();
+}
+
+function addFixedEdit(){
+  saveFixedEditsFromDOM();
+  if(G.fixedEditedCosts===null){
+    G.fixedEditedCosts=getFixedList().slice();
+  }
+  G.fixedEditedCosts.push({name:'',amount:0});
+  renderFixedDisplay();
+}
+
+function saveFixedEditsFromDOM(){
+  var rows=document.querySelectorAll('.fe-row');
+  if(!rows.length)return;
+  var list=[];
+  rows.forEach(function(row){
+    list.push({
+      name:row.querySelector('.fe-nm').value.trim(),
+      amount:parseFloat(row.querySelector('.fe-am').value)||0
+    });
+  });
+  G.fixedEditedCosts=list;
+}
+
 /* ═══ FIXED COSTS (settings) ═══ */
 function getFixedTotal(){
-  var cfg=loadCfg();
-  return (cfg.fixedCosts||[]).reduce(function(s,f){
-    return s+(f.isSep?0:(parseFloat(f.amount)||0));
-  },0);
+  var list=G.fixedEditedCosts!==null?G.fixedEditedCosts:(loadCfg().fixedCosts||[]);
+  return list.reduce(function(s,f){return s+(f.isSep?0:(parseFloat(f.amount)||0));},0);
 }
 
 function renderFixedUI(){
@@ -1375,6 +1456,7 @@ function delFixed(i){
 
 function applyFixed(){
   saveFixedFromDOM();
+  G.fixedEditedCosts=null; // 설정 저장 후 편집본 초기화
   renderFixedUI();
   renderFixedDisplay();
   flashSaved('fixed-saved');
@@ -1440,7 +1522,7 @@ function renderBankSection(){
   // ── 엑셀 추출 영역 ──
   if(bd){
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
-    h+='<div style="font-size:13px;font-weight:700;">📥 엑셀 추출 항목</div>';
+    h+='<div style="font-size:13px;font-weight:700;">출금내역 엑셀 추출 항목</div>';
     h+='<div style="display:flex;gap:6px;">';
     h+='<button class="btn btn-o btn-sm" style="font-size:11px;" onclick="restoreFromBank()">↺ 엑셀값 복원</button>';
     h+='<button class="btn btn-sm" style="background:#1e3a5f;color:#93c5fd;font-size:11px;" onclick="applyEditedCards()">✓ 수정값 반영</button>';
@@ -1619,7 +1701,10 @@ function renderSummary(){
   var calc3 = rev - card - comm - fixed;
 
   function colorNum(n){ return '<span style="font-weight:700;color:#1a2035;">'+won(n)+'</span>'; }
-  function resultNum(n){ return '<span style="font-size:20px;font-weight:800;color:'+(n>=0?'#10b981':'#ef4444')+';">'+won(n)+'</span>'; }
+  function resultNum(n,ref){
+    var pct=ref&&ref>0?'<span style="font-size:13px;color:#94a3b8;font-weight:400;margin-left:6px;">('+((n/ref)*100).toFixed(1)+'%)</span>':'';
+    return '<span style="font-size:20px;font-weight:800;color:'+(n>=0?'#10b981':'#ef4444')+';">'+won(n)+'</span>'+pct;
+  }
 
   var h='<div class="sdiv">📐 종합 계산</div><div class="card">';
   h+='<div style="font-size:14px;font-weight:700;margin-bottom:16px;">추정 순매출 계산</div>';
@@ -1652,7 +1737,7 @@ function renderSummary(){
   h+='<span style="color:#94a3b8;">−</span>';
   h+='<span style="font-size:13px;color:#374151;font-weight:600;">고정비 '+colorNum(fixed)+'</span>';
   h+='<span style="color:#94a3b8;font-size:16px;">=</span>';
-  h+=resultNum(calc2);
+  h+=resultNum(calc2,rev);
   h+='</div>';
   h+='<div style="font-size:12px;color:#94a3b8;padding:8px 10px;background:#fff;border-radius:7px;">';
   h+=won(rev)+' − '+won(mat)+' − '+won(comm)+' − '+won(fixed)+' = <b style="color:'+(calc2>=0?'#10b981':'#ef4444')+';">'+won(calc2)+'</b>';
@@ -1670,7 +1755,7 @@ function renderSummary(){
   h+='<span style="color:#94a3b8;">−</span>';
   h+='<span style="font-size:13px;color:#374151;font-weight:600;">고정비 '+colorNum(fixed)+'</span>';
   h+='<span style="color:#94a3b8;font-size:16px;">=</span>';
-  h+=resultNum(calc3);
+  h+=resultNum(calc3,rev);
   h+='</div>';
   h+='<div style="font-size:12px;color:#94a3b8;padding:8px 10px;background:#fff;border-radius:7px;">';
   h+=won(rev)+' − '+won(card)+' − '+won(comm)+' − '+won(fixed)+' = <b style="color:'+(calc3>=0?'#10b981':'#ef4444')+';">'+won(calc3)+'</b>';
