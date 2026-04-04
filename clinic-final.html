@@ -369,14 +369,27 @@ try {
   // ── 인증 상태 감지 ──
   onAuthStateChanged(auth, function(user) {
     if(user) {
-      // 로그인됨 → 앱 시작
       document.getElementById('login-screen').style.display='none';
       document.getElementById('shell').style.display='flex';
       var st=document.getElementById('fb-status');
       if(st){st.textContent='☁ '+user.email;st.style.color='#38bdf8';}
-      window.dispatchEvent(new CustomEvent('fb-ready'));
+      // onFbReady가 준비됐으면 바로 호출, 아니면 잠깐 기다림
+      if(typeof window.onFbReady === 'function'){
+        window.onFbReady();
+      } else {
+        var tries=0;
+        var interval=setInterval(function(){
+          tries++;
+          if(typeof window.onFbReady === 'function'){
+            clearInterval(interval);
+            window.onFbReady();
+          } else if(tries > 20){
+            clearInterval(interval);
+            console.error('onFbReady not found');
+          }
+        }, 100);
+      }
     } else {
-      // 로그아웃 → 로그인 화면
       document.getElementById('login-screen').style.display='flex';
       document.getElementById('shell').style.display='none';
     }
@@ -2082,45 +2095,36 @@ function loadAndAnalyze(i){
 /* ═══ INIT ═══ */
 renderArcList();renderCfgUI();render();renderBankSection();renderCardSection();renderFixedDisplay();renderSummary();
 
-// Firebase 연결 대기 후 실시간 리스너 + 설정 불러오기
-window.addEventListener('fb-ready', function(){
-  var st=document.getElementById('fb-status');
-  if(st){st.textContent='☁ 클라우드 연결됨';st.style.color='#38bdf8';}
-
+// Firebase 연결 후 실행될 함수 (onAuthStateChanged가 호출)
+window.onFbReady = function(){
   // 아카이브 실시간 리스너
-  window.fbListen(function(arr){
-    G.arc=arr;
-    renderArcList();
-  });
-
-  // Firebase에서 설정값 불러오기 (로컬보다 Firebase 우선)
-  if(window.fbLoadSettings){
-    window.fbLoadSettings().then(function(cfg){
-      if(!cfg) cfg = {};
-      // procedures: 기본값 항목은 가격 0이어도 강제 적용
-      if(!cfg.procedures) cfg.procedures = {};
-      Object.keys(DEFAULT_PROCEDURES).forEach(function(k){
-        if(!cfg.procedures[k]||cfg.procedures[k].price===0)
-          cfg.procedures[k]=Object.assign({},DEFAULT_PROCEDURES[k]);
-      });
-      // routes: 기본값 경로는 value 0이어도 강제 적용
-      if(!cfg.routes) cfg.routes = {};
-      Object.keys(DEFAULT_ROUTES).forEach(function(k){
-        if(!cfg.routes[k]||cfg.routes[k].value===0)
-          cfg.routes[k]=Object.assign({},DEFAULT_ROUTES[k]);
-      });
-      // 고정비: 비어있으면 기본값
-      if(!cfg.fixedCosts||!cfg.fixedCosts.length)
-        cfg.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
-      // 저장 및 반영
-      localStorage.setItem(SKEY,JSON.stringify(cfg));
-      window.fbSaveSettings(cfg);
-      renderCfgUI();
-      renderFixedDisplay();
-      renderSummary();
+  if(window.fbListen){
+    window.fbListen(function(arr){
+      G.arc=arr;
+      renderArcList();
+      renderCloudTab();
     });
   }
-});
+  // Firebase에서 설정값 불러오기
+  if(window.fbLoadSettings){
+    window.fbLoadSettings().then(function(cfg){
+      if(!cfg) cfg={};
+      if(!cfg.procedures||!Object.keys(cfg.procedures).length)cfg.procedures=Object.assign({},DEFAULT_PROCEDURES);
+      Object.keys(DEFAULT_PROCEDURES).forEach(function(k){
+        if(!cfg.procedures[k]||!(cfg.procedures[k].price>0))cfg.procedures[k]={price:DEFAULT_PROCEDURES[k].price};
+      });
+      if(!cfg.routes||!Object.keys(cfg.routes).length)cfg.routes=Object.assign({},DEFAULT_ROUTES);
+      Object.keys(DEFAULT_ROUTES).forEach(function(k){
+        if(!cfg.routes[k]||!(cfg.routes[k].value>0))cfg.routes[k]=Object.assign({},DEFAULT_ROUTES[k]);
+      });
+      if(!cfg.fixedCosts||!cfg.fixedCosts.length)cfg.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
+      localStorage.setItem(SKEY,JSON.stringify(cfg));
+      window.fbSaveSettings(cfg);
+      renderCfgUI();renderFixedDisplay();renderSummary();
+    });
+  }
+};
+
 window.addEventListener('fb-error', function(e){
   var st=document.getElementById('fb-status');
   if(st){st.textContent='⚠ 연결 실패';st.style.color='#ef4444';}
