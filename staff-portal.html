@@ -260,6 +260,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <div class="parse-result-title">
             추출된 시술 항목 <span class="parse-badge" id="treatment-count">0</span>
             <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:4px">수량을 확인/수정해주세요</span>
+            <button onclick="clearParseResult()" style="margin-left:auto;background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:3px 10px;cursor:pointer">✕ 분석 초기화</button>
           </div>
           <div class="treatment-list" id="treatment-list"></div>
           <div class="parse-raw" id="parse-raw-text" style="display:none"></div>
@@ -281,10 +282,38 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
       </div>
     </div>
 
-    <!-- 히스토리 -->
+    <!-- 수납 리스트 -->
     <div class="history-section" id="history-section">
-      <div class="history-title">오늘 내 입력 내역</div>
-      <div id="history-list"><div style="color:var(--muted);font-size:13px">아직 오늘 입력한 내역이 없어요</div></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+        <div class="history-title" style="margin-bottom:0">📋 수납 리스트</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="date" id="filter-date" style="background:#0f172a;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;padding:6px 10px;outline:none" onchange="filterByDate()">
+          <button onclick="clearDateFilter()" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">전체</button>
+          <button onclick="downloadCurrentCSV()" style="font-size:11px;color:var(--sub);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">⬇ CSV</button>
+        </div>
+      </div>
+      <!-- 테이블 -->
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table id="consult-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:700px">
+          <thead>
+            <tr style="background:#0a0f1a;color:var(--muted);font-size:11px;letter-spacing:1px">
+              <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">날짜</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">차트</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">이름</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">분류1</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">분류2</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border)">결제내역</th>
+              <th style="padding:10px 8px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap">금액(만)</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">결제</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">상담자</th>
+            </tr>
+          </thead>
+          <tbody id="consult-tbody">
+            <tr><td colspan="9" style="padding:20px;text-align:center;color:var(--muted)">데이터 로딩 중...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="list-summary" style="margin-top:12px;font-size:12px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap"></div>
     </div>
   </div>
 
@@ -361,17 +390,27 @@ window.fbSaveConsultation = async (data) => {
 };
 
 window.startListenHistory = (uid) => {
-  const today = new Date().toISOString().slice(0,10);
   const q = query(
     collection(db,'consultations'),
-    where('staffUid','==',uid),
-    where('date','==',today)
+    where('staffUid','==',uid)
   );
   onSnapshot(q, snap => {
     const items = [];
     snap.forEach(d => items.push(d.data()));
-    items.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
-    renderHistory(items);
+    items.sort((a,b)=>{
+      const dateDiff = (b.date||'').localeCompare(a.date||'');
+      if(dateDiff !== 0) return dateDiff;
+      return (b.createdAt||'').localeCompare(a.createdAt||'');
+    });
+    window._allItems = items;
+
+    // 기록이 있는 날짜 최근 3일만 기본 표시
+    const dateFilter = document.getElementById('filter-date').value;
+    if(dateFilter){
+      renderHistory(items.filter(it=>it.date===dateFilter));
+    } else {
+      renderHistory(filterRecent3Days(items));
+    }
   }, err => console.error('history error:',err));
 };
 </script>
@@ -523,9 +562,14 @@ function localParse(raw){
 
   // ── 튠페이스 ──
   if(!/티타튠/i.test(raw)){
+    // "튠페max 2회", "튠페이스b 3회", "튠페60kj 3회" 등 회차 명시
     const tuneF = raw.match(/튠페(?:이스)?\s*(?:b|r|max)?\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)\s*회/i);
-    const tuneFsingle = /튠페(?:이스)?/i.test(raw) && !tuneF;
-    if(tuneF) results.push({item:'튠페이스', qty: parseInt(tuneF[1])});
+    // "튠페이스max 2회차", "튠페max(2회차)" 등
+    const tuneFrc = raw.match(/튠페(?:이스)?\s*(?:b|r|max)?\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)\s*회차/i);
+    // 회차 없이 단독 등장
+    const tuneFsingle = /튠페(?:이스)?/i.test(raw) && !tuneF && !tuneFrc;
+    if(tuneFrc) results.push({item:'튠페이스', qty: parseInt(tuneFrc[1])});
+    else if(tuneF) results.push({item:'튠페이스', qty: parseInt(tuneF[1])});
     else if(tuneFsingle) results.push({item:'튠페이스', qty:1});
   }
 
@@ -646,15 +690,24 @@ function localParse(raw){
     results.push({item:'쥬브아셀', qty:q});
   }
 
-  // ── 보톡스 국산 ──
-  const btxDomParts = raw.match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑)\s*b(?:tx)?\s*\(?국\)?/gi)||[];
-  if(btxDomParts.length>0) results.push({item:'보톡스(국산)', qty: btxDomParts.length});
-  else if(/보톡스.*?국산|국산.*?보톡스/i.test(raw)) results.push({item:'보톡스(국산)', qty:1});
+  // ── 보톡스 국산 (국산/국 표기 모두) ──
+  const btxDomParts = raw.match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑)\s*(?:보톡스\s*)?b(?:tx)?\s*\(?(?:국산|국t?산?)\)?/gi)||[];
+  // 이마,미간,눈가 보톡스(국) 묶음 패턴
+  const btxDomCombo = raw.match(/(?:이마|미간|눈가|턱|입꼬리)[,+·\s]+(?:이마|미간|눈가|턱|입꼬리)[^)]*\(?국산?\)?/gi)||[];
+  const btxDomQty = btxDomParts.length > 0 ? btxDomParts.length
+    : btxDomCombo.length > 0 ? (btxDomCombo[0].match(/(?:이마|미간|눈가|턱|입꼬리)/gi)||[]).length
+    : 0;
+  if(btxDomQty>0) results.push({item:'보톡스(국산)', qty: btxDomQty});
+  else if(/보톡스.*?국산|국산.*?보톡스|\(국\)|\(국산\)/i.test(raw)) results.push({item:'보톡스(국산)', qty:1});
 
-  // ── 보톡스 수입/제오민 ──
-  const btxImpParts = raw.match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑)\s*b(?:tx)?\s*\(?제오민\)?/gi)||[];
-  if(btxImpParts.length>0) results.push({item:'보톡스(수입)', qty: btxImpParts.length});
-  else if(/제오민|보톡스.*?수입/i.test(raw)) results.push({item:'보톡스(수입)', qty:1});
+  // ── 보톡스 수입/제오민 (입꼬리제오민, 사각턱제오민 등 모두 포함) ──
+  const btxImpParts = raw.match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑)\s*(?:보톡스\s*)?b(?:tx)?\s*\(?제오민\)?/gi)||[];
+  const btxImpCombo = raw.match(/(?:이마|미간|눈가|턱|입꼬리)[,+·\s]+(?:이마|미간|눈가|턱|입꼬리)[^)]*\(?제오민\)?/gi)||[];
+  const btxImpQty = btxImpParts.length > 0 ? btxImpParts.length
+    : btxImpCombo.length > 0 ? (btxImpCombo[0].match(/(?:이마|미간|눈가|턱|입꼬리)/gi)||[]).length
+    : 0;
+  if(btxImpQty>0) results.push({item:'보톡스(수입)', qty: btxImpQty});
+  else if(/\(제오민\)|제오민|보톡스.*?수입/i.test(raw)) results.push({item:'보톡스(수입)', qty:1});
 
   // ── 줄기세포 ──
   if(/줄기세포\s*240/i.test(raw)) results.push({item:'줄기세포240cc', qty:1});
@@ -696,7 +749,8 @@ function localParse(raw){
   else if(/리투핏주사/i.test(raw)) results.push({item:'리투핏주사', qty:1});
   if(/vip/i.test(raw) && !/vip재료/i.test(raw)) results.push({item:'VIP회원권', qty:1});
   if(/상담비|상담만/i.test(raw)) results.push({item:'상담만', qty:1});
-  if(/예약금/i.test(raw) && !/예약금제외|예약금없/i.test(raw)) results.push({item:'예약금', qty:1});
+  // 예약금: "예약금=XX" 처럼 실제 결제일 때만, "예약금제외/예약금없/예약금3.3제외" 등은 무시
+  if(/예약금/i.test(raw) && !/예약금\s*제외|예약금\s*없|예약금\s*[\d.]+\s*제외/i.test(raw)) results.push({item:'예약금', qty:1});
   const co2M = raw.match(/co2\s*(\d+)\s*(?:ea|개)/i);
   if(co2M) results.push({item:'CO2', qty: parseInt(co2M[1])});
   else if(/co2/i.test(raw)) results.push({item:'CO2', qty:1});
@@ -861,6 +915,19 @@ function normalizePayMethod(s){
   if(/알리/.test(s)) return '알리페이';
   if(/자진/.test(s)) return '현금(자진)';
   return null;
+}
+
+/* ── 분석 초기화 ── */
+function clearParseResult(){
+  window._parsedTreatments = [];
+  document.getElementById('parse-result').style.display = 'none';
+  document.getElementById('treatment-count').textContent = '0';
+  document.getElementById('parse-raw-text').style.display = 'none';
+  const pm = document.getElementById('payment-method-display');
+  if(pm) pm.style.display = 'none';
+  document.getElementById('f-amount').value = '';
+  document.getElementById('amount-display').style.display = 'none';
+  document.getElementById('parse-btn').disabled = false;
 }
 
 /* ── 수동 시술 추가 (자동완성) ── */
@@ -1042,65 +1109,134 @@ function resetForm(){
   initDate();
 }
 
-/* ── 히스토리 렌더 ── */
-function renderHistory(items){
-  const el = document.getElementById('history-list');
-  if(!items.length){
-    el.innerHTML='<div style="color:var(--muted);font-size:13px">아직 오늘 입력한 내역이 없어요</div>';
-    return;
-  }
-  el.innerHTML = items.map(it=>{
-    const pm = it.paymentMethods;
-    let pmHtml = '';
-    if(pm && pm.methods && pm.methods.length>0){
-      if(pm.splitDetails && pm.splitDetails.length>0){
-        pmHtml = pm.splitDetails.map(d=>`<span style="font-size:11px;color:var(--sub)">${d.method} ${d.amt}만</span>`).join(' + ');
-      } else {
-        pmHtml = pm.methods.join(' / ');
-      }
-      pmHtml = `<span style="font-size:11px;color:var(--muted)"> · ${pmHtml}</span>`;
-    }
-    return `
-    <div class="history-item">
-      <div class="history-meta">
-        <div class="history-date">${it.date} · ${it.cat1||''}</div>
-        ${it.type==='vip'?'<span class="history-vip-tag">VIP재료</span>':''}
-        <div class="history-name">${it.name||''} (${it.chart||''})</div>
-        <div class="history-amount">${it.amount?it.amount+'만':'0만'}${pmHtml}</div>
-      </div>
-      <div class="history-detail">${it.paymentText||''}</div>
-    </div>`;
-  }).join('');
-
-  // 다운로드 버튼
-  let dlBtn = document.getElementById('dl-btn');
-  if(!dlBtn){
-    dlBtn = document.createElement('button');
-    dlBtn.id='dl-btn';
-    dlBtn.style.cssText='margin-top:10px;padding:10px 16px;background:var(--border);color:var(--sub);border:none;border-radius:10px;font-size:12px;cursor:pointer;width:100%';
-    dlBtn.textContent='⬇ 오늘 입력 내역 CSV 다운로드';
-    dlBtn.onclick = () => downloadCSV(items);
-    document.getElementById('history-section').appendChild(dlBtn);
-  }
+/* ── 기록 있는 날짜 최근 3일 필터 ── */
+function filterRecent3Days(items){
+  // 기록이 존재하는 날짜만 추출 (내림차순)
+  const dates = [...new Set(items.map(it=>it.date).filter(Boolean))].sort((a,b)=>b.localeCompare(a));
+  const recent3 = dates.slice(0, 3); // 기록 있는 날 기준 최근 3일
+  return items.filter(it => recent3.includes(it.date));
 }
 
-/* ── CSV 다운로드 (오프라인 백업) ── */
-function downloadCSV(items){
-  const headers = ['날짜','차트번호','이름','진료의사','분류1','분류2','상담자','결제내역','결제금액','결제방식','시술항목','저장시각'];
+/* ── 날짜 필터 ── */
+function filterByDate(){
+  const d = document.getElementById('filter-date').value;
+  if(!window._allItems) return;
+  if(!d){
+    renderHistory(filterRecent3Days(window._allItems));
+  } else {
+    renderHistory(window._allItems.filter(it => it.date === d));
+  }
+}
+function clearDateFilter(){
+  document.getElementById('filter-date').value = '';
+  if(window._allItems) renderHistory(filterRecent3Days(window._allItems));
+}
+
+/* ── 수납 리스트 테이블 렌더 ── */
+function renderHistory(items){
+  const tbody = document.getElementById('consult-tbody');
+  const summary = document.getElementById('list-summary');
+  if(!tbody) return;
+
+  if(!items.length){
+    tbody.innerHTML='<tr><td colspan="9" style="padding:24px;text-align:center;color:var(--muted)">저장된 내역이 없어요</td></tr>';
+    if(summary) summary.innerHTML='';
+    return;
+  }
+
+  // 날짜 그룹별로 묶기
+  const grouped = {};
+  items.forEach(it=>{
+    const d = it.date||'날짜없음';
+    if(!grouped[d]) grouped[d]=[];
+    grouped[d].push(it);
+  });
+
+  let html = '';
+  let totalAmt = 0;
+  let totalCount = 0;
+
+  Object.keys(grouped).sort((a,b)=>b.localeCompare(a)).forEach(date=>{
+    // 날짜 헤더 행
+    html += `<tr>
+      <td colspan="9" style="padding:8px 10px;background:#0a0f1a;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border)">
+        📅 ${date} <span style="color:var(--muted);font-weight:400">(${grouped[date].length}건)</span>
+      </td>
+    </tr>`;
+
+    grouped[date].forEach(it=>{
+      totalCount++;
+      const amt = parseFloat(it.amount)||0;
+      totalAmt += amt;
+      const isVip = it.type==='vip';
+      const pm = it.paymentMethods;
+      let payStr = '';
+      if(pm?.splitDetails?.length>0){
+        payStr = pm.splitDetails.map(d=>`${d.method.replace('(자진)','').replace('알리페이','알리')} ${d.amt}`).join('+');
+      } else if(pm?.methods?.length>0){
+        payStr = pm.methods.map(m=>m.replace('(자진)','').replace('알리페이','알리')).join('/');
+      }
+
+      html += `<tr style="border-bottom:1px solid #1a2236;${isVip?'opacity:.75':''}">
+        <td style="padding:9px 8px;color:var(--muted);white-space:nowrap">${it.date||''}</td>
+        <td style="padding:9px 8px;white-space:nowrap">${it.chart||''}</td>
+        <td style="padding:9px 8px;font-weight:600;white-space:nowrap">
+          ${it.name||''}
+          ${isVip?'<span style="font-size:9px;background:#2a1f00;color:var(--yellow);border-radius:10px;padding:1px 5px;margin-left:4px">VIP재료</span>':''}
+        </td>
+        <td style="padding:9px 8px;white-space:nowrap">${it.cat1||''}</td>
+        <td style="padding:9px 8px;color:var(--sub);white-space:nowrap">${it.cat2||''}</td>
+        <td style="padding:9px 8px;color:var(--sub);max-width:300px;word-break:break-all;line-height:1.5">${it.paymentText||''}</td>
+        <td style="padding:9px 8px;text-align:right;color:${isVip?'var(--muted)':'var(--accent)'};font-weight:700;white-space:nowrap">${isVip?'-':amt.toLocaleString()}</td>
+        <td style="padding:9px 8px;color:var(--sub);font-size:11px;white-space:nowrap">${payStr}</td>
+        <td style="padding:9px 8px;color:var(--muted);white-space:nowrap">${it.staff||''}</td>
+      </tr>`;
+    });
+  });
+
+  tbody.innerHTML = html;
+
+  // 요약
+  if(summary){
+    const dates = [...new Set(items.map(it=>it.date).filter(Boolean))].sort();
+    const rangeStr = dates.length > 1
+      ? `${dates[0]} ~ ${dates[dates.length-1]}`
+      : dates[0] || '';
+    const filterDate = document.getElementById('filter-date').value;
+    const rangeLabel = filterDate
+      ? `📅 ${filterDate}`
+      : `최근 기록 있는 3일 (${rangeStr})`;
+    summary.innerHTML = `
+      <span style="color:var(--muted)">${rangeLabel}</span>
+      <span>총 <strong style="color:var(--text)">${totalCount}건</strong></span>
+      <span>합계 <strong style="color:var(--accent)">${totalAmt.toLocaleString()}만원</strong></span>
+    `;
+  }
+
+  // 다운로드 버튼 업데이트
+  window._currentItems = items;
+}
+
+/* ── CSV 다운로드 ── */
+function downloadCurrentCSV(){
+  const items = window._currentItems || window._allItems || [];
+  if(!items.length){ showToast('다운로드할 데이터가 없어요','error'); return; }
+  const headers = ['날짜','차트번호','이름','분류1','분류2','결제내역','결제금액','결제방식','상담자','진료의사','저장시각'];
   const rows = items.map(it=>{
     const pm = it.paymentMethods?.methods?.join('/') || '';
-    const treats = (it.treatments||[]).map(t=>`${t.item}×${t.qty}`).join('|');
     return [
-      it.date, it.chart, it.name, it.doctor||'', it.cat1||'', it.cat2||'',
-      it.staff||'', `"${(it.paymentText||'').replace(/"/g,'""')}"`,
-      it.amount||0, pm, treats, it.createdAt||''
+      it.date, it.chart, it.name, it.cat1||'', it.cat2||'',
+      `"${(it.paymentText||'').replace(/"/g,'""')}"`,
+      it.amount||0, pm, it.staff||'', it.doctor||'', it.createdAt||''
     ].join(',');
   });
   const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href=url; a.download=`상담내역_${new Date().toISOString().slice(0,10)}.csv`;
+  a.href=url;
+  const dateStr = document.getElementById('filter-date').value || new Date().toISOString().slice(0,10);
+  a.download=`수납리스트_${dateStr}.csv`;
   a.click(); URL.revokeObjectURL(url);
   showToast('CSV 다운로드 완료','success');
 }
