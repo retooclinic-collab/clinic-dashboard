@@ -107,6 +107,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
   <div class="sb-hd"><div class="sb-logo">CLINIC MGMT</div><div class="sb-title">경영분석<br>대시보드</div><div id="fb-status" style="font-size:10px;margin-top:6px;color:#334155;">☁ 연결 중...</div></div>
   <div class="sb-nav">
     <button class="sbn on" id="nav-an" onclick="goTab('an')">📊 월별 분석</button>
+    <button class="sbn" id="nav-trend" onclick="goTab('trend')">📈 종합 분석</button>
     <button class="sbn" id="nav-cfg" onclick="goTab('cfg')">⚙️ 설정</button>
   </div>
   <div class="sb-arc">
@@ -174,10 +175,23 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
     </div>
 
     <div id="results"></div>
+    <div id="cross-section"></div>
     <div id="bank-section"></div>
     <div id="card-section"></div>
     <div id="fixed-display"></div>
     <div id="summary-section"></div>
+  </div>
+
+  <!-- 종합 분석 탭 -->
+  <div id="tab-trend" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;">
+      <div>
+        <h2 style="font-size:20px;font-weight:800;margin-bottom:3px;">종합 분석</h2>
+        <p style="color:#64748b;font-size:13px;">저장된 월별 데이터를 기반으로 직원별 추이를 분석해요</p>
+      </div>
+      <button class="btn btn-o btn-sm" onclick="renderTrendTab()">🔄 새로고침</button>
+    </div>
+    <div id="trend-content"></div>
   </div>
 
   <!-- 설정 탭 -->
@@ -547,10 +561,10 @@ function onFile(file,type){
 function afterRead(rows,fn,type){
   if(!rows||!rows.length){setErr(type,'데이터 없음');return}
   setErr(type,'');
-  if(type==='c'){G.cRows=rows;G.cFile=fn;openColMdl(rows,fn)}
-  if(type==='a'){G.aRows=rows;G.aFile=fn;markDone('a',fn);computeA();render();renderSummary()}
-  if(type==='b'){G.bRows=rows;G.bFile=fn;markDone('b',fn);computeB();render();renderSummary()}
-  if(type==='k'){G.bankFile=fn;markDone('k',fn);processBankFile(rows);renderBankSection();renderSummary()}
+  if(type==='c'){G.cRows=rows;G.cFile=fn;openColMdl(rows,fn);var b=document.getElementById('arc-banner');if(b)b.remove();}
+  if(type==='a'){G.aRows=rows;G.aFile=fn;markDone('a',fn);computeA();render();renderSummary();var b=document.getElementById('arc-banner');if(b)b.remove();}
+  if(type==='b'){G.bRows=rows;G.bFile=fn;markDone('b',fn);computeB();render();renderSummary();var b=document.getElementById('arc-banner');if(b)b.remove();}
+  if(type==='k'){G.bankFile=fn;markDone('k',fn);processBankFile(rows);renderBankSection();renderSummary();}
 }
 
 /* ═══ COL PICKER ═══ */
@@ -785,10 +799,158 @@ function render(){
   if(cd){
     drawBar('ch-staff',cd.byStaff.map(function(s){return s.name}),cd.byStaff.map(function(s){return s.total}),cd.byStaff.map(function(_,i){return COLS[i%COLS.length]}));
     drawBar('ch-chan',cd.byChannel.map(function(c){return c.name}),cd.byChannel.map(function(c){return c.avg}),cd.byChannel.map(function(_,i){return COLS[(i+3)%COLS.length]}));
+    renderCrossTable();
   }
 }
 
-function K(l,v,c){return'<div class="kpi" style="border-top-color:'+c+'"><div class="kpi-l">'+l+'</div><div class="kpi-v">'+v+'</div></div>'}
+/* ═══ 내원경로 × 상담자 교차표 ═══ */
+function renderCrossTable(){
+  var el=document.getElementById('cross-section');
+  if(!el||!G.cRows||!G.cCols)return;
+  var cols=G.cCols;
+  var mult=cols.manwon?10000:1;
+  var map={}; // map[staff][channel] = {tot, cnt}
+  var staffSet={}, chanSet={};
+
+  G.cRows.forEach(function(r){
+    var n=parseFloat(String(r[cols.amount]||'').replace(/[^0-9.\-]/g,''));
+    if(isNaN(n))return;
+    var amt=n*mult;
+    var s=String(r[cols.staff]||'미지정').trim()||'미지정';
+    var c=String(r[cols.channel]||'미지정').trim()||'미지정';
+    staffSet[s]=1; chanSet[c]=1;
+    if(!map[s])map[s]={};
+    if(!map[s][c])map[s][c]={tot:0,cnt:0};
+    map[s][c].tot+=amt; map[s][c].cnt++;
+  });
+
+  var staffs=Object.keys(staffSet).sort();
+  var chans=Object.keys(chanSet).sort();
+  if(!staffs.length||!chans.length){el.innerHTML='';return;}
+
+  var h='<div class="sdiv">④ 상담자 × 내원경로 교차 분석 <span style="font-size:10px;color:#cbd5e1;">(만원 단위)</span></div>';
+  h+='<div class="card" style="overflow-x:auto;">';
+  h+='<div style="font-size:14px;font-weight:700;margin-bottom:4px;">상담자별 내원경로 객단가 · 명수</div>';
+  h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">각 셀: 객단가(만원) / 명수</div>';
+  h+='<table style="font-size:12px;min-width:600px;">';
+  h+='<thead><tr><th style="white-space:nowrap;">상담자</th>';
+  chans.forEach(function(c){h+='<th class="r" style="white-space:nowrap;">'+esc(c)+'</th>';});
+  h+='<th class="r" style="color:#3b82f6;">전체</th></tr></thead><tbody>';
+
+  staffs.forEach(function(s){
+    var totalTot=0,totalCnt=0;
+    h+='<tr><td><b>'+esc(s)+'</b></td>';
+    chans.forEach(function(c){
+      var d=map[s]&&map[s][c];
+      if(d&&d.cnt){
+        totalTot+=d.tot; totalCnt+=d.cnt;
+        var avg=(d.tot/d.cnt/10000).toFixed(1);
+        h+='<td class="r"><span style="font-weight:600;">'+avg+'만</span><br><span style="color:#94a3b8;font-size:11px;">'+d.cnt+'명</span></td>';
+      }else{
+        h+='<td class="r" style="color:#e2e8f0;">-</td>';
+      }
+    });
+    var tAvg=totalCnt?(totalTot/totalCnt/10000).toFixed(1):0;
+    h+='<td class="r" style="color:#3b82f6;"><span style="font-weight:700;">'+tAvg+'만</span><br><span style="font-size:11px;">'+totalCnt+'명</span></td>';
+    h+='</tr>';
+  });
+
+  // 경로별 합계 행
+  h+='<tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">';
+  h+='<td class="bold" style="font-size:11px;">합계</td>';
+  var grandTot=0,grandCnt=0;
+  chans.forEach(function(c){
+    var tot=0,cnt=0;
+    staffs.forEach(function(s){var d=map[s]&&map[s][c];if(d){tot+=d.tot;cnt+=d.cnt;}});
+    grandTot+=tot;grandCnt+=cnt;
+    var avg=cnt?(tot/cnt/10000).toFixed(1):'-';
+    h+='<td class="r" style="font-size:11px;"><b>'+(cnt?avg+'만':'-')+'</b><br><span style="color:#94a3b8;">'+cnt+'명</span></td>';
+  });
+  var gAvg=grandCnt?(grandTot/grandCnt/10000).toFixed(1):0;
+  h+='<td class="r" style="color:#3b82f6;"><b>'+gAvg+'만</b><br><span style="font-size:11px;">'+grandCnt+'명</span></td>';
+  h+='</tr>';
+  h+='</tbody></table></div>';
+  el.innerHTML=h;
+}
+
+/* ═══ 종합 분석 탭 ═══ */
+function renderTrendTab(){
+  var el=document.getElementById('trend-content');
+  if(!el)return;
+  var arc=G.arc;
+  if(!arc||!arc.length){
+    el.innerHTML='<div class="card" style="text-align:center;padding:40px;color:#94a3b8;"><div style="font-size:28px;margin-bottom:10px;">📊</div><div style="font-size:15px;font-weight:700;">저장된 월 데이터가 없어요</div><div style="font-size:13px;margin-top:6px;">월별 분석 후 💾 저장하면 여기에 추이가 쌓여요</div></div>';
+    return;
+  }
+
+  // 월별 데이터 정렬 (오래된 순)
+  var months=arc.slice().sort(function(a,b){return (a.savedAt||'').localeCompare(b.savedAt||'')});
+
+  // 전체 직원 목록 수집
+  var staffSet={};
+  months.forEach(function(m){
+    if(m.cData&&m.cData.byStaff)m.cData.byStaff.forEach(function(s){staffSet[s.name]=1;});
+  });
+  var staffs=Object.keys(staffSet).sort();
+
+  var h='';
+
+  // ── 월별 수납 총액 추이 ──
+  h+='<div class="sdiv">월별 총 수납 추이</div>';
+  h+='<div class="card" style="overflow-x:auto;">';
+  h+='<table style="font-size:13px;"><thead><tr><th>월</th><th class="r">총 수납</th><th class="r">재료비</th><th class="r">수수료</th><th class="r">추정 순매출</th><th class="r">내원 건수</th></tr></thead><tbody>';
+  months.forEach(function(m){
+    var cd=m.cData,ad=m.aData,bd=m.bData;
+    var rev=cd?cd.total:0, mat=ad?ad.totalCost:0, comm=bd?bd.totalCommission:0;
+    h+='<tr>';
+    h+='<td><b>'+esc(m.label)+'</b></td>';
+    h+='<td class="r bold" style="color:#3b82f6;">'+won(rev)+'</td>';
+    h+='<td class="r" style="color:#8b5cf6;">'+(mat?won(mat):'-')+'</td>';
+    h+='<td class="r" style="color:#f59e0b;">'+(comm?won(comm):'-')+'</td>';
+    h+='<td class="r bold" style="color:#10b981;">'+won(rev-mat-comm)+'</td>';
+    h+='<td class="r muted">'+(cd?nf(cd.count)+'건':'-')+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+
+  // ── 직원별 월별 추이 ──
+  if(staffs.length){
+    h+='<div class="sdiv">직원별 월별 추이 <span style="font-size:10px;color:#cbd5e1;">(총수납 만원 / 명수 / 객단가 만원)</span></div>';
+    h+='<div class="card" style="overflow-x:auto;">';
+    h+='<table style="font-size:12px;min-width:700px;"><thead><tr>';
+    h+='<th>월</th><th class="r">전체수납</th>';
+    staffs.forEach(function(s){
+      h+='<th class="r" colspan="3" style="border-left:2px solid #f1f5f9;">'+esc(s)+'</th>';
+    });
+    h+='</tr><tr><th></th><th></th>';
+    staffs.forEach(function(){
+      h+='<th class="r" style="font-size:10px;color:#94a3b8;border-left:2px solid #f1f5f9;">수납(만)</th>';
+      h+='<th class="r" style="font-size:10px;color:#94a3b8;">명수</th>';
+      h+='<th class="r" style="font-size:10px;color:#94a3b8;">객단(만)</th>';
+    });
+    h+='</tr></thead><tbody>';
+
+    months.forEach(function(m){
+      var cd=m.cData;
+      h+='<tr><td><b>'+esc(m.label)+'</b></td>';
+      h+='<td class="r bold">'+(cd?Math.round(cd.total/10000).toLocaleString('ko-KR')+'만':'-')+'</td>';
+      staffs.forEach(function(s){
+        var sd=cd&&cd.byStaff?cd.byStaff.find(function(x){return x.name===s;}):null;
+        if(sd){
+          h+='<td class="r" style="border-left:2px solid #f1f5f9;">'+Math.round(sd.total/10000).toLocaleString('ko-KR')+'</td>';
+          h+='<td class="r muted">'+sd.count+'</td>';
+          h+='<td class="r green">'+(sd.count?Math.round(sd.avg/10000).toLocaleString('ko-KR'):'-')+'</td>';
+        }else{
+          h+='<td class="r muted" style="border-left:2px solid #f1f5f9;">-</td><td class="r muted">-</td><td class="r muted">-</td>';
+        }
+      });
+      h+='</tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+
+  el.innerHTML=h;
+}
 
 function drawBar(id,labels,values,colors){
   var ctx=document.getElementById(id);if(!ctx)return;
@@ -929,14 +1091,59 @@ function renderArcList(){
 }
 function viewArc(i){
   var a=G.arc[i]; if(!a)return;
-  G.cData=a.cData||null;G.aData=a.aData||null;G.bData=a.bData||null;
-  G.cFile=a.label;G.aFile=a.label;G.bFile=a.label;
+  G.cData=a.cData||null; G.aData=a.aData||null; G.bData=a.bData||null;
+  G.cFile=a.cFile||a.label; G.aFile=a.aFile||a.label; G.bFile=a.bFile||a.label;
   G.cardRows=a.cardRows||[{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''}];
   G.bankData=a.bankData||null;
   G.bankManualCards=a.bankManualCards||[];
+  // 원본 rows 복원
+  G.cRows=a.cRows||null; G.aRows=a.aRows||null; G.bRows=a.bRows||null;
+  G.cCols=a.cCols||null;
   document.querySelectorAll('.sbm').forEach(function(el){el.classList.remove('on')});
   var el=document.getElementById('sbm-'+i);if(el)el.classList.add('on');
-  goTab('an');render();renderBankSection();renderCardSection();renderFixedDisplay();renderSummary();
+  goTab('an');render();renderCrossTable();renderBankSection();renderCardSection();renderFixedDisplay();renderSummary();
+  // 아카이브 뷰 배너 표시
+  showArcBanner(a.label);
+}
+
+function showArcBanner(label){
+  var existing=document.getElementById('arc-banner');
+  if(existing)existing.remove();
+  var banner=document.createElement('div');
+  banner.id='arc-banner';
+  banner.style.cssText='background:#1e3a5f;color:#93c5fd;padding:10px 18px;font-size:13px;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;border-radius:10px;';
+  banner.innerHTML='<span>📁 저장된 데이터 보기: <b>'+esc(label)+'</b></span>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;font-size:11px;" onclick="recomputeArc()">🔄 현재 설정으로 재계산</button>'
+    +'<button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;font-size:11px;" onclick="downloadArcCSV()">⬇ 수납기록 CSV</button>'
+    +'</div>';
+  document.getElementById('results').before(banner);
+}
+
+function recomputeArc(){
+  if(!G.aRows&&!G.bRows&&!G.cRows){alert('이 저장 데이터에는 원본 파일이 없어요.\n새로 저장된 데이터부터 재계산이 가능해요.');return;}
+  if(G.aRows){computeA();}
+  if(G.bRows){computeB();}
+  if(G.cRows&&G.cCols){computeC();}
+  render();renderBankSection();renderCardSection();renderFixedDisplay();renderSummary();
+  var btn=document.querySelector('#arc-banner button');
+  if(btn){var orig=btn.textContent;btn.textContent='✓ 재계산 완료';setTimeout(function(){btn.textContent=orig;},2000);}
+}
+
+function downloadArcCSV(){
+  if(!G.cRows){alert('이 저장 데이터에는 수납기록 원본이 없어요.');return;}
+  var heads=Object.keys(G.cRows[0]||{});
+  var csv=[heads.join(',')].concat(G.cRows.map(function(r){
+    return heads.map(function(h){
+      var v=String(r[h]||'');
+      return v.includes(',')||v.includes('"')?'"'+v.replace(/"/g,'""')+'"':v;
+    }).join(',');
+  })).join('\n');
+  var blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=(G.cFile||'수납기록')+'.csv';
+  a.click();
 }
 function delArc(i){
   var a=G.arc[i]; if(!a)return;
@@ -960,7 +1167,11 @@ async function doSave(){
   var entry={
     label:lbl, savedAt:new Date().toISOString(),
     cData:G.cData, aData:G.aData, bData:G.bData,
-    cardRows:G.cardRows, bankData:G.bankData, bankManualCards:G.bankManualCards
+    cardRows:G.cardRows, bankData:G.bankData, bankManualCards:G.bankManualCards,
+    // 원본 rows 저장 (재계산, CSV 다운로드용)
+    cRows:G.cRows||null, aRows:G.aRows||null, bRows:G.bRows||null,
+    cFile:G.cFile, aFile:G.aFile, bFile:G.bFile,
+    cCols:G.cCols||null
   };
   var btn=document.querySelector('#save-mdl .btn-g');
   if(btn){btn.textContent='저장 중...';btn.disabled=true;}
@@ -979,9 +1190,12 @@ document.getElementById('col-mdl').addEventListener('click',function(e){if(e.tar
 /* ═══ NAV ═══ */
 function goTab(t){
   document.getElementById('tab-an').style.display=t==='an'?'block':'none';
+  document.getElementById('tab-trend').style.display=t==='trend'?'block':'none';
   document.getElementById('tab-cfg').style.display=t==='cfg'?'block':'none';
   document.getElementById('nav-an').classList.toggle('on',t==='an');
+  document.getElementById('nav-trend').classList.toggle('on',t==='trend');
   document.getElementById('nav-cfg').classList.toggle('on',t==='cfg');
+  if(t==='trend')renderTrendTab();
 }
 function resetAll(){
   Object.assign(G,{cRows:null,aRows:null,bRows:null,cData:null,aData:null,bData:null,cFile:'',aFile:'',bFile:'',cCols:null,
@@ -996,6 +1210,7 @@ function resetAll(){
     setErr(t,'');
   });
   document.querySelectorAll('.sbm').forEach(function(el){el.classList.remove('on')});
+  var existing=document.getElementById('arc-banner');if(existing)existing.remove();
   render();renderBankSection();renderCardSection();renderFixedDisplay();renderSummary();goTab('an');
 }
 
@@ -1131,6 +1346,13 @@ function applyFixed(){
 }
 
 /* ═══ BANK TRANSACTION FILE ═══ */
+function applyBankToCard(){
+  if(!G.bankData||!G.bankData.cardRows.length){alert('카드 출금 데이터가 없어요');return;}
+  saveBankManualFromDOM();
+  G.bankManualCards=G.bankData.cardRows.map(function(r){return{name:r.name,date:r.date,amount:String(r.amount)};});
+  renderBankSection();renderSummary();
+}
+
 function saveBankManualFromDOM(){
   G.bankManualCards=[];
   document.querySelectorAll('.mc-row').forEach(function(row){
