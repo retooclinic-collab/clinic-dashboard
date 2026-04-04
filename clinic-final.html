@@ -952,6 +952,8 @@ function renderTrendTab(){
   el.innerHTML=h;
 }
 
+function K(l,v,c){return'<div class="kpi" style="border-top-color:'+c+'"><div class="kpi-l">'+l+'</div><div class="kpi-v">'+v+'</div></div>'}
+
 function drawBar(id,labels,values,colors){
   var ctx=document.getElementById(id);if(!ctx)return;
   if(G.charts[id])G.charts[id].destroy();
