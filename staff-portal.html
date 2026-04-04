@@ -308,6 +308,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
             <option value="윤규성">윤규성</option>
             <option value="송승아">송승아</option>
             <option value="장명선">장명선</option>
+            <option value="기록없음">기록없음</option>
             <option value="직접입력">직접 입력</option>
           </select>
           <input class="form-input" id="f-doctor-custom" type="text" placeholder="의사 이름 입력" style="display:none;margin-top:6px">
@@ -411,6 +412,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
               <th style="padding:10px 8px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap">금액(만)</th>
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">결제</th>
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">상담자</th>
+              <th style="padding:10px 8px;border-bottom:1px solid var(--border);width:40px"></th>
             </tr>
           </thead>
           <tbody id="consult-tbody">
@@ -438,7 +440,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
 ══════════════════════════════════════════════ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, query, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, updateDoc, query, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
 const cfg = {
@@ -500,10 +502,50 @@ window.fbSaveConsultation = async (data) => {
     staffUid: window._fbUser?.uid || 'unknown',
     staffEmail: window._fbUser?.email || '',
     createdAt: new Date().toISOString(),
-    serverTs: serverTimestamp()  // 날짜기반 보안규칙용
+    serverTs: serverTimestamp()
   };
   await setDoc(doc(db, 'consultations', id), docData);
   return id;
+};
+
+window.fbUpdateConsultation = async (id, data) => {
+  // 수정 전 스냅샷 감사 로그
+  const before = (window._allItems||[]).find(it=>it.id===id);
+  await updateDoc(doc(db, 'consultations', id), {
+    ...data,
+    updatedAt: new Date().toISOString(),
+    updatedBy: window._fbUser?.email || ''
+  });
+  // 감사 로그 기록
+  await setDoc(doc(db, 'audit_log', Date.now().toString()), {
+    action: 'update',
+    targetId: id,
+    before: before || null,
+    after: data,
+    by: window._fbUser?.email || '',
+    byUid: window._fbUser?.uid || '',
+    at: new Date().toISOString(),
+    serverTs: serverTimestamp()
+  });
+};
+
+window.fbSoftDelete = async (id) => {
+  const item = (window._allItems||[]).find(it=>it.id===id);
+  await updateDoc(doc(db, 'consultations', id), {
+    deleted: true,
+    deletedAt: new Date().toISOString(),
+    deletedBy: window._fbUser?.email || ''
+  });
+  // 감사 로그
+  await setDoc(doc(db, 'audit_log', Date.now().toString()), {
+    action: 'delete',
+    targetId: id,
+    before: item || null,
+    by: window._fbUser?.email || '',
+    byUid: window._fbUser?.uid || '',
+    at: new Date().toISOString(),
+    serverTs: serverTimestamp()
+  });
 };
 
 window.startListenHistory = (uid) => {
@@ -757,78 +799,103 @@ function extractTextPrices(raw, treatments){
     'VIP회원권':/vip/i, '상담만':/상담/i,
   };
 
-  const found={};
+  const found={};        // item → price (확실한 가격)
+  const foundParen={};   // item → price (괄호 안 참조가, 잔액으로 처리)
   const segments = splitTopLevel(text);
 
   segments.forEach(seg=>{
-    // 괄호 안 내용도 별도 확인
     const inner = [...seg.matchAll(/\(([^)]+)\)/g)].map(m=>m[1]);
     const outer = seg.replace(/\([^)]*\)/g,' ').trim();
 
     treatments.forEach(t=>{
-      if(found[t.item]!==undefined) return;
       const kw = KEYWORDS[t.item];
       if(!kw) return;
-      if(kw.test(seg)){
-        // 외부에서 먼저 가격 찾기
-        const p = getPrice(outer) ?? getPrice(seg);
+
+      // 외부(top-level)에서 먼저 가격 추출 → 확실한 가격
+      if(found[t.item]===undefined && kw.test(outer)){
+        const p = getPrice(outer);
         if(p!==null) found[t.item]=p;
       }
-      // 괄호 안에서도 확인 (e.g. 리쥬란2cc55(미라젯38.5/양볼) )
-      inner.forEach(inn=>{
-        if(found[t.item]!==undefined) return;
-        if(kw.test(inn)){
-          const p = getPrice(inn);
-          if(p!==null) found[t.item]=p;
-        }
-      });
+
+      // 괄호 안에서 발견 → 잠정 가격 (합계 초과 시 잔액으로 재계산)
+      if(found[t.item]===undefined && foundParen[t.item]===undefined){
+        inner.forEach(inn=>{
+          if(foundParen[t.item]!==undefined) return;
+          if(kw.test(inn)){
+            const p = getPrice(inn);
+            if(p!==null) foundParen[t.item]=p;
+          }
+        });
+      }
     });
   });
 
-  return found;
+  return {found, foundParen};
 }
 
 /* ── 가격 분배 (텍스트 명시가 → 소폭 조정) ── */
 function distributePrices(treatments, total, rawText){
   if(!total || total<=0) return treatments.map(t=>({...t, price:0}));
 
-  // 1단계: 텍스트에서 명시된 가격 추출
-  const textPrices = rawText ? extractTextPrices(rawText, treatments) : {};
+  const {found={}, foundParen={}} = rawText ? extractTextPrices(rawText, treatments) : {found:{}, foundParen:{}};
 
-  // 2단계: 각 항목 초기 가격 설정
+  // 외부 명시가 합계
+  const topLevelSum = treatments.reduce((s,t)=>{
+    return s + (found[t.item]!==undefined ? found[t.item] : 0);
+  }, 0);
+
+  // 괄호 가격 합계
+  const parenSum = treatments.reduce((s,t)=>{
+    return s + (found[t.item]===undefined && foundParen[t.item]!==undefined ? foundParen[t.item] : 0);
+  }, 0);
+
+  const totalExplicit = topLevelSum + parenSum;
+
+  // 괄호 가격이 합계를 초과하게 만드는지 확인
+  const parenOverflows = totalExplicit > total + 0.1;
+
   let priced = treatments.map(t=>{
-    if(textPrices[t.item]!==undefined)
-      return {...t, price: textPrices[t.item], fromText:true};
+    if(found[t.item]!==undefined){
+      return {...t, price: found[t.item], fromText:true};
+    }
+    if(foundParen[t.item]!==undefined && !parenOverflows){
+      // 합계 안 맞지 않으면 괄호 가격도 사용
+      return {...t, price: foundParen[t.item], fromText:true};
+    }
+    // 표준가 추정
     const unit = CHARGE_PRICE[t.item]??0;
     return {...t, price: Math.round(unit*t.qty*10)/10, fromText:false};
   });
 
-  // 3단계: 합계와 결제금액 차이 계산
-  const sum = priced.reduce((s,t)=>s+t.price,0);
-  if(sum<=0 || Math.abs(sum-total)<0.05) return priced;
+  // 합계 맞추기
+  const sum = priced.reduce((s,t)=>s+t.price, 0);
+  if(Math.abs(sum - total) < 0.05) return priced;
 
-  // 4단계: 명시 가격은 그대로, 나머지만 스케일 조정
-  const textSum = priced.filter(t=>t.fromText).reduce((s,t)=>s+t.price,0);
-  const estItems = priced.filter(t=>!t.fromText);
-  const remaining = total - textSum;
-
-  if(estItems.length>0 && remaining>=0){
-    const estSum = estItems.reduce((s,t)=>s+t.price,0);
-    const scale = estSum>0 ? remaining/estSum : 0;
-    priced = priced.map(t=>
-      t.fromText ? t : {...t, price: Math.round(t.price*scale*10)/10}
-    );
+  if(parenOverflows){
+    // 외부 명시가는 그대로, 나머지를 잔액으로 배분
+    const fixedSum = priced.filter(t=>t.fromText).reduce((s,t)=>s+t.price, 0);
+    const remaining = total - fixedSum;
+    const freeItems = priced.filter(t=>!t.fromText);
+    if(freeItems.length > 0){
+      const estSum = freeItems.reduce((s,t)=>s+(CHARGE_PRICE[t.item]??0)*t.qty, 0);
+      priced = priced.map(t=>{
+        if(t.fromText) return t;
+        const est = (CHARGE_PRICE[t.item]??0)*t.qty;
+        const share = estSum>0 ? Math.round(remaining*est/estSum*10)/10 : Math.round(remaining/freeItems.length*10)/10;
+        return {...t, price: share};
+      });
+    }
   } else {
-    // 명시가만 있는데 합계가 안맞으면 비율 조정
-    const scale = total/sum;
+    // 소폭 비율 조정
+    const scale = total / sum;
     priced = priced.map(t=>({...t, price:Math.round(t.price*scale*10)/10}));
   }
 
-  // 5단계: 반올림 오차 마지막 항목에서 조정
-  const newSum = priced.reduce((s,t)=>s+t.price,0);
+  // 반올림 오차 보정
+  const newSum = priced.reduce((s,t)=>s+t.price, 0);
   const diff = Math.round((total-newSum)*10)/10;
   if(Math.abs(diff)>0){
-    const lastIdx = [...priced.keys()].reverse().find(i=>priced[i].price>0)??priced.length-1;
+    const lastIdx = [...priced.keys()].reverse().find(i=>priced[i].price>0) ?? priced.length-1;
     priced[lastIdx]={...priced[lastIdx], price:Math.round((priced[lastIdx].price+diff)*10)/10};
   }
 
@@ -1813,9 +1880,17 @@ function renderHistory(items){
     return;
   }
 
-  // 날짜 그룹별로 묶기
+  // 삭제된 항목 제외
+  const visibleItems = items.filter(it => !it.deleted);
+
+  if(!visibleItems.length){
+    tbody.innerHTML='<tr><td colspan="10" style="padding:24px;text-align:center;color:var(--muted)">저장된 내역이 없어요</td></tr>';
+    if(summary) summary.innerHTML='';
+    return;
+  }
+
   const grouped = {};
-  items.forEach(it=>{
+  visibleItems.forEach(it=>{
     const d = it.date||'날짜없음';
     if(!grouped[d]) grouped[d]=[];
     grouped[d].push(it);
@@ -1859,6 +1934,9 @@ function renderHistory(items){
         <td style="padding:9px 8px;text-align:right;color:${isVip?'var(--muted)':'var(--accent)'};font-weight:700;white-space:nowrap">${isVip?'-':amt.toLocaleString()}</td>
         <td style="padding:9px 8px;color:var(--sub);font-size:11px;white-space:nowrap">${payStr}</td>
         <td style="padding:9px 8px;color:var(--muted);white-space:nowrap">${it.staff||''}</td>
+        <td style="padding:6px 4px;white-space:nowrap">
+          <button onclick="openEditModal('${it.id}')" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer">수정</button>
+        </td>
       </tr>`;
     });
   });
@@ -1910,8 +1988,127 @@ function downloadCurrentCSV(){
   showToast('CSV 다운로드 완료','success');
 }
 
-/* ── 토스트 ── */
-function showToast(msg, type='info'){
+/* ── 수납 기록 수정 ── */
+function openEditModal(id){
+  const item = (window._allItems||[]).find(it=>it.id===id);
+  if(!item){ showToast('기록을 찾을 수 없어요','error'); return; }
+
+  const existing = document.getElementById('edit-modal');
+  if(existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'edit-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
+
+  // cat2 options
+  const cat2opts = (CAT2_MAP[item.cat1]||[]).map(o=>`<option value="${o}" ${item.cat2===o?'selected':''}>${o}</option>`).join('');
+
+  modal.innerHTML = `
+    <div style="background:var(--panel);border-radius:16px;padding:24px;width:100%;max-width:560px;border:1px solid var(--border);max-height:90vh;overflow-y:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="font-size:15px;font-weight:800">📝 기록 수정</div>
+        <button onclick="document.getElementById('edit-modal').remove()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">×</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div>
+          <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">날짜</div>
+          <input id="edit-date" type="date" class="form-input" value="${item.date||''}">
+        </div>
+        <div>
+          <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">차트번호</div>
+          <input id="edit-chart" type="text" class="form-input" value="${item.chart||''}">
+        </div>
+        <div>
+          <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">이름</div>
+          <input id="edit-name" type="text" class="form-input" value="${item.name||''}">
+        </div>
+        <div>
+          <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">진료의사</div>
+          <input id="edit-doctor" type="text" class="form-input" value="${item.doctor||''}">
+        </div>
+        <div>
+          <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류1</div>
+          <select id="edit-cat1" class="form-select">
+            ${['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국원내','일본(통)','외국인'].map(o=>`<option value="${o}" ${item.cat1===o?'selected':''}>${o}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류2</div>
+          <input id="edit-cat2" type="text" class="form-input" value="${item.cat2||''}">
+        </div>
+        <div>
+          <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">결제금액(만)</div>
+          <input id="edit-amount" type="number" step="0.1" class="form-input" value="${item.amount||''}">
+        </div>
+        <div>
+          <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">상담직원</div>
+          <input id="edit-staff" type="text" class="form-input" value="${item.staff||''}">
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">결제내역</div>
+        <textarea id="edit-paytext" class="form-textarea" style="min-height:80px">${item.paymentText||''}</textarea>
+      </div>
+
+      <div style="display:flex;gap:10px">
+        <button onclick="saveEditModal('${id}')"
+          style="flex:1;padding:13px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">
+          ✅ 수정 저장
+        </button>
+        <button onclick="confirmDeleteRecord('${id}')"
+          style="padding:13px 16px;background:#2a0a0a;color:var(--red);border:1px solid var(--red);border-radius:12px;font-size:13px;cursor:pointer">
+          🗑 삭제
+        </button>
+        <button onclick="document.getElementById('edit-modal').remove()"
+          style="padding:13px 18px;background:var(--border);color:var(--muted);border:none;border-radius:12px;font-size:13px;cursor:pointer">
+          취소
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function confirmDeleteRecord(id){
+  const item = (window._allItems||[]).find(it=>it.id===id);
+  const label = item ? `${item.date} ${item.name} ${item.amount}만원` : id;
+  if(!confirm(`아래 기록을 삭제할까요?\n\n${label}\n\n삭제 후에도 관리자는 복원할 수 있어요.`)) return;
+  try {
+    await window.fbSoftDelete(id);
+    document.getElementById('edit-modal')?.remove();
+    showToast('삭제됐어요 (감사 로그 기록됨)','success');
+  } catch(e) {
+    showToast('삭제 실패: '+e.message,'error');
+  }
+}
+
+async function saveEditModal(id){
+  if(!window.fbUpdateConsultation){ showToast('Firebase 연결 오류','error'); return; }
+
+  const data = {
+    date:        document.getElementById('edit-date').value,
+    chart:       document.getElementById('edit-chart').value.trim(),
+    name:        document.getElementById('edit-name').value.trim(),
+    doctor:      document.getElementById('edit-doctor').value.trim(),
+    cat1:        document.getElementById('edit-cat1').value,
+    cat2:        document.getElementById('edit-cat2').value.trim(),
+    amount:      parseFloat(document.getElementById('edit-amount').value)||0,
+    staff:       document.getElementById('edit-staff').value.trim(),
+    paymentText: document.getElementById('edit-paytext').value.trim(),
+  };
+
+  try {
+    await window.fbUpdateConsultation(id, data);
+    document.getElementById('edit-modal').remove();
+    showToast('수정 완료!','success');
+  } catch(e) {
+    showToast('수정 실패: '+e.message,'error');
+  }
+}
+
+
   const t=document.getElementById('toast');
   t.textContent=msg;
   t.className='toast '+type+' show';
