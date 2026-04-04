@@ -1741,18 +1741,70 @@ function showPaymentMethod(payInfo){
   }
   if(!payInfo || payInfo.methods.length === 0){ el.style.display='none'; return; }
   el.style.display='block';
-  let html = '<div style="color:var(--muted);font-size:11px;margin-bottom:6px;font-weight:700">💳 결제방식</div>';
-  if(payInfo.splitDetails.length > 0){
-    html += payInfo.splitDetails.map(d=>
-      `<span style="display:inline-block;margin:3px;padding:4px 10px;background:var(--panel);border-radius:20px;border:1px solid var(--border)">${d.method} <strong style="color:var(--accent)">${d.amt}만</strong></span>`
-    ).join('');
+
+  const PAY_OPTIONS = ['카드','현금(자진)','이체','이체(현영)','위챗','알리페이'];
+
+  let html = `
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span style="color:var(--muted);font-size:11px;font-weight:700;white-space:nowrap">💳 결제방식</span>`;
+
+  if(payInfo.splitDetails && payInfo.splitDetails.length > 0){
+    payInfo.splitDetails.forEach((d,i)=>{
+      html += `<span style="display:inline-flex;align-items:center;gap:4px;margin:2px;padding:4px 8px 4px 10px;background:var(--panel);border-radius:20px;border:1px solid var(--border)">
+        ${d.method} <strong style="color:var(--accent)">${d.amt}만</strong>
+        <button onclick="removePayMethod(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0 2px">×</button>
+      </span>`;
+    });
   } else {
-    html += payInfo.methods.map(m=>
-      `<span style="display:inline-block;margin:3px;padding:4px 10px;background:var(--panel);border-radius:20px;border:1px solid var(--border)">${m}</span>`
-    ).join('');
+    payInfo.methods.forEach((m,i)=>{
+      html += `<span style="display:inline-flex;align-items:center;gap:4px;margin:2px;padding:4px 8px 4px 10px;background:var(--panel);border-radius:20px;border:1px solid var(--border)">
+        ${m}
+        <button onclick="removePayMethod(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0 2px">×</button>
+      </span>`;
+    });
   }
+
+  // 추가 버튼
+  html += `<select onchange="addPayMethod(this)" style="background:#0f172a;border:1px solid var(--border);border-radius:20px;color:var(--muted);font-size:11px;padding:4px 8px;cursor:pointer;outline:none">
+    <option value="">+ 추가</option>
+    ${PAY_OPTIONS.map(o=>`<option value="${o}">${o}</option>`).join('')}
+    <option value="__custom__">직접입력...</option>
+  </select>`;
+
+  html += `</div>`;
   el.innerHTML = html;
   window._paymentMethods = payInfo;
+}
+
+function removePayMethod(idx){
+  if(!window._paymentMethods) return;
+  const pm = window._paymentMethods;
+  if(pm.splitDetails && pm.splitDetails.length > 0){
+    pm.splitDetails.splice(idx, 1);
+    pm.methods = pm.splitDetails.map(d=>d.method);
+  } else {
+    pm.methods.splice(idx, 1);
+  }
+  showPaymentMethod(pm);
+}
+
+function addPayMethod(sel){
+  const val = sel.value;
+  if(!val) return;
+  sel.value = '';
+  if(!window._paymentMethods) window._paymentMethods = {methods:[], splitDetails:[]};
+  const pm = window._paymentMethods;
+  let method = val;
+  if(val === '__custom__'){
+    method = prompt('결제방식 직접 입력:');
+    if(!method) return;
+  }
+  if(pm.splitDetails && pm.splitDetails.length > 0){
+    pm.splitDetails.push({method, amt:0});
+  } else {
+    if(!pm.methods.includes(method)) pm.methods.push(method);
+  }
+  showPaymentMethod(pm);
 }
 
 /* ── 금액 확인 ── */
@@ -2121,6 +2173,8 @@ async function saveEditModal(id){
 }
 
 
+/* ── 토스트 ── */
+function showToast(msg, type='info'){
   const t=document.getElementById('toast');
   t.textContent=msg;
   t.className='toast '+type+' show';
