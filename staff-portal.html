@@ -376,6 +376,14 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
             <div id="amount-match-msg" style="text-align:right"></div>
           </div>
         </div>
+
+        <!-- 저장 버튼 (폼 안에도 표시) -->
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <button onclick="resetForm()" style="padding:14px 20px;background:var(--border);color:var(--muted);border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer">초기화</button>
+          <button id="submit-btn-inline" onclick="submitConsultation()" style="flex:1;padding:14px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer">
+            💾 저장하기
+          </button>
+        </div>
       </div>
     </div>
 
@@ -430,7 +438,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
 ══════════════════════════════════════════════ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, query, onSnapshot } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, query, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
 const cfg = {
@@ -491,7 +499,8 @@ window.fbSaveConsultation = async (data) => {
     ...data, id,
     staffUid: window._fbUser?.uid || 'unknown',
     staffEmail: window._fbUser?.email || '',
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    serverTs: serverTimestamp()  // 날짜기반 보안규칙용
   };
   await setDoc(doc(db, 'consultations', id), docData);
   return id;
@@ -834,19 +843,19 @@ function localParse(raw){
     .replace(/[-－]\s*남은.*?(?=[+,\n]|$)/g, '')   // 남은금액 제거
     .replace(/[-－]\s*할인.*?(?=[+,\n]|$)/g, '')   // 할인 제거
     .replace(/[34]월[eE]\)?/g, '')   // 3월e) 제거
-    .replace(/\d월[eE]\)?/g, '')
+    .replace(/\d+월?[eE]\)?\s*/g, '') // 2e) / 3월e) 등 이벤트 표시 제거
     .replace(/sv|s\.v|SV/gi, '')    // sv 제거 (카운트는 하되 텍스트 제거)
     .toLowerCase();
 
   const results = [];
   const notes = [];
 
-  // ── 울쎄라 ──
-  const ulcera = text.match(/울쎄라\s*(\d+)\s*샷/);
+  // ── 울쎄라 (샷 있어도/없어도) ──
+  const ulcera = raw.match(/울쎄라\s*(\d+)\s*샷?/i);
   if(ulcera){ results.push({item:'울쎄라(100샷)', qty: Math.round(parseInt(ulcera[1])/100)}); }
 
-  // ── 소프웨이브 ──
-  const sopw = raw.match(/소프(?:웨이브)?\s*(\d+)\s*샷/i);
+  // ── 소프웨이브 (샷 있어도/없어도) ──
+  const sopw = raw.match(/소프(?:웨이브)?\s*(\d+)\s*샷?/i);
   if(sopw){ results.push({item:'소프웨이브(50샷)', qty: Math.round(parseInt(sopw[1])/50)}); }
 
   // ── 써마지 ──
@@ -1354,13 +1363,10 @@ function normalizePayMethod(s){
 ══════════════════════════════════════════════ */
 let _importRows = [];
 
-/* ── 날짜 파싱 헬퍼 ── */
 function parseDate(s, prevDate){
   if(!s || !s.trim()) return prevDate || '';
-  const d = s.trim();
-  // 2025-03-02 or 2025/03/02
+  const d = s.trim().replace(/\s/g,'');
   if(/^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}$/.test(d)) return d.replace(/\//g,'-');
-  // 3/2 or 2/25 → 현재연도 기준
   if(/^\d{1,2}\/\d{1,2}$/.test(d)){
     const [mo,dy] = d.split('/');
     const yr = new Date().getFullYear();
@@ -1369,119 +1375,111 @@ function parseDate(s, prevDate){
   return prevDate || '';
 }
 
-/* ── 탭 구분 행 파싱 ── */
-function parseImportRow(cols, prevDate){
-  // cols 길이에 따라 유연하게 처리
-  // 기본 8컬럼: 날짜, 차트, 이름, 분류1, 분류2, 결제내역, 금액, 상담자
-  // 7컬럼(분류2 없음): 날짜, 차트, 이름, 분류1, 결제내역, 금액, 상담자
-
-  const c = cols.map(x=>(x||'').trim());
-  let date, chart, name, cat1, cat2, payText, amount, staffRaw;
-
-  // 날짜가 첫 번째 칸에 있는지 확인
-  const hasDate = /^\d{1,4}[\/\-]\d{1,2}/.test(c[0]) || c[0]==='';
-
-  if(hasDate){
-    date = parseDate(c[0], prevDate);
-    chart = c[1]; name = c[2]; cat1 = c[3];
-    if(c.length >= 8){
-      cat2 = c[4]; payText = c[5];
-      // 금액 컬럼: 숫자만 있는 컬럼
-      const amtRaw = c[6].replace(/,/g,'').replace(/[mM만원]/g,'');
-      amount = parseFloat(amtRaw) || extractAmount(c[5]) || 0;
-      staffRaw = c[7];
-    } else {
-      cat2 = ''; payText = c[4];
-      const amtRaw = (c[5]||'').replace(/,/g,'').replace(/[mM만원]/g,'');
-      amount = parseFloat(amtRaw) || extractAmount(c[4]) || 0;
-      staffRaw = c[6] || '';
-    }
-  } else {
-    // 날짜 컬럼 없는 경우
-    date = prevDate;
-    chart = c[0]; name = c[1]; cat1 = c[2];
-    if(c.length >= 7){
-      cat2 = c[3]; payText = c[4];
-      const amtRaw = (c[5]||'').replace(/,/g,'').replace(/[mM만원]/g,'');
-      amount = parseFloat(amtRaw) || extractAmount(c[4]) || 0;
-      staffRaw = c[6] || '';
-    } else {
-      cat2 = ''; payText = c[3];
-      const amtRaw = (c[4]||'').replace(/,/g,'').replace(/[mM만원]/g,'');
-      amount = parseFloat(amtRaw) || extractAmount(c[3]) || 0;
-      staffRaw = c[5] || '';
-    }
-  }
-
-  // payText에서 /숫자 패턴(금액 중복) 제거
-  payText = (payText||'').replace(/\/[\d.,]+\s*$/, '').trim();
-
-  // 금액 보정: payText에서 추출
-  if(!amount || amount<=0) amount = extractAmount(payText) || 0;
-
-  const staff = mapStaff(staffRaw);
-  return {date, chart, name, cat1, cat2, payText, amount, staff, staffRaw};
+function parseImportData(){
+  const text = document.getElementById('import-text').value;
+  if(!text.trim()){ showToast('데이터를 붙여넣기 해주세요','error'); return; }
+  processImportText(text);
 }
 
-function parseImportData(){
-  const text = document.getElementById('import-text').value.trim();
-  if(!text){ showToast('데이터를 붙여넣기 해주세요','error'); return; }
-
+function processImportText(text){
   _importRows = [];
-  const lines = text.split('\n').filter(l=>l.trim());
+  // 줄 분리
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
   let prevDate = '';
 
-  lines.forEach(line=>{
-    const cols = line.split('\t');
-    if(cols.length < 4) return; // 너무 짧으면 스킵
+  lines.forEach((line, lineIdx) => {
+    // 탭으로 분리
+    const cols = line.split('\t').map(c => (c||'').trim());
 
-    const row = parseImportRow(cols, prevDate);
-    if(!row.name && !row.payText) return;
+    // 빈 줄 무시
+    if(cols.every(c => !c)) return;
 
-    if(row.date) prevDate = row.date;
-    _importRows.push(row);
+    // 헤더 줄 감지 (날짜/차트/이름 같은 단어 있으면 스킵)
+    const joined = cols.join('').toLowerCase();
+    if(/^(날짜|차트|date|chart)/.test(joined)) return;
+
+    // ── 컬럼 구조 파악 ──
+    // 8컬럼: 날짜, 차트, 이름, 분류1, 분류2, 결제내역, 금액, 상담자
+    // 7컬럼: 날짜, 차트, 이름, 분류1, 결제내역, 금액, 상담자 (분류2 없음)
+    // 첫 컬럼이 날짜인지 확인: 숫자/슬래시 패턴
+    const firstIsDate = /^\d{0,4}[-\/]?\d{0,2}$/.test(cols[0]) || cols[0] === '';
+
+    let date, chart, name, cat1, cat2, payText, amount, staffRaw;
+
+    if(cols.length >= 8 && firstIsDate){
+      [date, chart, name, cat1, cat2, payText, amount, staffRaw] = cols;
+    } else if(cols.length === 7 && firstIsDate){
+      [date, chart, name, cat1, payText, amount, staffRaw] = cols;
+      cat2 = '';
+    } else if(cols.length >= 7 && !firstIsDate){
+      // 날짜 컬럼 없는 경우 (이전 날짜 사용)
+      [chart, name, cat1, cat2, payText, amount, staffRaw] = cols;
+      date = '';
+    } else if(cols.length >= 6 && !firstIsDate){
+      [chart, name, cat1, payText, amount, staffRaw] = cols;
+      date = ''; cat2 = '';
+    } else {
+      // 컬럼 수 부족 — 결제내역이라도 있으면 저장
+      console.warn(`Line ${lineIdx}: only ${cols.length} cols`, cols);
+      return;
+    }
+
+    // 날짜 처리
+    date = parseDate(date || '', prevDate);
+    if(date) prevDate = date;
+    else date = prevDate;
+
+    // 결제내역 끝의 /숫자 패턴 제거 (금액 중복 표기)
+    payText = (payText||'').replace(/\/[\d.,]+\s*$/, '').trim();
+
+    // 금액: 별도 컬럼 또는 결제내역에서 추출
+    const amtRaw = (amount||'').replace(/,/g,'').replace(/[mM만원]/g,'');
+    const amtNum = parseFloat(amtRaw) || 0;
+    const amtFromText = extractAmount(payText) || 0;
+    const finalAmt = amtNum > 0 ? amtNum : amtFromText;
+
+    const staffMapped = mapStaff((staffRaw||'').trim());
+
+    if(!name && !payText) return; // 완전히 비어있는 행
+
+    _importRows.push({
+      date,
+      chart: (chart||'').trim(),
+      name: (name||'').trim(),
+      cat1: (cat1||'').trim(),
+      cat2: (cat2||'').trim(),
+      payText,
+      amount: finalAmt,
+      staff: staffMapped,
+      staffRaw: (staffRaw||'').trim(),
+    });
   });
 
+  if(!_importRows.length){
+    showToast('파싱 실패. 구글시트에서 복사(Ctrl+C) 후 붙여넣기(Ctrl+V) 해주세요','error');
+    return;
+  }
   renderImportPreview();
 }
 
-/* ── 엑셀 파일 업로드 처리 ── */
+/* ── 엑셀 파일 처리 ── */
 function handleImportFile(input){
   const file = input.files[0];
-  if(!file){ return; }
+  if(!file) return;
 
   const reader = new FileReader();
   reader.onload = function(e){
     try {
       const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, {type:'array'});
+      const workbook = XLSX.read(data, {type:'array', cellDates:true});
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
-
-      _importRows = [];
-      let prevDate = '';
-
-      rows.forEach((row, i)=>{
-        if(i===0 && isHeaderRow(row)) return; // 헤더 스킵
-        const cols = row.map(cell=>{
-          // 엑셀 날짜 숫자 처리
-          if(typeof cell === 'number' && cell > 40000 && cell < 50000){
-            const d = XLSX.SSF.parse_date_code(cell);
-            return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
-          }
-          return String(cell||'').trim();
-        });
-        if(cols.every(c=>!c)) return;
-
-        const row2 = parseImportRow(cols, prevDate);
-        if(!row2.name && !row2.payText) return;
-        if(row2.date) prevDate = row2.date;
-        _importRows.push(row2);
-      });
-
-      renderImportPreview();
+      // 탭 구분 텍스트로 변환 후 기존 파서 재활용
+      const tsv = XLSX.utils.sheet_to_csv(sheet, {FS:'\t', RS:'\n'});
+      document.getElementById('import-text').value = tsv;
+      processImportText(tsv);
     } catch(err) {
       showToast('파일 읽기 오류: '+err.message, 'error');
+      console.error(err);
     }
   };
   reader.readAsArrayBuffer(file);
@@ -1493,28 +1491,30 @@ function isHeaderRow(row){
 }
 
 function renderImportPreview(){
-  if(!_importRows.length){ showToast('파싱된 데이터가 없어요. 형식을 확인해주세요','error'); return; }
+  if(!_importRows.length){ showToast('파싱된 데이터가 없어요','error'); return; }
 
   const tbody = document.getElementById('import-preview-body');
-  tbody.innerHTML = _importRows.map((r)=>`
+  tbody.innerHTML = _importRows.map(r=>`
     <tr style="border-bottom:1px solid #1a2236">
       <td style="padding:5px 8px;color:var(--muted);white-space:nowrap">${r.date}</td>
       <td style="padding:5px 8px">${r.chart}</td>
       <td style="padding:5px 8px;font-weight:600;white-space:nowrap">${r.name}</td>
       <td style="padding:5px 8px;white-space:nowrap">${r.cat1}</td>
       <td style="padding:5px 8px;color:var(--sub);white-space:nowrap">${r.cat2||''}</td>
-      <td style="padding:5px 8px;color:var(--sub);max-width:220px;word-break:break-all">${r.payText}</td>
+      <td style="padding:5px 8px;color:var(--sub);max-width:200px;word-break:break-all">${r.payText}</td>
       <td style="padding:5px 8px;text-align:right;color:var(--accent);white-space:nowrap">${r.amount}</td>
       <td style="padding:5px 8px;white-space:nowrap">
         <span style="color:${r.staffRaw!==r.staff?'var(--green)':'var(--sub)'}">${r.staff}</span>
-        ${r.staffRaw!==r.staff?`<span style="color:var(--muted);font-size:10px"> (원본:${r.staffRaw})</span>`:''}
+        ${r.staffRaw!==r.staff?`<span style="font-size:10px;color:var(--muted)"> (${r.staffRaw})</span>`:''}
       </td>
     </tr>
   `).join('');
 
-  document.getElementById('import-count').textContent = `${_importRows.length}건`;
+  document.getElementById('import-count').textContent = `${_importRows.length}건 파싱됨`;
   document.getElementById('import-preview').style.display='block';
 }
+
+/* ── 탭 구분 행 파싱 ── */
 
 async function confirmImport(){
   if(!_importRows.length){ showToast('업로드할 데이터가 없어요','error'); return; }
@@ -1736,7 +1736,9 @@ async function submitConsultation(){
   }
 
   const btn = document.getElementById('submit-btn');
-  btn.disabled=true;btn.textContent='저장 중...';
+  const btnInline = document.getElementById('submit-btn-inline');
+  if(btn){ btn.disabled=true; btn.textContent='저장 중...'; }
+  if(btnInline){ btnInline.disabled=true; btnInline.textContent='저장 중...'; }
 
   try {
     await window.fbSaveConsultation({
@@ -1747,13 +1749,15 @@ async function submitConsultation(){
       paymentMethods: window._paymentMethods || {},
       treatments: window._parsedTreatments||[],
     });
-    showToast(currentMode==='vip'?'VIP 재료 소모 기록 완료!':'상담 내역 저장 완료!','success');
+    showToast(currentMode==='vip'?'VIP 재료 소모 기록 완료! ✅':'상담 내역 저장 완료! ✅','success');
     resetForm();
   } catch(e) {
     showToast('저장 실패: '+e.message,'error');
+    console.error('save error:', e);
   } finally {
-    btn.disabled=false;
-    btn.textContent=currentMode==='vip'?'VIP 재료 소모 저장':'저장하기';
+    const label = currentMode==='vip'?'💎 VIP 재료 소모 저장':'💾 저장하기';
+    if(btn){ btn.disabled=false; btn.textContent=label; }
+    if(btnInline){ btnInline.disabled=false; btnInline.textContent=label; }
   }
 }
 
