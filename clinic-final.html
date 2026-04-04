@@ -431,6 +431,7 @@ var DEFAULT_PROCEDURES={
   '포텐자(펌핑)':{price:55000},
   '써마지300':{price:549000},
   '아이써마지225':{price:360000},
+  '아이써마지450샷':{price:462000},
   '하이쿡스':{price:0},
   '리쥬란아이':{price:70000},
   '써마지600':{price:804000},
@@ -729,19 +730,32 @@ function render(){
   /* ② 시술별집계 → 재료비 */
   if(ad){
     h+='<div class="sdiv">② 시술별 재료비 ('+esc(G.aFile)+')</div>';
-    var unp=ad.items.filter(function(i){return i.price===0});
-    if(unp.length)h+='<div class="warn">단가 미설정: <b>'+unp.map(function(i){return esc(i.name)}).join(', ')+'</b> → 설정 탭에서 단가 입력 후 <b>저장 및 반영</b> 버튼 클릭</div>';
+    var priced=ad.items.filter(function(i){return i.price>0});
+    var unpriced=ad.items.filter(function(i){return i.price===0});
     h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">시술별 재료비 집계</div>';
     h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">시술이름(건수) 자동 파싱 · 건수 × 단가 = 소계</div>';
     h+='<table><thead><tr><th>시술 이름</th><th class="r">건수</th><th class="r">단가 (원)</th><th class="r">소계</th></tr></thead><tbody>';
-    ad.items.forEach(function(i){
+    priced.forEach(function(i){
       h+='<tr><td><b>'+esc(i.name)+'</b></td><td class="r muted">'+nf(i.count)+'건</td>';
-      h+='<td class="r">'+(i.price?won(i.price):'<span style="color:#f59e0b;font-weight:600;">미설정</span>')+'</td>';
-      h+='<td class="r '+(i.price?'bold':'muted')+'">'+won(i.subtotal)+'</td></tr>';
+      h+='<td class="r">'+won(i.price)+'</td>';
+      h+='<td class="r bold">'+won(i.subtotal)+'</td></tr>';
     });
     h+='<tr class="rowtotal"><td colspan="3" class="bold">재료비 합계</td>';
     h+='<td class="r bold" style="color:#8b5cf6;font-size:15px;">'+won(ad.totalCost)+'</td></tr>';
-    h+='</tbody></table></div>';
+    h+='</tbody></table>';
+    // 미설정 항목 접힘
+    if(unpriced.length){
+      h+='<details style="margin-top:10px;">';
+      h+='<summary style="font-size:12px;color:#94a3b8;cursor:pointer;padding:6px 0;">단가 미설정 항목 '+unpriced.length+'개 펼치기</summary>';
+      h+='<table style="margin-top:8px;opacity:0.6;"><thead><tr><th>시술 이름</th><th class="r">건수</th><th class="r">단가</th><th class="r">소계</th></tr></thead><tbody>';
+      unpriced.forEach(function(i){
+        h+='<tr><td>'+esc(i.name)+'</td><td class="r muted">'+nf(i.count)+'건</td>';
+        h+='<td class="r"><span style="color:#f59e0b;font-size:11px;">미설정</span></td>';
+        h+='<td class="r muted">₩0</td></tr>';
+      });
+      h+='</tbody></table></details>';
+    }
+    h+='</div>';
   }
 
   /* ③ 구분별집계 → 수수료 */
