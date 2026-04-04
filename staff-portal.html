@@ -440,7 +440,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
 ══════════════════════════════════════════════ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, updateDoc, query, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, updateDoc, query, where, onSnapshot, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
 const cfg = {
@@ -488,7 +488,7 @@ onAuthStateChanged(auth, user => {
     if(staffSel && mappedStaff){
       staffSel.value = mappedStaff;
     }
-    window.startListenHistory(user.uid);
+    window.startListenHistory(user.uid, user.email);
   } else {
     document.getElementById('login-screen').style.display='flex';
     document.getElementById('shell').style.display='none';
@@ -548,9 +548,21 @@ window.fbSoftDelete = async (id) => {
   });
 };
 
-window.startListenHistory = (uid) => {
-  // 전체 consultations 구독 (staffUid 필터 제거 → 모든 기록 표시)
-  const q = query(collection(db,'consultations'));
+window.startListenHistory = (uid, email) => {
+  const isAdmin = email === 'retooclinic@gmail.com';
+  let q;
+  if(isAdmin){
+    // 원장님: 전체 조회
+    q = query(collection(db,'consultations'));
+  } else {
+    // 직원: 60일 이내만
+    const since = new Date();
+    since.setDate(since.getDate() - 60);
+    q = query(
+      collection(db,'consultations'),
+      where('serverTs', '>', Timestamp.fromDate(since))
+    );
+  }
   onSnapshot(q, snap => {
     const items = [];
     snap.forEach(d => items.push(d.data()));
