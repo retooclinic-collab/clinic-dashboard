@@ -173,6 +173,56 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
     <div class="mode-tabs">
       <div class="mode-tab active" id="tab-normal" onclick="setMode('normal')">📝 일반 수납 입력</div>
       <div class="mode-tab" id="tab-vip" onclick="setMode('vip')">💎 VIP 재료 소모 기록</div>
+      <div class="mode-tab" id="tab-import" onclick="setMode('import')" style="font-size:12px">📥 과거 데이터 일괄 업로드</div>
+    </div>
+
+    <!-- 일괄 업로드 섹션 -->
+    <div id="import-section" style="display:none">
+      <div class="section">
+        <div class="section-title">과거 수납 리스트 일괄 업로드</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.7">
+          기존 엑셀에서 데이터를 복사해서 붙여넣기 하세요.<br>
+          형식: <span style="color:var(--accent)">날짜 탭 차트번호 탭 이름 탭 분류1 탭 분류2 탭 결제내역 탭 결제금액 탭 상담자</span><br>
+          상담자는 자동으로 실명으로 변환됩니다.
+        </div>
+        <div class="form-group">
+          <textarea id="import-text" class="form-textarea" style="min-height:200px;font-size:12px;font-family:monospace"
+            placeholder="엑셀에서 복사한 데이터를 여기에 붙여넣기..."></textarea>
+        </div>
+        <div id="import-preview" style="display:none;margin-top:12px">
+          <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:8px">미리보기 <span id="import-count" style="color:var(--accent)"></span></div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:600px" id="import-preview-table">
+              <thead>
+                <tr style="background:#0a0f1a;color:var(--muted)">
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">날짜</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">차트</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">이름</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">분류1</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">결제내역</th>
+                  <th style="padding:6px 8px;text-align:right;border-bottom:1px solid var(--border)">금액</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">상담자</th>
+                </tr>
+              </thead>
+              <tbody id="import-preview-body"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:14px">
+            <button onclick="confirmImport()" id="import-btn"
+              style="flex:1;padding:13px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer">
+              ✅ 전체 Firebase 저장
+            </button>
+            <button onclick="clearImport()"
+              style="padding:13px 18px;background:var(--border);color:var(--muted);border:none;border-radius:12px;font-size:13px;cursor:pointer">
+              초기화
+            </button>
+          </div>
+          <div id="import-progress" style="margin-top:10px;font-size:12px;color:var(--accent);display:none"></div>
+        </div>
+        <button onclick="parseImportData()" style="margin-top:12px;width:100%;padding:12px;background:var(--accent);color:#0f172a;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer">
+          미리보기 확인
+        </button>
+      </div>
     </div>
 
     <!-- VIP 안내 -->
@@ -458,17 +508,45 @@ function handleDoctorChange(){
   document.getElementById('f-doctor-custom').style.display=v==='직접입력'?'block':'none';
 }
 
+/* ── 상담자 매핑 ── */
+const STAFF_MAP = {
+  '김':'김구슬', '길':'길연주', '명':'명재은',
+  '장':'퇴사-장', '황':'퇴사-황', '나은':'장나은',
+  '이':'퇴사-이', '공':'퇴사-공', '데스크':'데스크',
+  '한빛':'퇴사-한빛', '유엄진':'퇴사-유엄진',
+  '주미진':'퇴사-주미진', '아신':'호아신',
+  // 이미 풀네임인 경우 그대로
+  '김구슬':'김구슬', '길연주':'길연주', '명재은':'명재은',
+  '장나은':'장나은', '호아신':'호아신'
+};
+function mapStaff(s){
+  if(!s) return s;
+  const trimmed = s.trim();
+  return STAFF_MAP[trimmed] || trimmed;
+}
+
 /* ── 모드 ── */
 let currentMode = 'normal';
 function setMode(mode){
   currentMode = mode;
   document.getElementById('tab-normal').className='mode-tab'+(mode==='normal'?' active':'');
   document.getElementById('tab-vip').className='mode-tab'+(mode==='vip'?' vip-active':'');
+  document.getElementById('tab-import').className='mode-tab'+(mode==='import'?' active':'');
   document.getElementById('vip-notice').style.display=mode==='vip'?'block':'none';
-  document.getElementById('amount-wrap').style.display=mode==='vip'?'none':'flex';
-  document.getElementById('payment-section-title').textContent=mode==='vip'?'당일 시술 내역 (결제금액 0원)':'결제 내역';
-  document.querySelector('.submit-btn').className='submit-btn'+(mode==='vip'?' vip':'');
-  document.querySelector('.submit-btn').textContent=mode==='vip'?'VIP 재료 소모 저장':'저장하기';
+  document.getElementById('import-section').style.display=mode==='import'?'block':'none';
+
+  // 입력폼/버튼 숨기기
+  const formSections = document.querySelectorAll('.section');
+  formSections.forEach(s=>{ s.style.display=mode==='import'?'none':'block'; });
+  document.querySelector('.submit-wrap').style.display=mode==='import'?'none':'block';
+  document.getElementById('import-section').style.display=mode==='import'?'block':'none';
+
+  if(mode!=='import'){
+    document.getElementById('amount-wrap').style.display=mode==='vip'?'none':'flex';
+    document.getElementById('payment-section-title').textContent=mode==='vip'?'당일 시술 내역 (결제금액 0원)':'결제 내역';
+    document.querySelector('.submit-btn').className='submit-btn'+(mode==='vip'?' vip':'');
+    document.querySelector('.submit-btn').textContent=mode==='vip'?'VIP 재료 소모 저장':'저장하기';
+  }
 }
 
 /* ── 날짜 초기화 ── */
@@ -505,7 +583,8 @@ const TREATMENT_ITEMS = [
   '리투오','쥬브아셀','자가엑소좀','힐로웨이브','스컬트라','아이써마지450샷',
   '엑소좀','플라즈마엑소좀','MOXI',
   '티타튠','티타튠max',
-  '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트'
+  '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트',
+  'NAD','미라젯쥬베룩'
 ];
 
 /* ══════════════════════════════════════════════
@@ -540,12 +619,17 @@ function localParse(raw){
   else if(/써마지\s*600/i.test(raw)) results.push({item:'써마지600', qty:1});
   else if(/써마지\s*300/i.test(raw)) results.push({item:'써마지300', qty:1});
 
-  // ── 티타튠 (티타늄+튠라이너 조합) ──
-  const titaTune = raw.match(/티타튠(?:max|r|업)?\s*(?:\(.*?\))?\s*(\d+)?\s*회?/i);
-  if(titaTune){
-    const q = titaTune[1] ? parseInt(titaTune[1]) : 1;
-    results.push({item:'티타늄', qty:q});
-    results.push({item:'튠라이너', qty:q});
+  // ── 티타튠 (단일 항목으로 처리, 뒤 숫자는 가격이므로 무시) ──
+  const titaTuneMax = /티타튠\s*max/i.test(raw);
+  const titaTuneM = raw.match(/티타튠(?:max|r|업)?\s*(?:\(.*?\))?\s*(\d+)\s*회/i);
+  if(titaTuneM){
+    const q = parseInt(titaTuneM[1]);
+    if(titaTuneMax) results.push({item:'티타튠max', qty:q});
+    else results.push({item:'티타튠', qty:q});
+  } else if(/티타튠/i.test(raw)){
+    // 회차 없으면 1개 (뒤 숫자는 가격으로 무시)
+    if(titaTuneMax) results.push({item:'티타튠max', qty:1});
+    else results.push({item:'티타튠', qty:1});
   } else {
     // ── 티타늄 (단독) ──
     const titanM = raw.match(/티타늄\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
@@ -613,8 +697,52 @@ function localParse(raw){
     if(m2) results.push({item:'힐로웨이브', qty: parseInt(m2[1])});
   } else if(/힐로웨이브/i.test(raw)) results.push({item:'힐로웨이브', qty:1});
 
-  // ── 미라젯 (sv포함 항상 1) ──
-  if(/미라젯/i.test(raw)) results.push({item:'미라젯', qty:1});
+  // ── 미라젯 조합 시술 (순서 중요: 조합 먼저 체크) ──
+  const hasMjRjHB = /미라젯\s*리쥬란\s*hb/i.test(raw);
+  const hasMjRj = /미라젯\s*리쥬란(?!\s*hb)/i.test(raw);
+  const hasMjJbv = /미라젯\s*쥬베룩/i.test(raw);
+  const hasMjJba = /미라젯\s*쥬브아셀/i.test(raw);
+  const hasMjLto = /미라젯\s*리투오/i.test(raw);
+
+  if(hasMjRjHB){
+    results.push({item:'미라젯', qty:1});
+    const cc = raw.match(/미라젯\s*리쥬란\s*hb\s*(\d+)\s*cc/i);
+    results.push({item:'리쥬란HB', qty: cc?parseInt(cc[1]):1});
+  }
+  if(hasMjRj){
+    results.push({item:'미라젯', qty:1});
+    const cc = raw.match(/미라젯\s*리쥬란\s*(\d+)\s*cc/i);
+    results.push({item:'리쥬란', qty: cc?Math.round(parseInt(cc[1])/2):1});
+  }
+  if(hasMjJbv){
+    const m = raw.match(/미라젯\s*쥬베룩\s*(\d+)\s*회/i);
+    results.push({item:'미라젯쥬베룩', qty: m?parseInt(m[1]):1});
+  }
+  if(hasMjJba){
+    // 미라젯쥬브아셀 → 미라젯1 + 쥬브아셀1
+    const m = raw.match(/미라젯\s*쥬브아셀\s*(\d+)\s*회/i);
+    const q = m ? parseInt(m[1]) : 1;
+    results.push({item:'미라젯', qty:q});
+    results.push({item:'쥬브아셀', qty:q});
+  }
+  if(hasMjLto){
+    // 미라젯리투오 → 미라젯1 + 리투오1
+    const m = raw.match(/미라젯\s*리투오\s*(\d+)\s*회/i);
+    const q = m ? parseInt(m[1]) : 1;
+    results.push({item:'미라젯', qty:q});
+    results.push({item:'리투오', qty:q});
+  }
+  // 미라젯쥬브아셀 단독 (회차 없이)
+  const mjbaM = raw.match(/미라젯쥬브아셀\s*(\d+)\s*회/i);
+  if(mjbaM && !hasMjJba){
+    const q = parseInt(mjbaM[1]);
+    results.push({item:'미라젯', qty:q});
+    results.push({item:'쥬브아셀', qty:q});
+  }
+  // 단독 미라젯 (조합 없이)
+  if(!hasMjRjHB && !hasMjRj && !hasMjJbv && !hasMjJba && !hasMjLto && /미라젯/i.test(raw)){
+    results.push({item:'미라젯', qty:1});
+  }
 
   // ── 쥬베룩볼륨 ──
   const jbvM = raw.match(/쥬베룩볼륨.*?(\d+)\s*회/i);
@@ -682,13 +810,7 @@ function localParse(raw){
     results.push({item:'리쥬셀릭크림', qty: m&&m[1]?parseInt(m[1]):1});
   }
 
-  // ── 미라젯쥬브아셀 조합 (각각 카운트) ──
-  const mjba = raw.match(/미라젯쥬브아셀\s*(\d+)\s*회/i);
-  if(mjba){
-    const q = parseInt(mjba[1]);
-    results.push({item:'미라젯', qty:q});
-    results.push({item:'쥬브아셀', qty:q});
-  }
+  // ── 미라젯쥬브아셀 조합은 위에서 처리됨 ──
 
   // ── 보톡스 국산 (국산/국 표기 모두) ──
   const btxDomParts = raw.match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑)\s*(?:보톡스\s*)?b(?:tx)?\s*\(?(?:국산|국t?산?)\)?/gi)||[];
@@ -733,6 +855,15 @@ function localParse(raw){
     results.push({item:'제네시스+PTT', qty: gM&&gM[1]?parseInt(gM[1]):1});
   } else if(/제네시스/i.test(raw)) results.push({item:'제네시스', qty:1});
   if(/수면/i.test(raw)) results.push({item:'수면비', qty:1});
+  // ── NAD (별도 항목 + 수액도 함께) ──
+  if(/nad/i.test(raw)){
+    results.push({item:'NAD', qty:1});
+    results.push({item:'수액', qty:1});
+  }
+  // ── 수액 (폭탄수액/백옥슈팅/비타민수액/리커버리 등, NAD 없을 때) ──
+  if(/폭탄수액|백옥슈팅|비타민수액|리커버리수액|리바이탈수액/i.test(raw)){
+    results.push({item:'수액', qty:1});
+  }
   if(/새살주사/i.test(raw)) results.push({item:'새살주사', qty:1});
   if(/스킨바이브/i.test(raw)){
     const sbM = raw.match(/스킨바이브\s*(\d+)\s*cc/i);
@@ -917,7 +1048,122 @@ function normalizePayMethod(s){
   return null;
 }
 
-/* ── 분석 초기화 ── */
+/* ══════════════════════════════════════════════
+   과거 데이터 일괄 업로드
+══════════════════════════════════════════════ */
+let _importRows = [];
+
+function parseImportData(){
+  const text = document.getElementById('import-text').value.trim();
+  if(!text){ showToast('데이터를 붙여넣기 해주세요','error'); return; }
+
+  const lines = text.split('\n').filter(l=>l.trim());
+  _importRows = [];
+
+  lines.forEach(line=>{
+    // 탭 또는 여러 공백으로 분리
+    const cols = line.split('\t');
+    if(cols.length < 6) return;
+
+    // 날짜 파싱 (3/2, 3/3 같은 형식 또는 2025-03-02 형식)
+    let date = (cols[0]||'').trim();
+    if(!date && _importRows.length > 0){
+      date = _importRows[_importRows.length-1].date; // 날짜 없으면 이전 날짜 재사용
+    }
+    // 3/2 → 올해 기준 날짜 변환
+    if(/^\d+\/\d+$/.test(date)){
+      const [m,d] = date.split('/');
+      const year = new Date().getFullYear();
+      date = `${year}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    }
+
+    const chart = (cols[1]||'').trim();
+    const name = (cols[2]||'').trim();
+    const cat1 = (cols[3]||'').trim();
+    const cat2 = (cols[4]||'').trim();
+    const payText = (cols[5]||'').trim();
+    const amount = parseFloat((cols[6]||'').trim().replace(/,/g,''))||0;
+    const staffRaw = (cols[7]||'').trim();
+    const staff = mapStaff(staffRaw);
+
+    if(!payText && !name) return;
+
+    _importRows.push({date, chart, name, cat1, cat2, payText, amount, staff, staffRaw});
+  });
+
+  if(!_importRows.length){ showToast('파싱된 데이터가 없어요. 형식을 확인해주세요','error'); return; }
+
+  // 미리보기 렌더
+  const tbody = document.getElementById('import-preview-body');
+  tbody.innerHTML = _importRows.map((r,i)=>`
+    <tr style="border-bottom:1px solid #1a2236">
+      <td style="padding:5px 8px;color:var(--muted)">${r.date}</td>
+      <td style="padding:5px 8px">${r.chart}</td>
+      <td style="padding:5px 8px;font-weight:600">${r.name}</td>
+      <td style="padding:5px 8px">${r.cat1}</td>
+      <td style="padding:5px 8px;color:var(--sub);max-width:200px;word-break:break-all">${r.payText}</td>
+      <td style="padding:5px 8px;text-align:right;color:var(--accent)">${r.amount}</td>
+      <td style="padding:5px 8px">
+        <span style="color:${r.staffRaw!==r.staff?'var(--green)':'var(--sub)'}">${r.staff}</span>
+        ${r.staffRaw!==r.staff?`<span style="color:var(--muted);font-size:10px">(원본:${r.staffRaw})</span>`:''}
+      </td>
+    </tr>
+  `).join('');
+
+  document.getElementById('import-count').textContent = `${_importRows.length}건`;
+  document.getElementById('import-preview').style.display='block';
+}
+
+async function confirmImport(){
+  if(!_importRows.length){ showToast('업로드할 데이터가 없어요','error'); return; }
+  if(!window.fbSaveConsultation){ showToast('Firebase 연결 필요','error'); return; }
+
+  const btn = document.getElementById('import-btn');
+  const progress = document.getElementById('import-progress');
+  btn.disabled=true;
+  progress.style.display='block';
+
+  let saved=0, failed=0;
+  for(let i=0; i<_importRows.length; i++){
+    const r = _importRows[i];
+    progress.textContent = `저장 중... ${i+1}/${_importRows.length}`;
+    try {
+      const parsed = localParse(r.payText);
+      await window.fbSaveConsultation({
+        type:'normal',
+        date: r.date,
+        chart: r.chart,
+        name: r.name,
+        cat1: r.cat1,
+        cat2: r.cat2,
+        staff: r.staff,
+        doctor: '',
+        paymentText: r.payText,
+        amount: r.amount,
+        treatments: parsed.treatments||[],
+        paymentMethods: extractPayment(r.payText),
+        importedAt: new Date().toISOString(),
+        isImported: true,
+      });
+      saved++;
+    } catch(e){
+      console.error('import error:', e);
+      failed++;
+    }
+    await new Promise(res=>setTimeout(res,100)); // rate limit 방지
+  }
+
+  progress.textContent = `완료! ${saved}건 저장 성공${failed>0?`, ${failed}건 실패`:''}`;
+  btn.disabled=false;
+  showToast(`${saved}건 저장 완료!`,'success');
+  _importRows=[];
+}
+
+function clearImport(){
+  document.getElementById('import-text').value='';
+  document.getElementById('import-preview').style.display='none';
+  _importRows=[];
+}
 function clearParseResult(){
   window._parsedTreatments = [];
   document.getElementById('parse-result').style.display = 'none';
