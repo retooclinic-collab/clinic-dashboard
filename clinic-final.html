@@ -108,6 +108,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
   <div class="sb-nav">
     <button class="sbn on" id="nav-an" onclick="goTab('an')">📊 월별 분석</button>
     <button class="sbn" id="nav-trend" onclick="goTab('trend')">📈 종합 분석</button>
+    <button class="sbn" id="nav-cloud" onclick="goTab('cloud')">☁ 저장 현황</button>
     <button class="sbn" id="nav-cfg" onclick="goTab('cfg')">⚙️ 설정</button>
   </div>
   <div class="sb-arc">
@@ -180,6 +181,16 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
     <div id="card-section"></div>
     <div id="fixed-display"></div>
     <div id="summary-section"></div>
+  </div>
+
+  <!-- 저장 현황 탭 -->
+  <div id="tab-cloud" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;">
+      <div><h2 style="font-size:20px;font-weight:800;margin-bottom:3px;">☁ 클라우드 저장 현황</h2>
+      <p style="color:#64748b;font-size:13px;">Firebase에 저장된 월별 데이터 현황</p></div>
+      <button class="btn btn-o btn-sm" onclick="renderCloudTab()">🔄 새로고침</button>
+    </div>
+    <div id="cloud-content"></div>
   </div>
 
   <!-- 종합 분석 탭 -->
@@ -1202,11 +1213,30 @@ async function doSave(){
     if(!confirm('"'+lbl+'" 덮어쓸까요?'))return;
   }
 
-  // Firebase는 undefined 거부 → JSON 왕복으로 정리 (undefined → 제거, null 유지)
+  // Firebase는 undefined, 빈 문자열 키 거부 → 깊은 정제
   function clean(v){
-    if(v===undefined)return null;
-    try{return JSON.parse(JSON.stringify(v,function(k,val){return val===undefined?null:val}));}
-    catch(e){return null;}
+    if(v===undefined||v===null)return null;
+    try{
+      var str=JSON.stringify(v,function(k,val){
+        if(val===undefined)return null;
+        return val;
+      });
+      // 빈 키 제거: {"":...} 패턴
+      var parsed=JSON.parse(str);
+      return deepClean(parsed);
+    }catch(e){return null;}
+  }
+  function deepClean(obj){
+    if(Array.isArray(obj))return obj.map(deepClean);
+    if(obj&&typeof obj==='object'){
+      var out={};
+      Object.keys(obj).forEach(function(k){
+        if(k==='')return; // 빈 키 제거
+        out[k]=deepClean(obj[k]);
+      });
+      return out;
+    }
+    return obj;
   }
 
   var entry={
@@ -1248,13 +1278,13 @@ document.getElementById('col-mdl').addEventListener('click',function(e){if(e.tar
 
 /* ═══ NAV ═══ */
 function goTab(t){
-  document.getElementById('tab-an').style.display=t==='an'?'block':'none';
-  document.getElementById('tab-trend').style.display=t==='trend'?'block':'none';
-  document.getElementById('tab-cfg').style.display=t==='cfg'?'block':'none';
-  document.getElementById('nav-an').classList.toggle('on',t==='an');
-  document.getElementById('nav-trend').classList.toggle('on',t==='trend');
-  document.getElementById('nav-cfg').classList.toggle('on',t==='cfg');
+  ['an','trend','cloud','cfg'].forEach(function(id){
+    document.getElementById('tab-'+id).style.display=t===id?'block':'none';
+    var nav=document.getElementById('nav-'+id);
+    if(nav)nav.classList.toggle('on',t===id);
+  });
   if(t==='trend')renderTrendTab();
+  if(t==='cloud')renderCloudTab();
 }
 function resetAll(){
   Object.assign(G,{cRows:null,aRows:null,bRows:null,cData:null,aData:null,bData:null,cFile:'',aFile:'',bFile:'',cCols:null,
@@ -1318,9 +1348,10 @@ function renderFixedDisplay(){
   // 편집 가능한 행들 — 2열 그리드로 컴팩트하게
   h+='<div id="fixed-edit-rows" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:5px;margin-bottom:10px;">';
   list.forEach(function(f,i){
+    var amt=parseFloat(f.amount)||0;
     h+='<div class="fe-row" style="display:flex;gap:4px;align-items:center;background:#f8fafc;border-radius:7px;padding:5px 7px;" data-idx="'+i+'">';
     h+='<input type="text" class="fe-nm" placeholder="항목명" value="'+esc(f.name||'')+'" oninput="updateFixedTotal()" style="flex:1;font-size:11px;padding:4px 6px;min-width:0;">';
-    h+='<input type="number" class="fe-am" placeholder="금액" value="'+(f.amount||'')+'" min="0" oninput="updateFixedTotal()" style="width:90px;font-size:11px;padding:4px 6px;">';
+    h+='<input type="text" class="fe-am" placeholder="금액" value="'+(amt?amt.toLocaleString('ko-KR'):'')+'" data-raw="'+amt+'" onfocus="unfmtFixed(this)" onblur="fmtFixed(this)" oninput="updateFixedTotal()" style="width:95px;font-size:11px;padding:4px 6px;text-align:right;">';
     h+='<button class="btn btn-r btn-sm" style="padding:2px 6px;font-size:11px;flex-shrink:0;" onclick="delFixedEdit('+i+')">×</button>';
     h+='</div>';
   });
@@ -1337,7 +1368,10 @@ function renderFixedDisplay(){
 
 function updateFixedTotal(){
   var t=0;
-  document.querySelectorAll('.fe-am').forEach(function(inp){t+=parseFloat(inp.value)||0;});
+  document.querySelectorAll('.fe-am').forEach(function(inp){
+    var raw=inp.getAttribute('data-raw');
+    t+=raw?parseFloat(raw)||0:parseFloat(inp.value.replace(/[^0-9.\-]/g,''))||0;
+  });
   var el=document.getElementById('fixed-total-display');
   if(el)el.textContent=won(t);
   renderSummary();
@@ -1390,15 +1424,24 @@ function addFixedEdit(){
   renderFixedDisplay();
 }
 
+function fmtFixed(inp){
+  var n=parseFloat(inp.value.replace(/[^0-9.\-]/g,''))||0;
+  inp.setAttribute('data-raw',n);
+  inp.value=n?n.toLocaleString('ko-KR'):'';
+}
+function unfmtFixed(inp){
+  var n=parseFloat(inp.getAttribute('data-raw'))||0;
+  inp.value=n||'';
+}
+
 function saveFixedEditsFromDOM(){
   var rows=document.querySelectorAll('.fe-row');
   if(!rows.length)return;
   var list=[];
   rows.forEach(function(row){
-    list.push({
-      name:row.querySelector('.fe-nm').value.trim(),
-      amount:parseFloat(row.querySelector('.fe-am').value)||0
-    });
+    var rawVal=row.querySelector('.fe-am').getAttribute('data-raw');
+    var amt=parseFloat(rawVal)||parseFloat(row.querySelector('.fe-am').value.replace(/[^0-9.\-]/g,''))||0;
+    list.push({name:row.querySelector('.fe-nm').value.trim(), amount:amt});
   });
   G.fixedEditedCosts=list;
 }
@@ -1495,21 +1538,22 @@ function applyBankToCard(){
 function saveBankManualFromDOM(){
   G.bankManualCards=[];
   document.querySelectorAll('.mc-row').forEach(function(row){
+    var amtEl=row.querySelector('.manual-card-amt');
     G.bankManualCards.push({
       name:row.querySelector('.manual-card-nm').value,
       date:row.querySelector('.manual-card-dt').value,
-      amount:row.querySelector('.manual-card-amt').value
+      amount:parseFloat(amtEl.getAttribute('data-raw'))||parseFloat(amtEl.value.replace(/[^0-9.\-]/g,''))||0
     });
   });
-  // 편집 중인 ec-row 값도 저장
   var rows=document.querySelectorAll('.ec-row');
   if(rows.length){
     var newCards=[];
     rows.forEach(function(row){
+      var amtEl=row.querySelector('.ec-amt');
       newCards.push({
         name:row.querySelector('.ec-nm').value,
         date:row.querySelector('.ec-dt').value,
-        amount:parseFloat(row.querySelector('.ec-amt').value)||0
+        amount:parseFloat(amtEl.getAttribute('data-raw'))||parseFloat(amtEl.value.replace(/[^0-9.\-]/g,''))||0
       });
     });
     G.bankEditedCards=newCards;
@@ -1557,10 +1601,11 @@ function renderBankSection(){
       h+='<div id="edited-card-rows">';
       sortedIdx.forEach(function(i){
         var r=ec[i];
+        var amt=parseFloat(r.amount)||0;
         h+='<div class="ec-row" style="display:grid;grid-template-columns:1fr 100px 140px 32px;gap:6px;margin-bottom:6px;" data-idx="'+i+'">';
         h+='<input type="text" class="ec-nm" placeholder="카드사명" value="'+esc(r.name||'')+'" oninput="updateBankTotal()">';
         h+='<input type="text" class="ec-dt" placeholder="날짜" value="'+esc(r.date||'')+'" style="font-size:12px;">';
-        h+='<input type="number" class="ec-amt" placeholder="출금액" value="'+(r.amount||'')+'" min="0" oninput="updateBankTotal()">';
+        h+='<input type="text" class="ec-amt" placeholder="출금액" value="'+(amt?amt.toLocaleString('ko-KR'):'')+'" data-raw="'+amt+'" onfocus="unfmtAmt(this)" onblur="fmtAmt(this)" oninput="updateBankTotal()" style="text-align:right;">';
         h+='<button class="btn btn-r btn-sm" style="padding:4px;" onclick="delEditedCard('+i+')">×</button>';
         h+='</div>';
       });
@@ -1578,10 +1623,11 @@ function renderBankSection(){
   h+='<div style="font-size:11px;color:#64748b;font-weight:700;margin-bottom:6px;padding-top:6px;'+(bd?'border-top:1px dashed #e2e8f0;':'')+'">+ 수동 추가</div>';
   if(mc.length){
     mc.forEach(function(r,i){
+      var amt=parseFloat(r.amount)||0;
       h+='<div class="mc-row" style="display:grid;grid-template-columns:1fr 100px 140px 32px;gap:6px;margin-bottom:6px;">';
       h+='<input type="text" class="manual-card-nm" placeholder="카드사명" value="'+esc(r.name||'')+'" oninput="updateBankTotal()">';
       h+='<input type="text" class="manual-card-dt" placeholder="날짜" value="'+esc(r.date||'')+'" style="font-size:12px;">';
-      h+='<input type="number" class="manual-card-amt" placeholder="출금액" value="'+(r.amount||'')+'" min="0" oninput="updateBankTotal()">';
+      h+='<input type="text" class="manual-card-amt" placeholder="출금액" value="'+(amt?amt.toLocaleString('ko-KR'):'')+'" data-raw="'+amt+'" onfocus="unfmtAmt(this)" onblur="fmtAmt(this)" oninput="updateBankTotal()" style="text-align:right;">';
       h+='<button class="btn btn-r btn-sm" style="padding:4px;" onclick="delBankManualCard(this)">×</button>';
       h+='</div>';
     });
@@ -1608,11 +1654,23 @@ function renderBankSection(){
   el.innerHTML=h;
 }
 
+function fmtAmt(inp){
+  var n=parseFloat(inp.value.replace(/[^0-9.\-]/g,''))||0;
+  inp.setAttribute('data-raw',n);
+  inp.value=n?n.toLocaleString('ko-KR'):'';
+}
+function unfmtAmt(inp){
+  inp.value=inp.getAttribute('data-raw')||'';
+}
+
 function updateBankTotal(){
   var t=0;
-  // 편집 중인 ec-amt 값들
-  document.querySelectorAll('.ec-amt').forEach(function(inp){t+=parseFloat(inp.value)||0;});
-  document.querySelectorAll('.manual-card-amt').forEach(function(inp){t+=parseFloat(inp.value)||0;});
+  document.querySelectorAll('.ec-amt').forEach(function(inp){
+    t+=parseFloat(inp.getAttribute('data-raw'))||parseFloat(inp.value.replace(/[^0-9.\-]/g,''))||0;
+  });
+  document.querySelectorAll('.manual-card-amt').forEach(function(inp){
+    t+=parseFloat(inp.getAttribute('data-raw'))||parseFloat(inp.value.replace(/[^0-9.\-]/g,''))||0;
+  });
   var el=document.getElementById('bank-card-total');
   if(el)el.textContent=won(t);
   renderSummary();
@@ -1905,6 +1963,77 @@ function checkPw(){
 // 이미 인증된 세션이면 바로 통과
 if(sessionStorage.getItem('clinic_auth')==='1'){
   document.getElementById('login-screen').style.display='none';
+}
+
+/* ═══ 클라우드 저장 현황 탭 ═══ */
+function renderCloudTab(){
+  var el=document.getElementById('cloud-content');
+  if(!el)return;
+  var arc=G.arc;
+  if(!arc||!arc.length){
+    el.innerHTML='<div class="card" style="text-align:center;padding:40px;color:#94a3b8;"><div style="font-size:28px;margin-bottom:10px;">☁</div><div style="font-size:15px;font-weight:700;">저장된 데이터 없음</div><div style="font-size:13px;margin-top:6px;">월별 분석 후 💾 저장하면 여기에 표시돼요</div></div>';
+    return;
+  }
+
+  var h='<div style="display:grid;gap:10px;">';
+  arc.forEach(function(a,i){
+    var hasCRows=!!(a.cRows&&a.cRows.length);
+    var hasARows=!!(a.aRows&&a.aRows.length);
+    var hasBRows=!!(a.bRows&&a.bRows.length);
+    var savedAt=a.savedAt?new Date(a.savedAt).toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+
+    h+='<div class="card" style="padding:16px;">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">';
+    h+='<div><div style="font-size:15px;font-weight:700;">'+esc(a.label)+'</div>';
+    h+='<div style="font-size:11px;color:#94a3b8;">저장: '+savedAt+'</div></div>';
+    h+='<div style="display:flex;gap:6px;">';
+    if(hasCRows)h+='<button class="btn btn-o btn-sm" style="font-size:11px;" onclick="downloadCloudCSV('+i+',\'c\')">⬇ 수납기록</button>';
+    if(hasARows)h+='<button class="btn btn-o btn-sm" style="font-size:11px;" onclick="downloadCloudCSV('+i+',\'a\')">⬇ 시술집계</button>';
+    if(hasBRows)h+='<button class="btn btn-o btn-sm" style="font-size:11px;" onclick="downloadCloudCSV('+i+',\'b\')">⬇ 구분집계</button>';
+    h+='<button class="btn btn-o btn-sm" style="font-size:11px;" onclick="loadAndAnalyze('+i+')">📊 분석 보기</button>';
+    h+='</div></div>';
+
+    // 데이터 현황 배지
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;">';
+    function badge(label,ok){
+      var bg=ok?'#dcfce7':'#f1f5f9', color=ok?'#16a34a':'#94a3b8';
+      return'<span style="font-size:11px;padding:2px 8px;border-radius:12px;background:'+bg+';color:'+color+';font-weight:600;">'+label+'</span>';
+    }
+    h+=badge('수납기록 '+(a.cData?nf(a.cData.count)+'건':'없음'), !!a.cData);
+    h+=badge('원본파일', hasCRows);
+    h+=badge('재료비 '+(a.aData?won(a.aData.totalCost):'없음'), !!a.aData);
+    h+=badge('수수료 '+(a.bData?won(a.bData.totalCommission):'없음'), !!a.bData);
+    h+=badge('거래내역', !!(a.bankData));
+    h+=badge('재계산 가능', hasCRows||hasARows||hasBRows);
+    h+='</div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  el.innerHTML=h;
+}
+
+function downloadCloudCSV(arcIdx,type){
+  var a=G.arc[arcIdx];if(!a)return;
+  var rows=type==='c'?a.cRows:type==='a'?a.aRows:a.bRows;
+  if(!rows||!rows.length){alert('원본 파일 데이터가 없어요.');return;}
+  var heads=Object.keys(rows[0]||{});
+  var csv=[heads.join(',')].concat(rows.map(function(r){
+    return heads.map(function(h){
+      var v=String(r[h]||'');
+      return v.includes(',')||v.includes('"')?'"'+v.replace(/"/g,'""')+'"':v;
+    }).join(',');
+  })).join('\n');
+  var blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+  var link=document.createElement('a');
+  link.href=URL.createObjectURL(blob);
+  var names={c:a.cFile||'수납기록',a:a.aFile||'시술별집계',b:a.bFile||'구분별집계'};
+  link.download=esc(a.label)+'_'+names[type]+'.csv';
+  link.click();
+}
+
+function loadAndAnalyze(i){
+  viewArc(i);
+  goTab('an');
 }
 
 /* ═══ INIT ═══ */
