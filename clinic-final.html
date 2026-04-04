@@ -1149,6 +1149,11 @@ function viewArc(i){
   G.cCols=a.cCols||null;
   document.querySelectorAll('.sbm').forEach(function(el){el.classList.remove('on')});
   var el=document.getElementById('sbm-'+i);if(el)el.classList.add('on');
+  // 업로드 영역에 저장된 파일명 표시
+  if(a.cFile)markDone('c',a.cFile);
+  if(a.aFile)markDone('a',a.aFile);
+  if(a.bFile)markDone('b',a.bFile);
+  if(a.bankData&&a.bankData.file)markDone('k',a.bankData.file);
   goTab('an');render();renderCrossTable();renderBankSection();renderCardSection();renderFixedDisplay();renderSummary();
   // 아카이브 뷰 배너 표시
   showArcBanner(a.label);
