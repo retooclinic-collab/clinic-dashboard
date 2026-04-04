@@ -144,6 +144,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
   .login-box{width:calc(100vw - 32px);padding:36px 24px}
 }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -187,29 +188,48 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
     <div id="import-section" style="display:none">
       <div class="section form-section">
         <div class="section-title">과거 수납 리스트 일괄 업로드</div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.7">
-          기존 엑셀에서 데이터를 복사해서 붙여넣기 하세요.<br>
-          형식: <span style="color:var(--accent)">날짜 탭 차트번호 탭 이름 탭 분류1 탭 분류2 탭 결제내역 탭 결제금액 탭 상담자</span><br>
-          상담자는 자동으로 실명으로 변환됩니다.
+        <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.8">
+          구글시트에서 복사한 데이터를 붙여넣거나, 엑셀 파일을 업로드하세요.<br>
+          <span style="color:var(--accent)">날짜(비어있으면 위 행 날짜 사용) · 차트 · 이름 · 분류1 · 분류2 · 결제내역 · 금액 · 상담자</span>
         </div>
+
+        <!-- 엑셀 파일 업로드 -->
+        <div style="margin-bottom:12px">
+          <label style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:#0a0f1a;border:1.5px dashed var(--border);border-radius:10px;cursor:pointer;font-size:13px;color:var(--sub)">
+            <span style="font-size:18px">📂</span>
+            <div>
+              <div style="font-weight:600;color:var(--text)">엑셀(.xlsx) 파일 선택</div>
+              <div style="font-size:11px;color:var(--muted)">클릭하여 파일 선택</div>
+            </div>
+            <input type="file" id="import-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImportFile(this)">
+          </label>
+        </div>
+
+        <div style="text-align:center;color:var(--muted);font-size:12px;margin:8px 0">또는</div>
+
+        <!-- 붙여넣기 -->
         <div class="form-group">
-          <textarea id="import-text" class="form-textarea" style="min-height:200px;font-size:12px;font-family:monospace"
-            placeholder="엑셀에서 복사한 데이터를 여기에 붙여넣기 (탭 구분)&#10;형식: 날짜&#9;차트번호&#9;이름&#9;분류1&#9;분류2&#9;결제내역&#9;결제금액&#9;상담자"></textarea>
+          <textarea id="import-text" class="form-textarea" style="min-height:160px;font-size:12px;font-family:monospace"
+            placeholder="구글시트에서 복사(Ctrl+C) 후 여기에 붙여넣기(Ctrl+V)..."></textarea>
         </div>
-        <!-- 미리보기 버튼 항상 표시 -->
-        <button onclick="parseImportData()" style="margin-top:12px;width:100%;padding:14px;background:var(--accent);color:#0f172a;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">
+
+        <button onclick="parseImportData()" style="margin-top:10px;width:100%;padding:14px;background:var(--accent);color:#0f172a;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">
           🔍 미리보기 확인
         </button>
-        <div id="import-preview" style="display:none;margin-top:12px">
-          <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:8px">미리보기 <span id="import-count" style="color:var(--accent)"></span></div>
+
+        <div id="import-preview" style="display:none;margin-top:14px">
+          <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:8px">
+            미리보기 <span id="import-count" style="color:var(--accent)"></span>
+          </div>
           <div style="overflow-x:auto">
-            <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:600px" id="import-preview-table">
+            <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:600px">
               <thead>
                 <tr style="background:#0a0f1a;color:var(--muted)">
                   <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">날짜</th>
                   <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">차트</th>
                   <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">이름</th>
                   <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">분류1</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">분류2</th>
                   <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">결제내역</th>
                   <th style="padding:6px 8px;text-align:right;border-bottom:1px solid var(--border)">금액</th>
                   <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">상담자</th>
@@ -218,10 +238,11 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
               <tbody id="import-preview-body"></tbody>
             </table>
           </div>
+          <!-- 저장 버튼: 미리보기 확인 즉시 표시 -->
           <div style="display:flex;gap:10px;margin-top:14px">
             <button onclick="confirmImport()" id="import-btn"
               style="flex:1;padding:14px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer">
-              ✅ 전체 Firebase 저장
+              ✅ Firebase에 전체 저장
             </button>
             <button onclick="clearImport()"
               style="padding:14px 18px;background:var(--border);color:var(--muted);border:none;border-radius:12px;font-size:13px;cursor:pointer">
@@ -409,7 +430,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
 ══════════════════════════════════════════════ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, query, where, onSnapshot, orderBy } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, query, onSnapshot } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
 const cfg = {
@@ -465,21 +486,20 @@ onAuthStateChanged(auth, user => {
 });
 
 window.fbSaveConsultation = async (data) => {
-  const id = Date.now().toString();
-  await setDoc(doc(db, 'consultations', id), {
+  const id = Date.now().toString() + Math.random().toString(36).slice(2,6);
+  const docData = {
     ...data, id,
-    staffUid: window._fbUser?.uid,
-    staffEmail: window._fbUser?.email,
+    staffUid: window._fbUser?.uid || 'unknown',
+    staffEmail: window._fbUser?.email || '',
     createdAt: new Date().toISOString()
-  });
+  };
+  await setDoc(doc(db, 'consultations', id), docData);
   return id;
 };
 
 window.startListenHistory = (uid) => {
-  const q = query(
-    collection(db,'consultations'),
-    where('staffUid','==',uid)
-  );
+  // 전체 consultations 구독 (staffUid 필터 제거 → 모든 기록 표시)
+  const q = query(collection(db,'consultations'));
   onSnapshot(q, snap => {
     const items = [];
     snap.forEach(d => items.push(d.data()));
@@ -490,14 +510,16 @@ window.startListenHistory = (uid) => {
     });
     window._allItems = items;
 
-    // 기록이 있는 날짜 최근 3일만 기본 표시
-    const dateFilter = document.getElementById('filter-date').value;
+    const dateFilter = document.getElementById('filter-date')?.value;
     if(dateFilter){
       renderHistory(items.filter(it=>it.date===dateFilter));
     } else {
       renderHistory(filterRecent3Days(items));
     }
-  }, err => console.error('history error:',err));
+  }, err => {
+    console.error('history listener error:', err);
+    showToast('목록 로딩 오류: '+err.message, 'error');
+  });
 };
 </script>
 
@@ -1332,59 +1354,160 @@ function normalizePayMethod(s){
 ══════════════════════════════════════════════ */
 let _importRows = [];
 
+/* ── 날짜 파싱 헬퍼 ── */
+function parseDate(s, prevDate){
+  if(!s || !s.trim()) return prevDate || '';
+  const d = s.trim();
+  // 2025-03-02 or 2025/03/02
+  if(/^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}$/.test(d)) return d.replace(/\//g,'-');
+  // 3/2 or 2/25 → 현재연도 기준
+  if(/^\d{1,2}\/\d{1,2}$/.test(d)){
+    const [mo,dy] = d.split('/');
+    const yr = new Date().getFullYear();
+    return `${yr}-${mo.padStart(2,'0')}-${dy.padStart(2,'0')}`;
+  }
+  return prevDate || '';
+}
+
+/* ── 탭 구분 행 파싱 ── */
+function parseImportRow(cols, prevDate){
+  // cols 길이에 따라 유연하게 처리
+  // 기본 8컬럼: 날짜, 차트, 이름, 분류1, 분류2, 결제내역, 금액, 상담자
+  // 7컬럼(분류2 없음): 날짜, 차트, 이름, 분류1, 결제내역, 금액, 상담자
+
+  const c = cols.map(x=>(x||'').trim());
+  let date, chart, name, cat1, cat2, payText, amount, staffRaw;
+
+  // 날짜가 첫 번째 칸에 있는지 확인
+  const hasDate = /^\d{1,4}[\/\-]\d{1,2}/.test(c[0]) || c[0]==='';
+
+  if(hasDate){
+    date = parseDate(c[0], prevDate);
+    chart = c[1]; name = c[2]; cat1 = c[3];
+    if(c.length >= 8){
+      cat2 = c[4]; payText = c[5];
+      // 금액 컬럼: 숫자만 있는 컬럼
+      const amtRaw = c[6].replace(/,/g,'').replace(/[mM만원]/g,'');
+      amount = parseFloat(amtRaw) || extractAmount(c[5]) || 0;
+      staffRaw = c[7];
+    } else {
+      cat2 = ''; payText = c[4];
+      const amtRaw = (c[5]||'').replace(/,/g,'').replace(/[mM만원]/g,'');
+      amount = parseFloat(amtRaw) || extractAmount(c[4]) || 0;
+      staffRaw = c[6] || '';
+    }
+  } else {
+    // 날짜 컬럼 없는 경우
+    date = prevDate;
+    chart = c[0]; name = c[1]; cat1 = c[2];
+    if(c.length >= 7){
+      cat2 = c[3]; payText = c[4];
+      const amtRaw = (c[5]||'').replace(/,/g,'').replace(/[mM만원]/g,'');
+      amount = parseFloat(amtRaw) || extractAmount(c[4]) || 0;
+      staffRaw = c[6] || '';
+    } else {
+      cat2 = ''; payText = c[3];
+      const amtRaw = (c[4]||'').replace(/,/g,'').replace(/[mM만원]/g,'');
+      amount = parseFloat(amtRaw) || extractAmount(c[3]) || 0;
+      staffRaw = c[5] || '';
+    }
+  }
+
+  // payText에서 /숫자 패턴(금액 중복) 제거
+  payText = (payText||'').replace(/\/[\d.,]+\s*$/, '').trim();
+
+  // 금액 보정: payText에서 추출
+  if(!amount || amount<=0) amount = extractAmount(payText) || 0;
+
+  const staff = mapStaff(staffRaw);
+  return {date, chart, name, cat1, cat2, payText, amount, staff, staffRaw};
+}
+
 function parseImportData(){
   const text = document.getElementById('import-text').value.trim();
   if(!text){ showToast('데이터를 붙여넣기 해주세요','error'); return; }
 
-  const lines = text.split('\n').filter(l=>l.trim());
   _importRows = [];
+  const lines = text.split('\n').filter(l=>l.trim());
+  let prevDate = '';
 
   lines.forEach(line=>{
-    // 탭 또는 여러 공백으로 분리
     const cols = line.split('\t');
-    if(cols.length < 6) return;
+    if(cols.length < 4) return; // 너무 짧으면 스킵
 
-    // 날짜 파싱 (3/2, 3/3 같은 형식 또는 2025-03-02 형식)
-    let date = (cols[0]||'').trim();
-    if(!date && _importRows.length > 0){
-      date = _importRows[_importRows.length-1].date; // 날짜 없으면 이전 날짜 재사용
-    }
-    // 3/2 → 올해 기준 날짜 변환
-    if(/^\d+\/\d+$/.test(date)){
-      const [m,d] = date.split('/');
-      const year = new Date().getFullYear();
-      date = `${year}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
-    }
+    const row = parseImportRow(cols, prevDate);
+    if(!row.name && !row.payText) return;
 
-    const chart = (cols[1]||'').trim();
-    const name = (cols[2]||'').trim();
-    const cat1 = (cols[3]||'').trim();
-    const cat2 = (cols[4]||'').trim();
-    const payText = (cols[5]||'').trim();
-    const amount = parseFloat((cols[6]||'').trim().replace(/,/g,''))||0;
-    const staffRaw = (cols[7]||'').trim();
-    const staff = mapStaff(staffRaw);
-
-    if(!payText && !name) return;
-
-    _importRows.push({date, chart, name, cat1, cat2, payText, amount, staff, staffRaw});
+    if(row.date) prevDate = row.date;
+    _importRows.push(row);
   });
 
+  renderImportPreview();
+}
+
+/* ── 엑셀 파일 업로드 처리 ── */
+function handleImportFile(input){
+  const file = input.files[0];
+  if(!file){ return; }
+
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, {type:'array'});
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, {header:1, defval:''});
+
+      _importRows = [];
+      let prevDate = '';
+
+      rows.forEach((row, i)=>{
+        if(i===0 && isHeaderRow(row)) return; // 헤더 스킵
+        const cols = row.map(cell=>{
+          // 엑셀 날짜 숫자 처리
+          if(typeof cell === 'number' && cell > 40000 && cell < 50000){
+            const d = XLSX.SSF.parse_date_code(cell);
+            return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+          }
+          return String(cell||'').trim();
+        });
+        if(cols.every(c=>!c)) return;
+
+        const row2 = parseImportRow(cols, prevDate);
+        if(!row2.name && !row2.payText) return;
+        if(row2.date) prevDate = row2.date;
+        _importRows.push(row2);
+      });
+
+      renderImportPreview();
+    } catch(err) {
+      showToast('파일 읽기 오류: '+err.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function isHeaderRow(row){
+  const str = row.join('').toLowerCase();
+  return str.includes('날짜') || str.includes('차트') || str.includes('date');
+}
+
+function renderImportPreview(){
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요. 형식을 확인해주세요','error'); return; }
 
-  // 미리보기 렌더
   const tbody = document.getElementById('import-preview-body');
-  tbody.innerHTML = _importRows.map((r,i)=>`
+  tbody.innerHTML = _importRows.map((r)=>`
     <tr style="border-bottom:1px solid #1a2236">
-      <td style="padding:5px 8px;color:var(--muted)">${r.date}</td>
+      <td style="padding:5px 8px;color:var(--muted);white-space:nowrap">${r.date}</td>
       <td style="padding:5px 8px">${r.chart}</td>
-      <td style="padding:5px 8px;font-weight:600">${r.name}</td>
-      <td style="padding:5px 8px">${r.cat1}</td>
-      <td style="padding:5px 8px;color:var(--sub);max-width:200px;word-break:break-all">${r.payText}</td>
-      <td style="padding:5px 8px;text-align:right;color:var(--accent)">${r.amount}</td>
-      <td style="padding:5px 8px">
+      <td style="padding:5px 8px;font-weight:600;white-space:nowrap">${r.name}</td>
+      <td style="padding:5px 8px;white-space:nowrap">${r.cat1}</td>
+      <td style="padding:5px 8px;color:var(--sub);white-space:nowrap">${r.cat2||''}</td>
+      <td style="padding:5px 8px;color:var(--sub);max-width:220px;word-break:break-all">${r.payText}</td>
+      <td style="padding:5px 8px;text-align:right;color:var(--accent);white-space:nowrap">${r.amount}</td>
+      <td style="padding:5px 8px;white-space:nowrap">
         <span style="color:${r.staffRaw!==r.staff?'var(--green)':'var(--sub)'}">${r.staff}</span>
-        ${r.staffRaw!==r.staff?`<span style="color:var(--muted);font-size:10px">(원본:${r.staffRaw})</span>`:''}
+        ${r.staffRaw!==r.staff?`<span style="color:var(--muted);font-size:10px"> (원본:${r.staffRaw})</span>`:''}
       </td>
     </tr>
   `).join('');
