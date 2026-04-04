@@ -386,6 +386,7 @@ var G = {
   cardRows:[{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''}],
   bankData:null, bankFile:'',
   bankManualCards:[],
+  bankEditedCards:[], // 엑셀 추출 항목 편집본
   arc:[],
   charts:{}
 };
@@ -671,8 +672,11 @@ function computeB(){
     ||'';
   var items=[],newRoutes={};
   G.bRows.forEach(function(r){
-    var route=String(r[fcol]||'').trim();
-    if(!route||/합계|총계|소계/.test(route))return;
+    var rawRoute=String(r[fcol]||'').trim();
+    if(!rawRoute||/합계|총계|소계/.test(rawRoute))return;
+    // " (238)" 같은 건수 접미사 제거: "일본(통) (238)" → "일본(통)"
+    var route=rawRoute.replace(/\s*\(\d+\)\s*$/,'').trim();
+    if(!route)return;
     var amt=sunapCol?pn(r[sunapCol]):0;
     if(isNaN(amt))amt=0;
     var rc=cfg.routes[route];
@@ -745,7 +749,7 @@ function render(){
   if(ad){
     h+='<div class="sdiv">② 시술별 재료비 ('+esc(G.aFile)+')</div>';
     var priced=ad.items.filter(function(i){return i.price>0});
-    var unpriced=ad.items.filter(function(i){return i.price===0});
+    var unpriced=ad.items.filter(function(i){return i.price===0}).sort(function(a,b){return b.count-a.count});
     h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">시술별 재료비 집계</div>';
     h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">시술이름(건수) 자동 파싱 · 건수 × 단가 = 소계</div>';
     h+='<table><thead><tr><th>시술 이름</th><th class="r">건수</th><th class="r">단가 (원)</th><th class="r">소계</th></tr></thead><tbody>';
@@ -828,10 +832,21 @@ function renderCrossTable(){
   var chans=Object.keys(chanSet).sort();
   if(!staffs.length||!chans.length){el.innerHTML='';return;}
 
+  // 열별 최대 객단가 계산 (하이라이트용)
+  var chanMax={};
+  chans.forEach(function(c){
+    var maxAvg=0;
+    staffs.forEach(function(s){
+      var d=map[s]&&map[s][c];
+      if(d&&d.cnt){var avg=d.tot/d.cnt;if(avg>maxAvg)maxAvg=avg;}
+    });
+    chanMax[c]=maxAvg;
+  });
+
   var h='<div class="sdiv">④ 상담자 × 내원경로 교차 분석 <span style="font-size:10px;color:#cbd5e1;">(만원 단위)</span></div>';
   h+='<div class="card" style="overflow-x:auto;">';
   h+='<div style="font-size:14px;font-weight:700;margin-bottom:4px;">상담자별 내원경로 객단가 · 명수</div>';
-  h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">각 셀: 객단가(만원) / 명수</div>';
+  h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">각 셀: 객단가(만원) / 명수 · <span style="color:#8b2500;font-weight:600;">■</span> 경로별 최고 객단가</div>';
   h+='<table style="font-size:12px;min-width:600px;">';
   h+='<thead><tr><th style="white-space:nowrap;">상담자</th>';
   chans.forEach(function(c){h+='<th class="r" style="white-space:nowrap;">'+esc(c)+'</th>';});
@@ -844,8 +859,11 @@ function renderCrossTable(){
       var d=map[s]&&map[s][c];
       if(d&&d.cnt){
         totalTot+=d.tot; totalCnt+=d.cnt;
-        var avg=(d.tot/d.cnt/10000).toFixed(1);
-        h+='<td class="r"><span style="font-weight:600;">'+avg+'만</span><br><span style="color:#94a3b8;font-size:11px;">'+d.cnt+'명</span></td>';
+        var avg=d.tot/d.cnt;
+        var avgM=(avg/10000).toFixed(1);
+        var isMax=chanMax[c]>0&&Math.abs(avg-chanMax[c])<0.01;
+        var style=isMax?'font-weight:700;color:#7f1d1d;background:#fff1f0;border-radius:4px;padding:1px 4px;':'font-weight:600;';
+        h+='<td class="r"><span style="'+style+'">'+avgM+'만</span><br><span style="color:#94a3b8;font-size:11px;">'+d.cnt+'명</span></td>';
       }else{
         h+='<td class="r" style="color:#e2e8f0;">-</td>';
       }
@@ -1098,6 +1116,7 @@ function viewArc(i){
   G.cardRows=a.cardRows||[{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''}];
   G.bankData=a.bankData||null;
   G.bankManualCards=a.bankManualCards||[];
+  G.bankEditedCards=a.bankEditedCards||(a.bankData?a.bankData.cardRows.map(function(r){return Object.assign({},r);}):[]); 
   // 원본 rows 복원
   G.cRows=a.cRows||null; G.aRows=a.aRows||null; G.bRows=a.bRows||null;
   G.cCols=a.cCols||null;
@@ -1170,6 +1189,7 @@ async function doSave(){
     label:lbl, savedAt:new Date().toISOString(),
     cData:G.cData, aData:G.aData, bData:G.bData,
     cardRows:G.cardRows, bankData:G.bankData, bankManualCards:G.bankManualCards,
+    bankEditedCards:G.bankEditedCards,
     // 원본 rows 저장 (재계산, CSV 다운로드용)
     cRows:G.cRows||null, aRows:G.aRows||null, bRows:G.bRows||null,
     cFile:G.cFile, aFile:G.aFile, bFile:G.bFile,
@@ -1202,7 +1222,7 @@ function goTab(t){
 function resetAll(){
   Object.assign(G,{cRows:null,aRows:null,bRows:null,cData:null,aData:null,bData:null,cFile:'',aFile:'',bFile:'',cCols:null,
     cardRows:[{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''},{co:'',amt:''}],
-    bankData:null,bankFile:'',bankManualCards:[]});
+    bankData:null,bankFile:'',bankManualCards:[],bankEditedCards:[]});
   ['c','a','b','k'].forEach(function(t){
     var dz=document.getElementById('dz-'+t);
     var dt=document.getElementById('dz-'+t+'-t');
@@ -1228,9 +1248,9 @@ function saveCardRowsFromDOM(){
 }
 
 function getCardTotal(){
-  var t = G.bankData ? G.bankData.cardTotal : 0;
+  var t=G.bankEditedCards.reduce(function(s,r){return s+(parseFloat(r.amount)||0);},0);
   document.querySelectorAll('.manual-card-amt').forEach(function(inp){
-    t += parseFloat(inp.value)||0;
+    t+=parseFloat(inp.value)||0;
   });
   return t;
 }
@@ -1364,6 +1384,19 @@ function saveBankManualFromDOM(){
       amount:row.querySelector('.manual-card-amt').value
     });
   });
+  // 편집 중인 ec-row 값도 저장
+  var rows=document.querySelectorAll('.ec-row');
+  if(rows.length){
+    var newCards=[];
+    rows.forEach(function(row){
+      newCards.push({
+        name:row.querySelector('.ec-nm').value,
+        date:row.querySelector('.ec-dt').value,
+        amount:parseFloat(row.querySelector('.ec-amt').value)||0
+      });
+    });
+    G.bankEditedCards=newCards;
+  }
 }
 
 function addBankManualCard(){
@@ -1384,76 +1417,118 @@ function renderBankSection(){
   var el=document.getElementById('bank-section');
   if(!el)return;
   var bd=G.bankData;
+  var ec=G.bankEditedCards||[];
   var mc=G.bankManualCards||[];
 
   var h='<div class="sdiv">💳 카드 출금 내역 <span style="font-size:10px;color:#cbd5e1;">'+(bd?'('+esc(G.bankFile)+')':'수동 입력')+'</span></div>';
   h+='<div class="card">';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">';
-  h+='<div><div style="font-size:14px;font-weight:700;margin-bottom:2px;">카드 출금 합계</div>';
-  h+='<div style="font-size:12px;color:#94a3b8;">'+(bd?'거래내역 자동추출 + 수동추가':'직접 입력')+'</div></div>';
-  if(bd)h+='<button class="btn btn-sm no-print" style="background:#0891b2;color:#fff;font-size:11px;" onclick="applyBankToCard()">↓ 수동칸에 복사</button>';
-  h+='</div>';
 
-  // 자동 추출 rows (날짜 오름차순 정렬)
-  if(bd&&bd.cardRows.length){
-    var sorted=bd.cardRows.slice().sort(function(a,b){return (a.date||'').localeCompare(b.date||'')});
-    h+='<table style="margin-bottom:10px;"><thead><tr>';
-    h+='<th>카드사명</th><th style="color:#94a3b8;">날짜</th><th class="r">출금액</th></tr></thead><tbody>';
-    sorted.forEach(function(r){
-      h+='<tr>';
-      h+='<td><b>'+esc(r.name)+'</b></td>';
-      h+='<td style="color:#94a3b8;font-size:12px;white-space:nowrap;">'+esc(r.date||'')+'</td>';
-      h+='<td class="r bold">'+won(r.amount)+'</td>';
-      h+='</tr>';
-    });
-    h+='<tr style="background:#f0fdf4;"><td colspan="2" style="font-size:12px;color:#475569;">파일 추출 소계</td>';
-    h+='<td class="r bold" style="color:#10b981;">'+won(bd.cardTotal)+'</td></tr>';
-    h+='</tbody></table>';
-  }else if(!bd){
+  // ── 엑셀 추출 영역 ──
+  if(bd){
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
+    h+='<div style="font-size:13px;font-weight:700;">📥 엑셀 추출 항목</div>';
+    h+='<div style="display:flex;gap:6px;">';
+    h+='<button class="btn btn-o btn-sm" style="font-size:11px;" onclick="restoreFromBank()">↺ 엑셀값 복원</button>';
+    h+='<button class="btn btn-sm" style="background:#1e3a5f;color:#93c5fd;font-size:11px;" onclick="applyEditedCards()">✓ 수정값 반영</button>';
+    h+='</div></div>';
+
+    if(ec.length){
+      // 날짜 오름차순 정렬 (편집본 기준)
+      var sortedIdx=ec.map(function(_,i){return i;}).sort(function(a,b){
+        return (ec[a].date||'').localeCompare(ec[b].date||'');
+      });
+      h+='<div id="edited-card-rows">';
+      sortedIdx.forEach(function(i){
+        var r=ec[i];
+        h+='<div class="ec-row" style="display:grid;grid-template-columns:1fr 100px 140px 32px;gap:6px;margin-bottom:6px;" data-idx="'+i+'">';
+        h+='<input type="text" class="ec-nm" placeholder="카드사명" value="'+esc(r.name||'')+'" oninput="updateBankTotal()">';
+        h+='<input type="text" class="ec-dt" placeholder="날짜" value="'+esc(r.date||'')+'" style="font-size:12px;">';
+        h+='<input type="number" class="ec-amt" placeholder="출금액" value="'+(r.amount||'')+'" min="0" oninput="updateBankTotal()">';
+        h+='<button class="btn btn-r btn-sm" style="padding:4px;" onclick="delEditedCard('+i+')">×</button>';
+        h+='</div>';
+      });
+      h+='</div>';
+      var ecTotal=ec.reduce(function(s,r){return s+(parseFloat(r.amount)||0);},0);
+      h+='<div style="text-align:right;font-size:12px;color:#475569;margin-bottom:12px;padding-top:4px;border-top:1px solid #f1f5f9;">추출 소계: <b>'+won(ecTotal)+'</b></div>';
+    }else{
+      h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">추출된 카드 항목이 없어요</div>';
+    }
+  }else{
     h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">④ 거래내역 파일을 업로드하면 자동 추출됩니다</div>';
   }
 
-  // 수동 추가 rows
+  // ── 수동 추가 영역 ──
+  h+='<div style="font-size:11px;color:#64748b;font-weight:700;margin-bottom:6px;padding-top:6px;'+(bd?'border-top:1px dashed #e2e8f0;':'')+'">+ 수동 추가</div>';
   if(mc.length){
-    h+='<div style="font-size:11px;color:#64748b;font-weight:600;margin-bottom:6px;">수동 추가</div>';
     mc.forEach(function(r,i){
-      h+='<div class="mc-row" style="display:grid;grid-template-columns:1fr 110px 140px 32px;gap:6px;margin-bottom:6px;">';
-      h+='<input type="text" class="manual-card-nm" placeholder="카드사명" value="'+esc(r.name||'')+'" oninput="renderSummary()">';
+      h+='<div class="mc-row" style="display:grid;grid-template-columns:1fr 100px 140px 32px;gap:6px;margin-bottom:6px;">';
+      h+='<input type="text" class="manual-card-nm" placeholder="카드사명" value="'+esc(r.name||'')+'" oninput="updateBankTotal()">';
       h+='<input type="text" class="manual-card-dt" placeholder="날짜" value="'+esc(r.date||'')+'" style="font-size:12px;">';
-      h+='<input type="number" class="manual-card-amt" placeholder="출금액" value="'+(r.amount||'')+'" min="0" oninput="renderSummary()">';
+      h+='<input type="number" class="manual-card-amt" placeholder="출금액" value="'+(r.amount||'')+'" min="0" oninput="updateBankTotal()">';
       h+='<button class="btn btn-r btn-sm" style="padding:4px;" onclick="delBankManualCard(this)">×</button>';
       h+='</div>';
     });
   }
 
-  // 추가 버튼 + 합계
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">';
-  h+='<button class="btn btn-o btn-sm" onclick="addBankManualCard()">+ 수동 추가</button>';
+  // ── 하단: 추가 버튼 + 합계 ──
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">';
+  h+='<button class="btn btn-o btn-sm" onclick="addBankManualCard()">+ 행 추가</button>';
   h+='<div style="font-size:13px;font-weight:700;">카드 출금 합계: <span id="bank-card-total" style="color:#3b82f6;font-size:16px;">'+won(getCardTotal())+'</span></div>';
   h+='</div>';
-  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed #e2e8f0;">';
-  h+='<span style="font-size:13px;color:#64748b;">📌 고정비 합계</span>';
-  h+='<span style="font-size:16px;font-weight:700;color:#374151;">'+won(getFixedTotal())+'</span>';
-  h+='</div>';
 
-  // 현금흐름 요약 (파일 있을 때만)
+  // 현금흐름 요약
   if(bd){
-    h+='<div style="margin-top:16px;padding-top:14px;border-top:1px solid #f1f5f9;">';
-    h+='<div style="font-size:12px;font-weight:700;color:#475569;margin-bottom:10px;">📊 해당 월 현금흐름</div>';
-    h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">';
-    h+='<div style="background:#f8fafc;border-radius:8px;padding:12px;border-left:3px solid #ef4444;">';
-    h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:4px;">총 출금합계</div>';
-    h+='<div style="font-size:17px;font-weight:800;color:#ef4444;">'+won(bd.totalOut)+'</div></div>';
-    h+='<div style="background:#f8fafc;border-radius:8px;padding:12px;border-left:3px solid #10b981;">';
-    h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:4px;">총 입금합계</div>';
-    h+='<div style="font-size:17px;font-weight:800;color:#10b981;">'+won(bd.totalInp)+'</div></div>';
-    h+='</div></div>';
+    h+='<div style="margin-top:14px;padding-top:12px;border-top:1px solid #f1f5f9;display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+    h+='<div style="background:#f8fafc;border-radius:8px;padding:10px;border-left:3px solid #ef4444;">';
+    h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:3px;">총 출금합계</div>';
+    h+='<div style="font-size:16px;font-weight:800;color:#ef4444;">'+won(bd.totalOut)+'</div></div>';
+    h+='<div style="background:#f8fafc;border-radius:8px;padding:10px;border-left:3px solid #10b981;">';
+    h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;margin-bottom:3px;">총 입금합계</div>';
+    h+='<div style="font-size:16px;font-weight:800;color:#10b981;">'+won(bd.totalInp)+'</div></div>';
+    h+='</div>';
   }
   h+='</div>';
   el.innerHTML=h;
-  // 합계 실시간 업데이트
-  var tot=document.getElementById('bank-card-total');
-  if(tot)tot.textContent=won(getCardTotal());
+}
+
+function updateBankTotal(){
+  var t=0;
+  // 편집 중인 ec-amt 값들
+  document.querySelectorAll('.ec-amt').forEach(function(inp){t+=parseFloat(inp.value)||0;});
+  document.querySelectorAll('.manual-card-amt').forEach(function(inp){t+=parseFloat(inp.value)||0;});
+  var el=document.getElementById('bank-card-total');
+  if(el)el.textContent=won(t);
+  renderSummary();
+}
+
+function applyEditedCards(){
+  // DOM에서 읽어서 G.bankEditedCards 갱신
+  var rows=document.querySelectorAll('.ec-row');
+  var newCards=[];
+  rows.forEach(function(row){
+    newCards.push({
+      name:row.querySelector('.ec-nm').value,
+      date:row.querySelector('.ec-dt').value,
+      amount:parseFloat(row.querySelector('.ec-amt').value)||0
+    });
+  });
+  G.bankEditedCards=newCards;
+  renderBankSection();
+  renderSummary();
+}
+
+function restoreFromBank(){
+  if(!G.bankData){return;}
+  if(!confirm('엑셀 원본값으로 복원할까요? 수정 내용이 사라져요.'))return;
+  G.bankEditedCards=G.bankData.cardRows.map(function(r){return Object.assign({},r);});
+  renderBankSection();
+  renderSummary();
+}
+
+function delEditedCard(i){
+  G.bankEditedCards.splice(i,1);
+  renderBankSection();
+  renderSummary();
 }
 
 function processBankFile(rawRows){
@@ -1501,6 +1576,8 @@ function processBankFile(rawRows){
   var cardTotal=cardRows.reduce(function(s,r){return s+r.amount;},0);
   G.bankData={cardRows:cardRows,cardTotal:cardTotal,totalOut:totalOut,totalInp:totalInp,
     headerFound:true,file:G.bankFile};
+  // 편집본 초기화 (원본 복사)
+  G.bankEditedCards=cardRows.map(function(r){return Object.assign({},r);});
 }
 
 function resetFixedToDefault(){
