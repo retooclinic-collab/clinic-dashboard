@@ -97,6 +97,13 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
 .amount-match{font-size:11px;color:var(--green)}
 .amount-mismatch{font-size:11px;color:var(--yellow)}
 
+/* ── 가격 인풋 ── */
+.treatment-price{width:72px;background:var(--panel);border:1px solid var(--border);border-radius:7px;color:var(--accent);font-size:13px;padding:5px 8px;text-align:right;outline:none;font-weight:700}
+.treatment-price:focus{border-color:var(--accent)}
+.price-sum-bar{display:flex;align-items:center;justify-content:space-between;background:#0a0f1a;border-radius:10px;padding:10px 14px;margin-top:10px;font-size:13px;border:1px solid var(--border)}
+.price-sum-match{color:var(--green);font-weight:700}
+.price-sum-diff{color:var(--yellow);font-weight:700}
+
 /* ── SUBMIT ── */
 .submit-wrap{position:fixed;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid var(--border);padding:16px 20px;z-index:100}
 .submit-inner{max-width:720px;margin:0 auto;display:flex;gap:10px}
@@ -178,7 +185,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
 
     <!-- 일괄 업로드 섹션 -->
     <div id="import-section" style="display:none">
-      <div class="section">
+      <div class="section form-section">
         <div class="section-title">과거 수납 리스트 일괄 업로드</div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.7">
           기존 엑셀에서 데이터를 복사해서 붙여넣기 하세요.<br>
@@ -187,8 +194,12 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
         </div>
         <div class="form-group">
           <textarea id="import-text" class="form-textarea" style="min-height:200px;font-size:12px;font-family:monospace"
-            placeholder="엑셀에서 복사한 데이터를 여기에 붙여넣기..."></textarea>
+            placeholder="엑셀에서 복사한 데이터를 여기에 붙여넣기 (탭 구분)&#10;형식: 날짜&#9;차트번호&#9;이름&#9;분류1&#9;분류2&#9;결제내역&#9;결제금액&#9;상담자"></textarea>
         </div>
+        <!-- 미리보기 버튼 항상 표시 -->
+        <button onclick="parseImportData()" style="margin-top:12px;width:100%;padding:14px;background:var(--accent);color:#0f172a;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">
+          🔍 미리보기 확인
+        </button>
         <div id="import-preview" style="display:none;margin-top:12px">
           <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:8px">미리보기 <span id="import-count" style="color:var(--accent)"></span></div>
           <div style="overflow-x:auto">
@@ -209,19 +220,16 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           </div>
           <div style="display:flex;gap:10px;margin-top:14px">
             <button onclick="confirmImport()" id="import-btn"
-              style="flex:1;padding:13px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer">
+              style="flex:1;padding:14px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer">
               ✅ 전체 Firebase 저장
             </button>
             <button onclick="clearImport()"
-              style="padding:13px 18px;background:var(--border);color:var(--muted);border:none;border-radius:12px;font-size:13px;cursor:pointer">
+              style="padding:14px 18px;background:var(--border);color:var(--muted);border:none;border-radius:12px;font-size:13px;cursor:pointer">
               초기화
             </button>
           </div>
           <div id="import-progress" style="margin-top:10px;font-size:12px;color:var(--accent);display:none"></div>
         </div>
-        <button onclick="parseImportData()" style="margin-top:12px;width:100%;padding:12px;background:var(--accent);color:#0f172a;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer">
-          미리보기 확인
-        </button>
       </div>
     </div>
 
@@ -233,7 +241,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
     </div>
 
     <!-- 기본 정보 -->
-    <div class="section">
+    <div class="section form-section">
       <div class="section-title">기본 정보</div>
       <div class="form-grid">
         <div class="form-group">
@@ -291,7 +299,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
     </div>
 
     <!-- 결제 정보 -->
-    <div class="section">
+    <div class="section form-section">
       <div class="section-title" id="payment-section-title">결제 내역</div>
       <div class="form-grid full">
         <div class="form-group">
@@ -367,11 +375,11 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
     </div>
   </div>
 
-  <!-- 하단 버튼 -->
-  <div class="submit-wrap">
+  <!-- 하단 고정 버튼 -->
+  <div class="submit-wrap" id="submit-wrap">
     <div class="submit-inner">
       <button class="reset-btn" onclick="resetForm()">초기화</button>
-      <button class="submit-btn" id="submit-btn" onclick="submitConsultation()">저장하기</button>
+      <button class="submit-btn" id="submit-btn" onclick="submitConsultation()">💾 저장하기</button>
     </div>
   </div>
 </div>
@@ -535,17 +543,23 @@ function setMode(mode){
   document.getElementById('vip-notice').style.display=mode==='vip'?'block':'none';
   document.getElementById('import-section').style.display=mode==='import'?'block':'none';
 
-  // 입력폼/버튼 숨기기
-  const formSections = document.querySelectorAll('.section');
-  formSections.forEach(s=>{ s.style.display=mode==='import'?'none':'block'; });
-  document.querySelector('.submit-wrap').style.display=mode==='import'?'none':'block';
-  document.getElementById('import-section').style.display=mode==='import'?'block':'none';
+  // 입력폼 섹션 토글 (import 모드에서 숨김)
+  document.querySelectorAll('.form-section').forEach(s=>{
+    s.style.display = mode==='import' ? 'none' : 'block';
+  });
 
-  if(mode!=='import'){
-    document.getElementById('amount-wrap').style.display=mode==='vip'?'none':'flex';
-    document.getElementById('payment-section-title').textContent=mode==='vip'?'당일 시술 내역 (결제금액 0원)':'결제 내역';
-    document.querySelector('.submit-btn').className='submit-btn'+(mode==='vip'?' vip':'');
-    document.querySelector('.submit-btn').textContent=mode==='vip'?'VIP 재료 소모 저장':'저장하기';
+  // 저장 버튼은 import 모드에서만 숨김
+  const sw = document.getElementById('submit-wrap');
+  if(sw) sw.style.display = mode==='import' ? 'none' : 'block';
+
+  if(mode !== 'import'){
+    document.getElementById('amount-wrap').style.display = mode==='vip' ? 'none' : 'flex';
+    document.getElementById('payment-section-title').textContent = mode==='vip' ? '당일 시술 내역 (결제금액 0원)' : '결제 내역';
+    const sb = document.querySelector('.submit-btn');
+    if(sb){
+      sb.className = 'submit-btn' + (mode==='vip' ? ' vip' : '');
+      sb.textContent = mode==='vip' ? '💎 VIP 재료 소모 저장' : '💾 저장하기';
+    }
   }
 }
 
@@ -584,12 +598,77 @@ const TREATMENT_ITEMS = [
   '엑소좀','플라즈마엑소좀','MOXI',
   '티타튠','티타튠max',
   '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트',
-  'NAD','미라젯쥬베룩'
+  'NAD','미라젯쥬베룩','알라딘필'
 ];
 
 /* ══════════════════════════════════════════════
-   로컬 파서 (API 불필요)
+   시술별 표준 청구가 (만원, per unit)
 ══════════════════════════════════════════════ */
+const CHARGE_PRICE = {
+  '울쎄라(100샷)':66, '소프웨이브(50샷)':66,
+  '써마지300':165, '써마지600':275, '써마지900샷':429,
+  '아이써마지225':132, '아이써마지450샷':198,
+  '튠페이스':55, '튠라이너':55, '티타늄':0, '온다':0,
+  '티타튠':132, '티타튠max':165,
+  '리쥬란':55, '리쥬란HB':49.5, '리쥬란아이':55,
+  '힐로웨이브':66, '미라젯':38.5, '미라젯쥬베룩':99,
+  '쥬베룩볼륨':38.5, '쥬베룩아이':49.5,
+  '쥬브아셀':88, '리투오':88,
+  '엠페이스':88, '오푸스':55,
+  '포텐자(펌핑)':71.5, '포텐자(모공)':44, '포텐자(기미)':44,
+  'BBL(색소)':22, 'BBL(여드름)':49.5, 'BBL(스킨타이트닝)':71.5,
+  '필러(수입)':55, '필러(국산)':33,
+  '보톡스(국산)':11, '보톡스(수입)':22,
+  '듀얼피코':33, '피코슈어':33, 'moxi':66, 'MOXI':66,
+  'LDM':27.5, '플라즈마':33, '라라필':22,
+  '수면비':22, '아이리프팅':38.5, '코레지셀핏':33, '아그네스':33,
+  '리투핏주사':17.6, '줄기세포30cc':145, '줄기세포60cc':198,
+  '줄기세포120cc':330, '줄기세포240cc':506,
+  '자가엑소좀':165, '위고비':26, '스킨바이브':60.5,
+  '아쿠아필':11, '제네시스+PTT':38.5, '제네시스':38.5,
+  '수액':8.8, 'NAD':16.5, 'TA':1.1, 'CO2':5.5,
+  '알라딘필':33, '리쥬셀릭크림':4.2, '리쥬셀릭앰플':4.8,
+  '리쥬셀릭선물세트':12.5, 'VIP회원권':0, '상담만':2.2,
+  '예약금':0, '하이쿡스':5.5, '플라즈마엑소좀':55,
+  '새살주사':27.5, '인텐스울트라':27.5, '히알라제':16.5,
+};
+
+/* ── 가격 분배 (합계 = 결제금액) ── */
+function distributePrices(treatments, total){
+  if(!total || total <= 0) return treatments.map(t=>({...t, price: 0}));
+
+  // 1단계: 각 시술 추정가 = 표준가 × 수량
+  let estimated = treatments.map(t=>{
+    const unit = CHARGE_PRICE[t.item] ?? 0;
+    return {...t, price: Math.round(unit * t.qty * 10) / 10};
+  });
+
+  // 2단계: 합계 계산
+  const estSum = estimated.reduce((s,t)=>s + t.price, 0);
+
+  if(estSum <= 0){
+    // 표준가 없는 항목만 있을 때 균등 분배
+    const perItem = Math.round(total / treatments.length * 10) / 10;
+    return estimated.map((t,i)=>({...t, price: i===0 ? total - perItem*(treatments.length-1) : perItem}));
+  }
+
+  // 3단계: 비율로 스케일
+  const scale = total / estSum;
+  let scaled = estimated.map(t=>({...t, price: Math.round(t.price * scale * 10) / 10}));
+
+  // 4단계: 반올림 오차 마지막 항목에서 조정
+  const scaledSum = scaled.reduce((s,t)=>s + t.price, 0);
+  const diff = Math.round((total - scaledSum) * 10) / 10;
+  if(diff !== 0 && scaled.length > 0){
+    // 가격이 있는 마지막 항목에 조정
+    const lastIdx = scaled.map((t,i)=>({t,i})).reverse().find(({t})=>t.price > 0)?.i ?? scaled.length-1;
+    scaled[lastIdx].price = Math.round((scaled[lastIdx].price + diff) * 10) / 10;
+  }
+
+  return scaled;
+}
+
+
 function localParse(raw){
   const text = raw
     .replace(/[=＝]\s*[\d.,]+\s*[mM].*$/g, '') // =결제금액 제거
@@ -756,10 +835,17 @@ function localParse(raw){
   if(jbeyeM) results.push({item:'쥬베룩아이', qty: parseInt(jbeyeM[1])});
   else if(/쥬베룩아이/i.test(raw)) results.push({item:'쥬베룩아이', qty:1});
 
-  // ── 쥬브아셀 ──
-  const jbaM = raw.match(/쥬브아셀\s*(?:\d+%?)?\s*(\d+)\s*[병회]/i);
-  if(jbaM) results.push({item:'쥬브아셀', qty: parseInt(jbaM[1])});
-  else if(/쥬브아셀/i.test(raw)) results.push({item:'쥬브아셀', qty:1});
+  // ── 쥬브아셀 (쥬브아셀N병 안에 미라젯 포함되면 미라젯도 N개) ──
+  const jbaM = raw.match(/(?:커스텀)?쥬브아셀\s*(?:\d+%?)?\s*(\d+)\s*[병회]/i);
+  if(jbaM){
+    const jbaQty = parseInt(jbaM[1]);
+    results.push({item:'쥬브아셀', qty: jbaQty});
+    // 쥬브아셀N병(...미라젯...) 패턴 → 미라젯 N개
+    const jbaBundleMj = raw.match(/쥬브아셀.*?\(.*?미라젯.*?\)/i);
+    if(jbaBundleMj && !hasMjJba && !hasMjLto && !hasMjRj && !hasMjRjHB && !hasMjJbv){
+      results.push({item:'미라젯', qty: jbaQty});
+    }
+  } else if(/쥬브아셀/i.test(raw)) results.push({item:'쥬브아셀', qty:1});
 
   // ── 리투오 ──
   const ltoM = raw.match(/리투오\s*(\d+)\s*병/i);
@@ -796,19 +882,32 @@ function localParse(raw){
     results.push({item:'필러(국산)', qty: ccm?parseInt(ccm[1]):1});
   }
 
-  // ── 리쥬셀릭 ──
+  // ── 리쥬셀릭 (가격이 뒤에 붙어도 수량은 항상 별도 계산) ──
   if(/리쥬셀릭.*?선물세트/i.test(raw)){
-    const m=raw.match(/리쥬셀릭.*?선물세트\s*(\d+)?\s*개?/i);
-    results.push({item:'리쥬셀릭선물세트', qty: m&&m[1]?parseInt(m[1]):1});
+    // 선물세트: 개수 명시 or 가격으로 유추 (12.5=1, 25=2, 37.5=3)
+    const cntM = raw.match(/리쥬셀릭.*?선물세트\s*(\d+)\s*개/i);
+    const priceM = raw.match(/리쥬셀릭.*?선물세트\s*([\d.]+)/i);
+    let qty = 1;
+    if(cntM) qty = parseInt(cntM[1]);
+    else if(priceM){
+      const p = parseFloat(priceM[1]);
+      qty = Math.round(p / 12.5) || 1;
+    }
+    results.push({item:'리쥬셀릭선물세트', qty});
   }
   if(/리쥬셀릭.*?앰플/i.test(raw)){
-    const m=raw.match(/(?:리쥬셀릭\s*앰플|앰플\s*\d+개)\s*(\d+)?\s*개?/i);
-    results.push({item:'리쥬셀릭앰플', qty: m&&m[1]?parseInt(m[1]):1});
+    // 앰플: 개수 명시 시만, 없으면 1 (4.8은 가격)
+    const cntM = raw.match(/리쥬셀릭.*?앰플\s*(\d+)\s*개/i);
+    results.push({item:'리쥬셀릭앰플', qty: cntM?parseInt(cntM[1]):1});
   }
-  if(/리쥬셀릭(?!\s*선물|\s*앰플)/i.test(raw)){
-    const m=raw.match(/리쥬셀릭(?:크림|재생크림)?\s*(\d+)?\s*개?/i);
-    results.push({item:'리쥬셀릭크림', qty: m&&m[1]?parseInt(m[1]):1});
+  if(/리쥬셀릭(?!.*?선물세트)(?!.*?앰플)/i.test(raw)){
+    // 크림: 개수 명시 시만, 없으면 1 (4.2는 가격)
+    const cntM = raw.match(/리쥬셀릭(?:크림|재생크림)?\s*(\d+)\s*개/i);
+    results.push({item:'리쥬셀릭크림', qty: cntM?parseInt(cntM[1]):1});
   }
+
+  // ── 알라딘필 ──
+  if(/알라딘필/i.test(raw)) results.push({item:'알라딘필', qty:1});
 
   // ── 미라젯쥬브아셀 조합은 위에서 처리됨 ──
 
@@ -880,8 +979,10 @@ function localParse(raw){
   else if(/리투핏주사/i.test(raw)) results.push({item:'리투핏주사', qty:1});
   if(/vip/i.test(raw) && !/vip재료/i.test(raw)) results.push({item:'VIP회원권', qty:1});
   if(/상담비|상담만/i.test(raw)) results.push({item:'상담만', qty:1});
-  // 예약금: "예약금=XX" 처럼 실제 결제일 때만, "예약금제외/예약금없/예약금3.3제외" 등은 무시
-  if(/예약금/i.test(raw) && !/예약금\s*제외|예약금\s*없|예약금\s*[\d.]+\s*제외/i.test(raw)) results.push({item:'예약금', qty:1});
+  // 예약금: "-예약금" 또는 "예약금제외" 등은 무시, 실제 결제 예약금만 추가
+  if(/예약금/i.test(raw) && !/예약금\s*제외|예약금\s*없|예약금\s*[\d.]+\s*제외|-\s*예약금|예약금\s*=|예약금\s*[\d]+m/i.test(raw)){
+    results.push({item:'예약금', qty:1});
+  }
   const co2M = raw.match(/co2\s*(\d+)\s*(?:ea|개)/i);
   if(co2M) results.push({item:'CO2', qty: parseInt(co2M[1])});
   else if(/co2/i.test(raw)) results.push({item:'CO2', qty:1});
@@ -909,16 +1010,15 @@ async function parsePayment(){
 
   try {
     const parsed = localParse(text);
-    showParseResult(parsed);
-    // ── 결제금액 자동 추출 ──
+    // ── 결제금액: 텍스트에서 추출되면 항상 업데이트 ──
     const extracted = extractAmount(text);
-    if(extracted !== null){
-      const amountInput = document.getElementById('f-amount');
-      if(amountInput && !amountInput.value) {
-        amountInput.value = extracted;
-        checkAmountMatch();
-      }
+    const amountInput = document.getElementById('f-amount');
+    if(extracted !== null && amountInput){
+      amountInput.value = extracted;
+      checkAmountMatch();
     }
+    const total = extracted || parseFloat(amountInput?.value) || 0;
+    showParseResult(parsed, total);
     // ── 결제방식 자동 추출 ──
     const payInfo = extractPayment(text);
     showPaymentMethod(payInfo);
@@ -930,8 +1030,8 @@ async function parsePayment(){
   }
 }
 
-/* ── 파싱 결과 표시 ── */
-function showParseResult(parsed){
+/* ── 파싱 결과 표시 (가격 컬럼 포함) ── */
+function showParseResult(parsed, total){
   const result = document.getElementById('parse-result');
   const list = document.getElementById('treatment-list');
   result.style.display = 'block';
@@ -940,23 +1040,33 @@ function showParseResult(parsed){
   const treatments = parsed.treatments||[];
   document.getElementById('treatment-count').textContent = treatments.length;
 
-  treatments.forEach((t,i) => {
+  // 총액 결정
+  const amt = total || parseFloat(document.getElementById('f-amount').value) || 0;
+
+  // 가격 분배
+  const withPrices = distributePrices(treatments, amt);
+  window._parsedTreatments = JSON.parse(JSON.stringify(withPrices));
+
+  withPrices.forEach((t,i) => {
     const matched = TREATMENT_ITEMS.includes(t.item);
     const row = document.createElement('div');
     row.className = 'treatment-row'+(matched?'':' treatment-unmatched');
-    row.dataset.index = i;
     row.innerHTML = `
-      <div class="treatment-name">${t.item}${matched?'':'  ⚠ 미등록 항목'}</div>
+      <div class="treatment-name" style="min-width:90px">${t.item}${matched?'':'<br><span style="font-size:10px;color:var(--yellow)">⚠ 미등록</span>'}</div>
       <div class="treatment-qty-wrap">
         <div class="treatment-qty-label">수량</div>
-        <input class="treatment-qty" type="number" min="0" value="${t.qty}" onchange="updateTreatmentQty(${i},this.value)">
+        <input class="treatment-qty" type="number" min="0" value="${t.qty}" onchange="updateTreatment(${i},'qty',this.value)">
+      </div>
+      <div class="treatment-qty-wrap">
+        <div class="treatment-qty-label">가격(만)</div>
+        <input class="treatment-price" type="number" min="0" step="0.1" value="${t.price}" onchange="updateTreatment(${i},'price',this.value)">
       </div>
       <button class="treatment-remove" onclick="removeTreatment(${i})" title="삭제">×</button>
     `;
     list.appendChild(row);
   });
 
-  window._parsedTreatments = JSON.parse(JSON.stringify(treatments));
+  updatePriceSum(amt);
 
   if(parsed.notes){
     const raw = document.getElementById('parse-raw-text');
@@ -965,15 +1075,41 @@ function showParseResult(parsed){
   }
 }
 
-function updateTreatmentQty(idx, val){
-  if(window._parsedTreatments && window._parsedTreatments[idx])
-    window._parsedTreatments[idx].qty = parseFloat(val)||0;
+function updateTreatment(idx, field, val){
+  if(!window._parsedTreatments || !window._parsedTreatments[idx]) return;
+  window._parsedTreatments[idx][field] = parseFloat(val)||0;
+  const amt = parseFloat(document.getElementById('f-amount').value)||0;
+  updatePriceSum(amt);
+}
+
+function updatePriceSum(total){
+  const sum = (window._parsedTreatments||[]).reduce((s,t)=>s+(t.price||0),0);
+  const sumR = Math.round(sum*10)/10;
+  let bar = document.getElementById('price-sum-bar');
+  if(!bar){
+    bar = document.createElement('div');
+    bar.id='price-sum-bar';
+    bar.className='price-sum-bar';
+    document.getElementById('treatment-list').after(bar);
+  }
+  const diff = Math.round((sumR-(total||0))*10)/10;
+  const match = Math.abs(diff)<0.1;
+  bar.innerHTML = `
+    <span style="color:var(--muted)">시술 합계</span>
+    <span class="${match?'price-sum-match':'price-sum-diff'}">
+      ${sumR.toLocaleString()}만원
+      ${total?`/ 결제 ${total}만원`:''}
+      ${!match&&total?`<span style="font-size:11px;font-weight:400"> (차이 ${diff>0?'+':''}${diff}만)</span>`:''}
+      ${match&&total?' ✓':''}
+    </span>
+  `;
 }
 
 function removeTreatment(idx){
   if(!window._parsedTreatments) return;
   window._parsedTreatments.splice(idx,1);
-  showParseResult({treatments: window._parsedTreatments});
+  const amt = parseFloat(document.getElementById('f-amount').value)||0;
+  showParseResult({treatments: window._parsedTreatments}, amt);
 }
 
 function addManualTreatment(){
@@ -1210,12 +1346,23 @@ function addManualTreatment(){
 function filterManualList(q){
   const list = document.getElementById('manual-list');
   const filtered = q ? TREATMENT_ITEMS.filter(i=>i.includes(q)) : TREATMENT_ITEMS;
-  list.innerHTML = filtered.slice(0,30).map(item=>`
+  let html = filtered.slice(0,30).map(item=>`
     <div onclick="selectManualItem('${item}')"
       style="padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;background:${window._manualSelected===item?'#0c2a3a':'#0f172a'};border:1px solid ${window._manualSelected===item?'var(--accent)':'var(--border)'}">
       ${item}
     </div>
   `).join('');
+  // 검색어가 있고 목록에 없으면 직접추가 옵션 표시
+  if(q && !TREATMENT_ITEMS.includes(q)){
+    const isCustom = window._manualSelected === '__custom__:'+q;
+    html += `
+      <div onclick="selectManualItem('__custom__:${q}')"
+        style="padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;background:${isCustom?'#1a1200':'#0f172a'};border:1px solid ${isCustom?'var(--yellow)':'var(--border)'};color:var(--yellow)">
+        ✏ "${q}" 직접 추가
+      </div>
+    `;
+  }
+  list.innerHTML = html;
 }
 
 function selectManualItem(item){
@@ -1224,12 +1371,16 @@ function selectManualItem(item){
 }
 
 function confirmManualAdd(){
-  const item = window._manualSelected;
+  let item = window._manualSelected;
+  if(!item){ showToast('항목을 선택하거나 직접 입력해주세요','error'); return; }
+  // 직접입력 처리
+  if(item.startsWith('__custom__:')) item = item.replace('__custom__:', '');
   const qty = parseFloat(document.getElementById('manual-qty').value)||1;
-  if(!item){ showToast('항목을 선택해주세요','error'); return; }
   if(!window._parsedTreatments) window._parsedTreatments = [];
-  window._parsedTreatments.push({item, qty});
-  showParseResult({treatments: window._parsedTreatments});
+  const unitPrice = CHARGE_PRICE[item] ?? 0;
+  window._parsedTreatments.push({item, qty, price: Math.round(unitPrice * qty * 10)/10});
+  const amt = parseFloat(document.getElementById('f-amount').value)||0;
+  showParseResult({treatments: window._parsedTreatments}, amt);
   document.getElementById('manual-modal').remove();
 }
 
@@ -1268,6 +1419,8 @@ function checkAmountMatch(){
     disp.style.display='flex';
     show.textContent = v.toLocaleString()+'만원';
   }
+  // 가격 합계 바도 업데이트
+  if(window._parsedTreatments?.length > 0) updatePriceSum(v);
 }
 
 /* ── 로그인/로그아웃 ── */
