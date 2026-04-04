@@ -464,7 +464,9 @@ const TREATMENT_ITEMS = [
   '써마지900샷','줄기세포30cc','줄기세포60cc','줄기세포120cc','줄기세포240cc',
   'BBL(색소)','BBL(스킨타이트닝)','BBL(여드름)','moxi','오푸스','쥬베룩아이',
   '리투오','쥬브아셀','자가엑소좀','힐로웨이브','스컬트라','아이써마지450샷',
-  '엑소좀','플라즈마엑소좀','MOXI'
+  '엑소좀','플라즈마엑소좀','MOXI',
+  '티타튠','티타튠max',
+  '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트'
 ];
 
 /* ══════════════════════════════════════════════
@@ -607,16 +609,41 @@ function localParse(raw){
   if(/포텐자.*?모공/i.test(raw)) results.push({item:'포텐자(모공)', qty:1});
   if(/포텐자.*?기미/i.test(raw)) results.push({item:'포텐자(기미)', qty:1});
 
-  // ── 필러 ──
-  const fillerImp = raw.match(/(?:수입)\s*필러|필러.*?수입|입술필러.*?수입|턱필러.*?수입|목필러.*?수입|눈밑필러.*?수입/i);
-  if(fillerImp){
-    const ccm = raw.match(/필러\s*(\d+)\s*cc/i);
-    results.push({item:'필러(수입)', qty: ccm?parseInt(ccm[1]):1});
+  // ── 필러 (수입) - 턱끝F, 목필러, 눈밑필러 등 포함 ──
+  const fillerImpMatches = [...raw.matchAll(/(?:턱끝[fF]|목필러|눈밑필러|관자필러|이마필러|옆볼필러|입술필러|턱필러|코필러|필러)\s*(\d+)\s*cc\s*\(?수입\)?|(?:수입)\s*필러\s*(\d+)\s*cc/gi)];
+  if(fillerImpMatches.length>0){
+    let totalCC=0;
+    fillerImpMatches.forEach(m=>{ totalCC+=parseInt(m[1]||m[2]||1); });
+    results.push({item:'필러(수입)', qty: totalCC});
+  } else if(/(?:수입)\s*필러|필러.*?수입|턱끝[fF].*?수입|입술필러.*?수입|턱필러.*?수입|목필러.*?수입/i.test(raw)){
+    results.push({item:'필러(수입)', qty:1});
   }
-  const fillerDom = raw.match(/(?:국산|국)\s*필러|필러.*?국산|입술필러.*?국/i);
-  if(fillerDom && !fillerImp){
+  const fillerDomMatch = /(?:국산|국)\s*필러|필러.*?국산|입술필러.*?국[^산]|입술(?:필러)?.*?\(국\)/i.test(raw);
+  if(fillerDomMatch){
     const ccm = raw.match(/필러\s*(\d+)\s*cc/i);
     results.push({item:'필러(국산)', qty: ccm?parseInt(ccm[1]):1});
+  }
+
+  // ── 리쥬셀릭 ──
+  if(/리쥬셀릭.*?선물세트/i.test(raw)){
+    const m=raw.match(/리쥬셀릭.*?선물세트\s*(\d+)?\s*개?/i);
+    results.push({item:'리쥬셀릭선물세트', qty: m&&m[1]?parseInt(m[1]):1});
+  }
+  if(/리쥬셀릭.*?앰플/i.test(raw)){
+    const m=raw.match(/(?:리쥬셀릭\s*앰플|앰플\s*\d+개)\s*(\d+)?\s*개?/i);
+    results.push({item:'리쥬셀릭앰플', qty: m&&m[1]?parseInt(m[1]):1});
+  }
+  if(/리쥬셀릭(?!\s*선물|\s*앰플)/i.test(raw)){
+    const m=raw.match(/리쥬셀릭(?:크림|재생크림)?\s*(\d+)?\s*개?/i);
+    results.push({item:'리쥬셀릭크림', qty: m&&m[1]?parseInt(m[1]):1});
+  }
+
+  // ── 미라젯쥬브아셀 조합 (각각 카운트) ──
+  const mjba = raw.match(/미라젯쥬브아셀\s*(\d+)\s*회/i);
+  if(mjba){
+    const q = parseInt(mjba[1]);
+    results.push({item:'미라젯', qty:q});
+    results.push({item:'쥬브아셀', qty:q});
   }
 
   // ── 보톡스 국산 ──
@@ -698,6 +725,18 @@ async function parsePayment(){
   try {
     const parsed = localParse(text);
     showParseResult(parsed);
+    // ── 결제금액 자동 추출 ──
+    const extracted = extractAmount(text);
+    if(extracted !== null){
+      const amountInput = document.getElementById('f-amount');
+      if(amountInput && !amountInput.value) {
+        amountInput.value = extracted;
+        checkAmountMatch();
+      }
+    }
+    // ── 결제방식 자동 추출 ──
+    const payInfo = extractPayment(text);
+    showPaymentMethod(payInfo);
   } catch(e) {
     showToast('분석 오류: '+e.message, 'error');
   } finally {
@@ -761,12 +800,157 @@ function addManualTreatment(){
   showParseResult({treatments: window._parsedTreatments});
 }
 
+/* ── 결제금액 추출 (m/M/만원/만 모두 처리) ── */
+function extractAmount(text){
+  // =숫자m/M/만원/만 패턴
+  const m = text.match(/[=＝]\s*([\d,]+\.?\d*)\s*(?:[mM만](?:원)?)/);
+  if(m) return parseFloat(m[1].replace(/,/g,''));
+  return null;
+}
+
+/* ── 결제방식 추출 ── */
+function extractPayment(text){
+  // 분할결제: (50현금+50카드+100위챗+129알리) 형태
+  const splitPattern = /\(([^)]+(?:현금|카드|위챗|알리|이체|자진)[^)]*)\)/gi;
+  const splitMatches = [...text.matchAll(splitPattern)];
+
+  let methods = [];
+  let splitDetails = [];
+
+  if(splitMatches.length > 0){
+    splitMatches.forEach(match => {
+      const inner = match[1];
+      // 숫자+방식 조합 찾기
+      const parts = inner.split(/[+,]/);
+      parts.forEach(part => {
+        const pm = part.match(/([\d.]+)\s*([^\d\s]+)/);
+        if(pm){
+          const amt = parseFloat(pm[1]);
+          const method = normalizePayMethod(pm[2]);
+          if(method && amt > 0){
+            splitDetails.push({method, amt});
+            if(!methods.includes(method)) methods.push(method);
+          }
+        } else {
+          const method = normalizePayMethod(part.trim());
+          if(method && !methods.includes(method)) methods.push(method);
+        }
+      });
+    });
+  }
+
+  // 단순 패턴: (카) (위챗) (알리) 등
+  if(methods.length === 0){
+    const simple = text.match(/\(([^)]+)\)\s*$/);
+    if(simple){
+      const method = normalizePayMethod(simple[1]);
+      if(method) methods.push(method);
+    }
+  }
+
+  return { methods, splitDetails };
+}
+
+function normalizePayMethod(s){
+  s = s.trim().toLowerCase();
+  if(/카드|카$/.test(s)) return '카드';
+  if(/현금|현\+자진|현,자진|현자진|현금자진/.test(s)) return '현금(자진)';
+  if(/이체\+현영|이체.*현영|현영/.test(s)) return '이체(현영)';
+  if(/이체/.test(s)) return '이체';
+  if(/위챗/.test(s)) return '위챗';
+  if(/알리/.test(s)) return '알리페이';
+  if(/자진/.test(s)) return '현금(자진)';
+  return null;
+}
+
+/* ── 수동 시술 추가 (자동완성) ── */
+function addManualTreatment(){
+  // 자동완성 모달 표시
+  const existing = document.getElementById('manual-modal');
+  if(existing) { existing.remove(); }
+
+  const modal = document.createElement('div');
+  modal.id = 'manual-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:var(--panel);border-radius:16px;padding:20px;width:100%;max-width:400px;border:1px solid var(--border)">
+      <div style="font-size:14px;font-weight:700;margin-bottom:12px">시술 직접 추가</div>
+      <input id="manual-search" type="text" placeholder="시술명 검색..." autocomplete="off"
+        style="width:100%;padding:11px 14px;background:#0f172a;border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;outline:none;margin-bottom:8px"
+        oninput="filterManualList(this.value)">
+      <div id="manual-list" style="max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:12px;color:var(--muted)">수량:</span>
+        <input id="manual-qty" type="number" min="1" value="1"
+          style="width:70px;padding:8px;background:#0f172a;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;text-align:center;outline:none">
+        <button onclick="confirmManualAdd()" style="flex:1;padding:10px;background:var(--green);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">추가</button>
+        <button onclick="document.getElementById('manual-modal').remove()" style="padding:10px 14px;background:var(--border);color:var(--muted);border:none;border-radius:10px;font-size:13px;cursor:pointer">취소</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  window._manualSelected = null;
+  filterManualList('');
+  document.getElementById('manual-search').focus();
+}
+
+function filterManualList(q){
+  const list = document.getElementById('manual-list');
+  const filtered = q ? TREATMENT_ITEMS.filter(i=>i.includes(q)) : TREATMENT_ITEMS;
+  list.innerHTML = filtered.slice(0,30).map(item=>`
+    <div onclick="selectManualItem('${item}')"
+      style="padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;background:${window._manualSelected===item?'#0c2a3a':'#0f172a'};border:1px solid ${window._manualSelected===item?'var(--accent)':'var(--border)'}">
+      ${item}
+    </div>
+  `).join('');
+}
+
+function selectManualItem(item){
+  window._manualSelected = item;
+  filterManualList(document.getElementById('manual-search').value);
+}
+
+function confirmManualAdd(){
+  const item = window._manualSelected;
+  const qty = parseFloat(document.getElementById('manual-qty').value)||1;
+  if(!item){ showToast('항목을 선택해주세요','error'); return; }
+  if(!window._parsedTreatments) window._parsedTreatments = [];
+  window._parsedTreatments.push({item, qty});
+  showParseResult({treatments: window._parsedTreatments});
+  document.getElementById('manual-modal').remove();
+}
+
+/* ── 결제방식 표시 ── */
+function showPaymentMethod(payInfo){
+  let el = document.getElementById('payment-method-display');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'payment-method-display';
+    el.style.cssText = 'margin-top:8px;background:#0a0f1a;border-radius:10px;padding:12px 14px;border:1px solid var(--border);font-size:13px';
+    const amountWrap = document.getElementById('amount-wrap');
+    if(amountWrap) amountWrap.parentNode.insertBefore(el, amountWrap);
+  }
+  if(!payInfo || payInfo.methods.length === 0){ el.style.display='none'; return; }
+  el.style.display='block';
+  let html = '<div style="color:var(--muted);font-size:11px;margin-bottom:6px;font-weight:700">💳 결제방식</div>';
+  if(payInfo.splitDetails.length > 0){
+    html += payInfo.splitDetails.map(d=>
+      `<span style="display:inline-block;margin:3px;padding:4px 10px;background:var(--panel);border-radius:20px;border:1px solid var(--border)">${d.method} <strong style="color:var(--accent)">${d.amt}만</strong></span>`
+    ).join('');
+  } else {
+    html += payInfo.methods.map(m=>
+      `<span style="display:inline-block;margin:3px;padding:4px 10px;background:var(--panel);border-radius:20px;border:1px solid var(--border)">${m}</span>`
+    ).join('');
+  }
+  el.innerHTML = html;
+  window._paymentMethods = payInfo;
+}
+
 /* ── 금액 확인 ── */
 function checkAmountMatch(){
   const v = parseFloat(document.getElementById('f-amount').value)||0;
   const disp = document.getElementById('amount-display');
   const show = document.getElementById('amount-show');
-  const msg = document.getElementById('amount-match-msg');
   if(v>0){
     disp.style.display='flex';
     show.textContent = v.toLocaleString()+'만원';
@@ -828,6 +1012,7 @@ async function submitConsultation(){
       date, chart, name, doctor, cat1, cat2, staff,
       paymentText: payText,
       amount,
+      paymentMethods: window._paymentMethods || {},
       treatments: window._parsedTreatments||[],
     });
     showToast(currentMode==='vip'?'VIP 재료 소모 기록 완료!':'상담 내역 저장 완료!','success');
@@ -864,17 +1049,60 @@ function renderHistory(items){
     el.innerHTML='<div style="color:var(--muted);font-size:13px">아직 오늘 입력한 내역이 없어요</div>';
     return;
   }
-  el.innerHTML = items.map(it=>`
+  el.innerHTML = items.map(it=>{
+    const pm = it.paymentMethods;
+    let pmHtml = '';
+    if(pm && pm.methods && pm.methods.length>0){
+      if(pm.splitDetails && pm.splitDetails.length>0){
+        pmHtml = pm.splitDetails.map(d=>`<span style="font-size:11px;color:var(--sub)">${d.method} ${d.amt}만</span>`).join(' + ');
+      } else {
+        pmHtml = pm.methods.join(' / ');
+      }
+      pmHtml = `<span style="font-size:11px;color:var(--muted)"> · ${pmHtml}</span>`;
+    }
+    return `
     <div class="history-item">
       <div class="history-meta">
         <div class="history-date">${it.date} · ${it.cat1||''}</div>
         ${it.type==='vip'?'<span class="history-vip-tag">VIP재료</span>':''}
         <div class="history-name">${it.name||''} (${it.chart||''})</div>
-        <div class="history-amount">${it.amount?it.amount+'만':'0만'}</div>
+        <div class="history-amount">${it.amount?it.amount+'만':'0만'}${pmHtml}</div>
       </div>
       <div class="history-detail">${it.paymentText||''}</div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
+
+  // 다운로드 버튼
+  let dlBtn = document.getElementById('dl-btn');
+  if(!dlBtn){
+    dlBtn = document.createElement('button');
+    dlBtn.id='dl-btn';
+    dlBtn.style.cssText='margin-top:10px;padding:10px 16px;background:var(--border);color:var(--sub);border:none;border-radius:10px;font-size:12px;cursor:pointer;width:100%';
+    dlBtn.textContent='⬇ 오늘 입력 내역 CSV 다운로드';
+    dlBtn.onclick = () => downloadCSV(items);
+    document.getElementById('history-section').appendChild(dlBtn);
+  }
+}
+
+/* ── CSV 다운로드 (오프라인 백업) ── */
+function downloadCSV(items){
+  const headers = ['날짜','차트번호','이름','진료의사','분류1','분류2','상담자','결제내역','결제금액','결제방식','시술항목','저장시각'];
+  const rows = items.map(it=>{
+    const pm = it.paymentMethods?.methods?.join('/') || '';
+    const treats = (it.treatments||[]).map(t=>`${t.item}×${t.qty}`).join('|');
+    return [
+      it.date, it.chart, it.name, it.doctor||'', it.cat1||'', it.cat2||'',
+      it.staff||'', `"${(it.paymentText||'').replace(/"/g,'""')}"`,
+      it.amount||0, pm, treats, it.createdAt||''
+    ].join(',');
+  });
+  const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=`상담내역_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+  showToast('CSV 다운로드 완료','success');
 }
 
 /* ── 토스트 ── */
