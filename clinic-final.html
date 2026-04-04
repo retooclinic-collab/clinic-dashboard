@@ -367,8 +367,19 @@ try {
   };
 
   // ── 인증 상태 감지 ──
+  const ADMIN_EMAIL = 'retooclinic@gmail.com';
   onAuthStateChanged(auth, function(user) {
     if(user) {
+      // 원장님 계정이 아니면 즉시 로그아웃
+      if(user.email !== ADMIN_EMAIL) {
+        signOut(auth);
+        var err = document.getElementById('pw-err')||document.getElementById('login-err');
+        if(err) {
+          err.textContent = '경영분석 접근 권한이 없어요. 직원 포털을 이용해주세요.';
+          err.style.display = 'block';
+        }
+        return;
+      }
       document.getElementById('login-screen').style.display='none';
       document.getElementById('shell').style.display='flex';
       var st=document.getElementById('fb-status');
