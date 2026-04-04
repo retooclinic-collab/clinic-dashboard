@@ -249,8 +249,26 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <input class="form-input" id="f-date" type="date">
         </div>
         <div class="form-group">
-          <div class="form-label">상담자</div>
-          <input class="form-input" id="f-staff" type="text" readonly style="opacity:.6">
+          <div class="form-label">상담직원</div>
+          <select class="form-select" id="f-staff">
+            <optgroup label="현직">
+              <option value="김구슬">김구슬</option>
+              <option value="길연주">길연주</option>
+              <option value="명재은">명재은</option>
+              <option value="장나은">장나은</option>
+              <option value="호아신">호아신</option>
+              <option value="데스크">데스크</option>
+            </optgroup>
+            <optgroup label="퇴사">
+              <option value="퇴사-장">퇴사-장</option>
+              <option value="퇴사-황">퇴사-황</option>
+              <option value="퇴사-이">퇴사-이</option>
+              <option value="퇴사-공">퇴사-공</option>
+              <option value="퇴사-한빛">퇴사-한빛</option>
+              <option value="퇴사-유엄진">퇴사-유엄진</option>
+              <option value="퇴사-주미진">퇴사-주미진</option>
+            </optgroup>
+          </select>
         </div>
         <div class="form-group">
           <div class="form-label">차트번호<span>*</span></div>
@@ -428,7 +446,17 @@ onAuthStateChanged(auth, user => {
     document.getElementById('shell').style.display='flex';
     document.getElementById('shell').style.flexDirection='column';
     document.getElementById('user-badge').textContent = user.email.split('@')[0];
-    document.getElementById('f-staff').value = user.email.split('@')[0];
+    // 이메일 기반 상담직원 기본 선택
+    const emailToStaff = {
+      'retooclinic@gmail.com':'김구슬', // 원장님은 기본 김구슬
+    };
+    // STAFF_MAP에서 이메일 앞부분으로 매핑 시도
+    const emailPrefix = user.email.split('@')[0];
+    const mappedStaff = emailToStaff[user.email] || Object.values(STAFF_MAP||{}).find(v=>v===emailPrefix) || null;
+    const staffSel = document.getElementById('f-staff');
+    if(staffSel && mappedStaff){
+      staffSel.value = mappedStaff;
+    }
     window.startListenHistory(user.uid);
   } else {
     document.getElementById('login-screen').style.display='flex';
@@ -598,7 +626,7 @@ const TREATMENT_ITEMS = [
   '엑소좀','플라즈마엑소좀','MOXI',
   '티타튠','티타튠max',
   '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트',
-  'NAD','미라젯쥬베룩','알라딘필'
+  'NAD','미라젯쥬베룩','알라딘필','문신제거'
 ];
 
 /* ══════════════════════════════════════════════
@@ -633,39 +661,147 @@ const CHARGE_PRICE = {
   '새살주사':27.5, '인텐스울트라':27.5, '히알라제':16.5,
 };
 
-/* ── 가격 분배 (합계 = 결제금액) ── */
-function distributePrices(treatments, total){
-  if(!total || total <= 0) return treatments.map(t=>({...t, price: 0}));
+/* ── 텍스트에서 시술별 명시 가격 추출 ── */
+function extractTextPrices(raw, treatments){
+  // 최종 결제금액 제거
+  const text = raw.replace(/[=＝]\s*[\d.,]+\s*[mM만][^)]*$/i, '');
 
-  // 1단계: 각 시술 추정가 = 표준가 × 수량
-  let estimated = treatments.map(t=>{
-    const unit = CHARGE_PRICE[t.item] ?? 0;
-    return {...t, price: Math.round(unit * t.qty * 10) / 10};
+  // 최상위 구분자(+,)로 분리 - 괄호 안 무시
+  function splitTopLevel(s){
+    const parts=[]; let depth=0; let cur='';
+    for(const c of s){
+      if(c==='(') depth++;
+      else if(c===')') depth--;
+      else if((c==='+'||c===',')&&depth===0){ parts.push(cur.trim()); cur=''; continue; }
+      cur+=c;
+    }
+    if(cur.trim()) parts.push(cur.trim());
+    return parts;
+  }
+
+  // 세그먼트에서 가격 숫자 추출 (마지막 단독 숫자)
+  function getPrice(seg){
+    // 괄호 밖 마지막 숫자 (단, cc/샷/회/개/kj 뒤 숫자는 제외)
+    const clean = seg.replace(/\d+\s*(?:cc|샷|회|개|kj|병|ml|분|m)/gi, '?');
+    const nums = [...clean.matchAll(/([\d]+\.?\d*)/g)].map(m=>parseFloat(m[1]));
+    const prices = nums.filter(n=>n>=1 && n<2000);
+    return prices.length>0 ? prices[prices.length-1] : null;
+  }
+
+  // 시술 키워드 매칭
+  const KEYWORDS = {
+    'BBL(색소)':/bbl/i, 'BBL(여드름)':/bbl.*?여드름/i,
+    'BBL(스킨타이트닝)':/bbl.*?스킨타이트닝/i,
+    '울쎄라(100샷)':/울쎄라/i, '소프웨이브(50샷)':/소프/i,
+    '써마지300':/써마지.*?300/i, '써마지600':/써마지.*?600/i,
+    '써마지900샷':/써마지.*?900/i,
+    '아이써마지225':/아이써마지.*?225/i, '아이써마지450샷':/아이써마지.*?450/i,
+    '튠페이스':/튠페(?!이스.*라이너)/i, '튠라이너':/튠라이너/i,
+    '티타늄':/티타늄/i, '온다':/온다/i,
+    '티타튠max':/티타튠max/i, '티타튠':/티타튠(?!max)/i,
+    '리쥬란HB':/리쥬란\s*hb/i,
+    '리쥬란아이':/(?:아이리쥬란|리쥬란아이)/i,
+    '리쥬란':/리쥬란(?!\s*hb|아이)/i,
+    '힐로웨이브':/힐로웨이브/i,
+    '미라젯쥬베룩':/미라젯쥬베룩/i,
+    '미라젯':/미라젯(?!쥬베룩|리쥬란|쥬브아셀|리투오)/i,
+    '쥬베룩볼륨':/쥬베룩볼륨/i, '쥬베룩아이':/쥬베룩아이/i,
+    '쥬브아셀':/쥬브아셀/i, '리투오':/리투오/i,
+    '엠페이스':/엠페(?:이스)?/i, '오푸스':/오푸스/i,
+    '포텐자(펌핑)':/포텐자.*?펌핑|펌핑팁|펌핑쥬베룩/i,
+    '포텐자(모공)':/포텐자.*?모공/i, '포텐자(기미)':/포텐자.*?기미/i,
+    '필러(수입)':/(?:수입.*?필러|필러.*?수입|턱끝[fF]|목필러)/i,
+    '필러(국산)':/(?:국산.*?필러|필러.*?국)/i,
+    '보톡스(국산)':/(?:보톡스.*?국|b.*?국)/i,
+    '보톡스(수입)':/(?:제오민|보톡스.*?수입)/i,
+    '듀얼피코':/듀얼피코/i, '피코슈어':/피코슈어|피코웨이/i,
+    'moxi':/moxi/i, 'LDM':/ldm/i, '플라즈마':/플라즈마(?!엑소)/i,
+    '라라필':/라라필/i, '수면비':/수면/i, '아이리프팅':/아이리프팅/i,
+    '코레지셀핏':/코레지셀핏/i, '아그네스':/아그네스/i,
+    '수액':/(?:폭탄수액|백옥슈팅|비타민수액)/i, 'NAD':/nad/i,
+    '알라딘필':/알라딘필/i, '문신제거':/문신제거/i,
+    '리쥬셀릭크림':/리쥬셀릭(?!앰플|선물)/i,
+    '리쥬셀릭앰플':/리쥬셀릭앰플/i,
+    '리쥬셀릭선물세트':/리쥬셀릭선물세트/i,
+    'VIP회원권':/vip/i, '상담만':/상담/i,
+  };
+
+  const found={};
+  const segments = splitTopLevel(text);
+
+  segments.forEach(seg=>{
+    // 괄호 안 내용도 별도 확인
+    const inner = [...seg.matchAll(/\(([^)]+)\)/g)].map(m=>m[1]);
+    const outer = seg.replace(/\([^)]*\)/g,' ').trim();
+
+    treatments.forEach(t=>{
+      if(found[t.item]!==undefined) return;
+      const kw = KEYWORDS[t.item];
+      if(!kw) return;
+      if(kw.test(seg)){
+        // 외부에서 먼저 가격 찾기
+        const p = getPrice(outer) ?? getPrice(seg);
+        if(p!==null) found[t.item]=p;
+      }
+      // 괄호 안에서도 확인 (e.g. 리쥬란2cc55(미라젯38.5/양볼) )
+      inner.forEach(inn=>{
+        if(found[t.item]!==undefined) return;
+        if(kw.test(inn)){
+          const p = getPrice(inn);
+          if(p!==null) found[t.item]=p;
+        }
+      });
+    });
   });
 
-  // 2단계: 합계 계산
-  const estSum = estimated.reduce((s,t)=>s + t.price, 0);
+  return found;
+}
 
-  if(estSum <= 0){
-    // 표준가 없는 항목만 있을 때 균등 분배
-    const perItem = Math.round(total / treatments.length * 10) / 10;
-    return estimated.map((t,i)=>({...t, price: i===0 ? total - perItem*(treatments.length-1) : perItem}));
+/* ── 가격 분배 (텍스트 명시가 → 소폭 조정) ── */
+function distributePrices(treatments, total, rawText){
+  if(!total || total<=0) return treatments.map(t=>({...t, price:0}));
+
+  // 1단계: 텍스트에서 명시된 가격 추출
+  const textPrices = rawText ? extractTextPrices(rawText, treatments) : {};
+
+  // 2단계: 각 항목 초기 가격 설정
+  let priced = treatments.map(t=>{
+    if(textPrices[t.item]!==undefined)
+      return {...t, price: textPrices[t.item], fromText:true};
+    const unit = CHARGE_PRICE[t.item]??0;
+    return {...t, price: Math.round(unit*t.qty*10)/10, fromText:false};
+  });
+
+  // 3단계: 합계와 결제금액 차이 계산
+  const sum = priced.reduce((s,t)=>s+t.price,0);
+  if(sum<=0 || Math.abs(sum-total)<0.05) return priced;
+
+  // 4단계: 명시 가격은 그대로, 나머지만 스케일 조정
+  const textSum = priced.filter(t=>t.fromText).reduce((s,t)=>s+t.price,0);
+  const estItems = priced.filter(t=>!t.fromText);
+  const remaining = total - textSum;
+
+  if(estItems.length>0 && remaining>=0){
+    const estSum = estItems.reduce((s,t)=>s+t.price,0);
+    const scale = estSum>0 ? remaining/estSum : 0;
+    priced = priced.map(t=>
+      t.fromText ? t : {...t, price: Math.round(t.price*scale*10)/10}
+    );
+  } else {
+    // 명시가만 있는데 합계가 안맞으면 비율 조정
+    const scale = total/sum;
+    priced = priced.map(t=>({...t, price:Math.round(t.price*scale*10)/10}));
   }
 
-  // 3단계: 비율로 스케일
-  const scale = total / estSum;
-  let scaled = estimated.map(t=>({...t, price: Math.round(t.price * scale * 10) / 10}));
-
-  // 4단계: 반올림 오차 마지막 항목에서 조정
-  const scaledSum = scaled.reduce((s,t)=>s + t.price, 0);
-  const diff = Math.round((total - scaledSum) * 10) / 10;
-  if(diff !== 0 && scaled.length > 0){
-    // 가격이 있는 마지막 항목에 조정
-    const lastIdx = scaled.map((t,i)=>({t,i})).reverse().find(({t})=>t.price > 0)?.i ?? scaled.length-1;
-    scaled[lastIdx].price = Math.round((scaled[lastIdx].price + diff) * 10) / 10;
+  // 5단계: 반올림 오차 마지막 항목에서 조정
+  const newSum = priced.reduce((s,t)=>s+t.price,0);
+  const diff = Math.round((total-newSum)*10)/10;
+  if(Math.abs(diff)>0){
+    const lastIdx = [...priced.keys()].reverse().find(i=>priced[i].price>0)??priced.length-1;
+    priced[lastIdx]={...priced[lastIdx], price:Math.round((priced[lastIdx].price+diff)*10)/10};
   }
 
-  return scaled;
+  return priced;
 }
 
 
@@ -909,6 +1045,12 @@ function localParse(raw){
   // ── 알라딘필 ──
   if(/알라딘필/i.test(raw)) results.push({item:'알라딘필', qty:1});
 
+  // ── 문신제거 ──
+  if(/문신제거|문신\s*제거|tattoo\s*remove/i.test(raw)){
+    const m = raw.match(/문신제거\s*(\d+)\s*(?:개|회)/i);
+    results.push({item:'문신제거', qty: m?parseInt(m[1]):1});
+  }
+
   // ── 미라젯쥬브아셀 조합은 위에서 처리됨 ──
 
   // ── 보톡스 국산 (국산/국 표기 모두) ──
@@ -1043,8 +1185,9 @@ function showParseResult(parsed, total){
   // 총액 결정
   const amt = total || parseFloat(document.getElementById('f-amount').value) || 0;
 
-  // 가격 분배
-  const withPrices = distributePrices(treatments, amt);
+  // 가격 분배 (텍스트 명시가 우선)
+  const rawText = document.getElementById('f-payment-text')?.value || '';
+  const withPrices = distributePrices(treatments, amt, rawText);
   window._parsedTreatments = JSON.parse(JSON.stringify(withPrices));
 
   withPrices.forEach((t,i) => {
