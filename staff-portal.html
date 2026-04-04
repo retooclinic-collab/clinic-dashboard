@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>청담리투 · 상담입력</title>
+<style>
+:root{
+  --bg:#0f172a;--panel:#1e293b;--card:#243044;--border:#334155;
+  --accent:#38bdf8;--accent2:#0ea5e9;--green:#10b981;--red:#ef4444;
+  --yellow:#f59e0b;--text:#f1f5f9;--muted:#64748b;--sub:#94a3b8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;min-height:100vh}
+/* ── FONTS ── */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+/* ── LOGIN ── */
+#login-screen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center}
+.login-box{background:var(--panel);border-radius:20px;padding:48px 40px;width:340px;text-align:center;border:1px solid var(--border);box-shadow:0 32px 80px rgba(0,0,0,.5)}
+.login-logo{font-size:10px;letter-spacing:5px;color:var(--accent);font-weight:700;margin-bottom:10px}
+.login-title{font-size:22px;font-weight:800;margin-bottom:6px}
+.login-sub{font-size:12px;color:var(--muted);margin-bottom:32px}
+.login-input{width:100%;padding:13px 16px;background:#0f172a;border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;outline:none;margin-bottom:8px;transition:border .2s}
+.login-input:focus{border-color:var(--accent)}
+.login-btn{width:100%;padding:14px;background:var(--accent);color:#0f172a;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;margin-top:4px;transition:opacity .2s}
+.login-btn:hover{opacity:.9}
+.login-btn:disabled{opacity:.5;cursor:not-allowed}
+.login-err{color:var(--red);font-size:12px;margin-bottom:8px;display:none}
+
+/* ── SHELL ── */
+#shell{display:none;flex-direction:column;min-height:100vh}
+
+/* ── HEADER ── */
+.header{background:var(--panel);border-bottom:1px solid var(--border);padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.header-left{display:flex;align-items:center;gap:12px}
+.header-logo{font-size:9px;letter-spacing:4px;color:var(--accent);font-weight:700}
+.header-title{font-size:16px;font-weight:700}
+.header-right{display:flex;align-items:center;gap:12px}
+.user-badge{font-size:12px;color:var(--sub);background:var(--bg);padding:6px 12px;border-radius:20px;border:1px solid var(--border)}
+.logout-btn{font-size:12px;color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 8px}
+.logout-btn:hover{color:var(--text)}
+
+/* ── MAIN ── */
+.main{max-width:720px;margin:0 auto;padding:24px 16px 80px}
+
+/* ── MODE TABS ── */
+.mode-tabs{display:flex;gap:8px;margin-bottom:24px}
+.mode-tab{flex:1;padding:12px;border:1.5px solid var(--border);background:var(--panel);border-radius:12px;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;text-align:center;transition:all .2s}
+.mode-tab.active{border-color:var(--accent);color:var(--accent);background:#0c2a3a}
+.mode-tab.vip-active{border-color:var(--yellow);color:var(--yellow);background:#2a1f00}
+
+/* ── SECTION ── */
+.section{background:var(--panel);border-radius:16px;padding:20px;margin-bottom:16px;border:1px solid var(--border)}
+.section-title{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px}
+
+/* ── FORM ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-grid.full{grid-template-columns:1fr}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-label{font-size:12px;color:var(--sub);font-weight:600}
+.form-label span{color:var(--red);margin-left:2px}
+.form-input,.form-select,.form-textarea{background:#0f172a;border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;padding:11px 14px;outline:none;width:100%;transition:border .2s;font-family:inherit}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent)}
+.form-select option{background:#1e293b}
+.form-textarea{resize:vertical;min-height:90px;line-height:1.6}
+.form-hint{font-size:11px;color:var(--muted)}
+
+/* ── PARSE AREA ── */
+.parse-wrap{position:relative}
+.parse-btn{position:absolute;right:10px;bottom:10px;background:var(--accent);color:#0f172a;border:none;border-radius:8px;font-size:12px;font-weight:700;padding:7px 14px;cursor:pointer;transition:opacity .2s}
+.parse-btn:hover{opacity:.85}
+.parse-btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── PARSE RESULT ── */
+.parse-result{margin-top:16px;display:none}
+.parse-result-title{font-size:12px;font-weight:700;color:var(--sub);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.parse-badge{font-size:10px;background:var(--accent);color:#0f172a;border-radius:20px;padding:2px 8px;font-weight:800}
+.treatment-list{display:flex;flex-direction:column;gap:6px}
+.treatment-row{display:flex;align-items:center;gap:8px;background:#0f172a;border-radius:10px;padding:10px 14px;border:1px solid var(--border)}
+.treatment-name{flex:1;font-size:13px;font-weight:600}
+.treatment-qty-wrap{display:flex;align-items:center;gap:6px}
+.treatment-qty-label{font-size:11px;color:var(--muted)}
+.treatment-qty{width:60px;background:var(--panel);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:14px;padding:5px 10px;text-align:center;outline:none}
+.treatment-remove{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:6px;transition:color .2s}
+.treatment-remove:hover{color:var(--red)}
+.treatment-unmatched{border-color:var(--yellow);background:#1a1500}
+.treatment-unmatched .treatment-name{color:var(--yellow)}
+
+/* ── PARSE RAW ── */
+.parse-raw{margin-top:10px;background:#0a0f1a;border-radius:10px;padding:12px 14px;font-size:12px;color:var(--muted);border:1px dashed var(--border)}
+
+/* ── AMOUNT ── */
+.amount-display{display:flex;align-items:center;justify-content:space-between;background:#0a0f1a;border-radius:10px;padding:12px 16px;border:1px solid var(--border);margin-top:8px}
+.amount-label{font-size:12px;color:var(--muted)}
+.amount-value{font-size:20px;font-weight:800;color:var(--accent)}
+.amount-match{font-size:11px;color:var(--green)}
+.amount-mismatch{font-size:11px;color:var(--yellow)}
+
+/* ── SUBMIT ── */
+.submit-wrap{position:fixed;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid var(--border);padding:16px 20px;z-index:100}
+.submit-inner{max-width:720px;margin:0 auto;display:flex;gap:10px}
+.submit-btn{flex:1;padding:15px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:800;cursor:pointer;transition:opacity .2s}
+.submit-btn:hover{opacity:.9}
+.submit-btn:disabled{opacity:.4;cursor:not-allowed}
+.submit-btn.vip{background:var(--yellow);color:#0f172a}
+.reset-btn{padding:15px 20px;background:var(--border);color:var(--muted);border:none;border-radius:12px;font-size:14px;font-weight:600;cursor:pointer}
+
+/* ── TOAST ── */
+.toast{position:fixed;top:80px;left:50%;transform:translateX(-50%) translateY(-20px);background:var(--panel);border-radius:12px;padding:14px 24px;font-size:14px;font-weight:600;border:1px solid var(--border);z-index:9999;opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.success{border-color:var(--green);color:var(--green)}
+.toast.error{border-color:var(--red);color:var(--red)}
+.toast.info{border-color:var(--accent);color:var(--accent)}
+
+/* ── VIP NOTICE ── */
+.vip-notice{background:#1a1200;border:1.5px solid var(--yellow);border-radius:12px;padding:14px 16px;margin-bottom:16px;font-size:13px;color:var(--yellow);line-height:1.6}
+
+/* ── LOADING SPINNER ── */
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(0,0,0,.3);border-top-color:#0f172a;border-radius:50%;animation:spin .6s linear infinite;margin-right:6px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── HISTORY ── */
+.history-section{margin-top:24px}
+.history-title{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:2px;margin-bottom:12px}
+.history-item{background:var(--panel);border-radius:12px;padding:14px 16px;margin-bottom:8px;border:1px solid var(--border)}
+.history-meta{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.history-date{font-size:12px;color:var(--muted)}
+.history-name{font-size:13px;font-weight:700}
+.history-amount{font-size:13px;color:var(--accent);font-weight:700;margin-left:auto}
+.history-detail{font-size:12px;color:var(--sub);line-height:1.5;white-space:pre-wrap}
+.history-vip-tag{font-size:10px;background:#2a1f00;color:var(--yellow);border-radius:20px;padding:2px 8px;font-weight:700}
+
+@media(max-width:480px){
+  .form-grid{grid-template-columns:1fr}
+  .main{padding:16px 12px 100px}
+  .login-box{width:calc(100vw - 32px);padding:36px 24px}
+}
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">RETOO CLINIC</div>
+    <div class="login-title">상담 입력 포털</div>
+    <div class="login-sub">청담리투의원</div>
+    <input class="login-input" id="login-email" type="email" placeholder="이메일" onkeydown="if(event.key==='Enter')doLogin()">
+    <input class="login-input" id="login-pw" type="password" placeholder="비밀번호" onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="login-err" id="login-err"></div>
+    <button class="login-btn" id="login-btn" onclick="doLogin()">로그인</button>
+  </div>
+</div>
+
+<!-- ── SHELL ── -->
+<div id="shell">
+  <div class="header">
+    <div class="header-left">
+      <div>
+        <div class="header-logo">RETOO CLINIC</div>
+        <div class="header-title">상담 입력</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="user-badge" id="user-badge">-</div>
+      <button class="logout-btn" onclick="doLogout()">로그아웃</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- 모드 선택 -->
+    <div class="mode-tabs">
+      <div class="mode-tab active" id="tab-normal" onclick="setMode('normal')">📝 일반 수납 입력</div>
+      <div class="mode-tab" id="tab-vip" onclick="setMode('vip')">💎 VIP 재료 소모 기록</div>
+    </div>
+
+    <!-- VIP 안내 -->
+    <div class="vip-notice" id="vip-notice" style="display:none">
+      💎 <strong>VIP 재료 소모 기록 모드</strong><br>
+      결제금액은 0원으로 저장되며, 시술 항목만 해당 월 재료비 집계에 반영됩니다.<br>
+      회원권 보유 환자가 당일 받은 시술을 기입해주세요.
+    </div>
+
+    <!-- 기본 정보 -->
+    <div class="section">
+      <div class="section-title">기본 정보</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <div class="form-label">날짜<span>*</span></div>
+          <input class="form-input" id="f-date" type="date">
+        </div>
+        <div class="form-group">
+          <div class="form-label">상담자</div>
+          <input class="form-input" id="f-staff" type="text" readonly style="opacity:.6">
+        </div>
+        <div class="form-group">
+          <div class="form-label">차트번호<span>*</span></div>
+          <input class="form-input" id="f-chart" type="text" placeholder="예: 12397">
+        </div>
+        <div class="form-group">
+          <div class="form-label">이름<span>*</span></div>
+          <input class="form-input" id="f-name" type="text" placeholder="환자 이름">
+        </div>
+        <div class="form-group">
+          <div class="form-label">진료의사<span>*</span></div>
+          <select class="form-select" id="f-doctor" onchange="handleDoctorChange()">
+            <option value="">선택</option>
+            <option value="김재림">김재림</option>
+            <option value="김선민">김선민</option>
+            <option value="윤규성">윤규성</option>
+            <option value="송승아">송승아</option>
+            <option value="장명선">장명선</option>
+            <option value="직접입력">직접 입력</option>
+          </select>
+          <input class="form-input" id="f-doctor-custom" type="text" placeholder="의사 이름 입력" style="display:none;margin-top:6px">
+        </div>
+        <div class="form-group">
+          <div class="form-label">분류1<span>*</span></div>
+          <select class="form-select" id="f-cat1" onchange="updateCat2()">
+            <option value="">선택</option>
+            <option value="국내신환">국내신환</option>
+            <option value="국내구환">국내구환</option>
+            <option value="중국(마)">중국(마)</option>
+            <option value="중국(강)">중국(강)</option>
+            <option value="중국(따)">중국(따)</option>
+            <option value="중국(기타)">중국(기타)</option>
+            <option value="중국원내">중국원내</option>
+            <option value="일본(통)">일본(통)</option>
+            <option value="외국인">외국인</option>
+          </select>
+        </div>
+        <div class="form-group" id="cat2-wrap" style="display:none">
+          <div class="form-label">분류2</div>
+          <select class="form-select" id="f-cat2" onchange="handleCat2Change()">
+            <option value="">선택</option>
+          </select>
+          <input class="form-input" id="f-cat2-custom" type="text" placeholder="직접 입력" style="display:none;margin-top:6px">
+        </div>
+      </div>
+    </div>
+
+    <!-- 결제 정보 -->
+    <div class="section">
+      <div class="section-title" id="payment-section-title">결제 내역</div>
+      <div class="form-grid full">
+        <div class="form-group">
+          <div class="form-label">결제내역<span>*</span> <span style="color:var(--muted);font-weight:400">(기존 방식 그대로 입력)</span></div>
+          <div class="parse-wrap">
+            <textarea class="form-textarea" id="f-payment-text" placeholder="예: 울쎄라400샷+소프200샷+미라젯38.5+쥬베룩볼륨앞볼3회=445.5m(카)" style="padding-bottom:44px" oninput="onPaymentInput()"></textarea>
+            <button class="parse-btn" id="parse-btn" onclick="parsePayment()" disabled>
+              ✨ AI 분석
+            </button>
+          </div>
+          <div class="form-hint">입력 후 AI 분석 버튼을 눌러 시술 항목을 추출하세요</div>
+        </div>
+
+        <!-- 파싱 결과 -->
+        <div class="parse-result" id="parse-result">
+          <div class="parse-result-title">
+            추출된 시술 항목 <span class="parse-badge" id="treatment-count">0</span>
+            <span style="font-size:11px;color:var(--muted);font-weight:400;margin-left:4px">수량을 확인/수정해주세요</span>
+          </div>
+          <div class="treatment-list" id="treatment-list"></div>
+          <div class="parse-raw" id="parse-raw-text" style="display:none"></div>
+          <button onclick="addManualTreatment()" style="margin-top:10px;background:none;border:1.5px dashed var(--border);border-radius:10px;width:100%;padding:10px;color:var(--muted);cursor:pointer;font-size:13px">+ 시술 직접 추가</button>
+        </div>
+
+        <!-- 결제금액 -->
+        <div class="form-group" id="amount-wrap">
+          <div class="form-label" id="amount-label">결제금액 (만원)<span>*</span></div>
+          <input class="form-input" id="f-amount" type="number" step="0.1" placeholder="예: 445.5" oninput="checkAmountMatch()">
+          <div class="amount-display" id="amount-display" style="display:none">
+            <div>
+              <div class="amount-label">입력 금액</div>
+              <div class="amount-value" id="amount-show">-</div>
+            </div>
+            <div id="amount-match-msg" style="text-align:right"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 히스토리 -->
+    <div class="history-section" id="history-section">
+      <div class="history-title">오늘 내 입력 내역</div>
+      <div id="history-list"><div style="color:var(--muted);font-size:13px">아직 오늘 입력한 내역이 없어요</div></div>
+    </div>
+  </div>
+
+  <!-- 하단 버튼 -->
+  <div class="submit-wrap">
+    <div class="submit-inner">
+      <button class="reset-btn" onclick="resetForm()">초기화</button>
+      <button class="submit-btn" id="submit-btn" onclick="submitConsultation()">저장하기</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ══════════════════════════════════════════════
+     FIREBASE
+══════════════════════════════════════════════ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
+import { getFirestore, collection, doc, setDoc, query, where, onSnapshot, orderBy } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
+
+const cfg = {
+  apiKey:"AIzaSyBNxqXjGqhPghOC-Wztt0CQR_08MKzbikA",
+  authDomain:"analysis-rt.firebaseapp.com",
+  projectId:"analysis-rt",
+  storageBucket:"analysis-rt.firebasestorage.app",
+  messagingSenderId:"794818965711",
+  appId:"1:794818965711:web:b0947b2afaa5f037f9c7ba"
+};
+
+const app = initializeApp(cfg);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+window.fbLogin = async (email, pw) => {
+  try {
+    await signInWithEmailAndPassword(auth, email, pw);
+    return {ok:true};
+  } catch(e) {
+    const msg = e.code==='auth/invalid-credential'||e.code==='auth/wrong-password'||e.code==='auth/user-not-found'
+      ? '이메일 또는 비밀번호가 틀렸어요'
+      : '로그인 오류: '+e.message;
+    return {ok:false, msg};
+  }
+};
+
+window.fbLogout = async () => { await signOut(auth); location.reload(); };
+
+onAuthStateChanged(auth, user => {
+  if(user) {
+    window._fbUser = user;
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('shell').style.display='flex';
+    document.getElementById('shell').style.flexDirection='column';
+    document.getElementById('user-badge').textContent = user.email.split('@')[0];
+    document.getElementById('f-staff').value = user.email.split('@')[0];
+    window.startListenHistory(user.uid);
+  } else {
+    document.getElementById('login-screen').style.display='flex';
+    document.getElementById('shell').style.display='none';
+  }
+});
+
+window.fbSaveConsultation = async (data) => {
+  const id = Date.now().toString();
+  await setDoc(doc(db, 'consultations', id), {
+    ...data, id,
+    staffUid: window._fbUser?.uid,
+    staffEmail: window._fbUser?.email,
+    createdAt: new Date().toISOString()
+  });
+  return id;
+};
+
+window.startListenHistory = (uid) => {
+  const today = new Date().toISOString().slice(0,10);
+  const q = query(
+    collection(db,'consultations'),
+    where('staffUid','==',uid),
+    where('date','==',today)
+  );
+  onSnapshot(q, snap => {
+    const items = [];
+    snap.forEach(d => items.push(d.data()));
+    items.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
+    renderHistory(items);
+  }, err => console.error('history error:',err));
+};
+</script>
+
+<!-- ══════════════════════════════════════════════
+     APP LOGIC
+══════════════════════════════════════════════ -->
+<script>
+/* ── 분류2 연동 ── */
+const CAT2_MAP = {
+  '국내신환':['인터넷','유튜브','인스타그램','구환소개','직원가족','워크인','체험단','원장님지인','기타(직접입력)'],
+  '국내구환':[],
+  '중국(마)':[],
+  '중국(강)':[],
+  '중국(따)':[],
+  '중국(기타)':['편화','미원','동호','기타(직접입력)'],
+  '중국원내':[],
+  '일본(통)':[],
+  '외국인':['인터넷','유튜브','인스타그램','구환소개','워크인','원장님지인','기타(직접입력)'],
+};
+
+function updateCat2(){
+  const cat1 = document.getElementById('f-cat1').value;
+  const wrap = document.getElementById('cat2-wrap');
+  const sel = document.getElementById('f-cat2');
+  const opts = CAT2_MAP[cat1]||[];
+  if(opts.length===0){wrap.style.display='none';return;}
+  wrap.style.display='flex';
+  sel.innerHTML='<option value="">선택</option>';
+  opts.forEach(o=>{
+    const opt=document.createElement('option');
+    opt.value=o;opt.textContent=o;
+    sel.appendChild(opt);
+  });
+  document.getElementById('f-cat2-custom').style.display='none';
+}
+
+function handleCat2Change(){
+  const v=document.getElementById('f-cat2').value;
+  document.getElementById('f-cat2-custom').style.display=v==='기타(직접입력)'?'block':'none';
+}
+
+function handleDoctorChange(){
+  const v=document.getElementById('f-doctor').value;
+  document.getElementById('f-doctor-custom').style.display=v==='직접입력'?'block':'none';
+}
+
+/* ── 모드 ── */
+let currentMode = 'normal';
+function setMode(mode){
+  currentMode = mode;
+  document.getElementById('tab-normal').className='mode-tab'+(mode==='normal'?' active':'');
+  document.getElementById('tab-vip').className='mode-tab'+(mode==='vip'?' vip-active':'');
+  document.getElementById('vip-notice').style.display=mode==='vip'?'block':'none';
+  document.getElementById('amount-wrap').style.display=mode==='vip'?'none':'flex';
+  document.getElementById('payment-section-title').textContent=mode==='vip'?'당일 시술 내역 (결제금액 0원)':'결제 내역';
+  document.querySelector('.submit-btn').className='submit-btn'+(mode==='vip'?' vip':'');
+  document.querySelector('.submit-btn').textContent=mode==='vip'?'VIP 재료 소모 저장':'저장하기';
+}
+
+/* ── 날짜 초기화 ── */
+function initDate(){
+  const today=new Date();
+  const y=today.getFullYear();
+  const m=String(today.getMonth()+1).padStart(2,'0');
+  const d=String(today.getDate()).padStart(2,'0');
+  document.getElementById('f-date').value=`${y}-${m}-${d}`;
+}
+initDate();
+
+/* ── 파싱 버튼 활성화 ── */
+function onPaymentInput(){
+  const v=document.getElementById('f-payment-text').value.trim();
+  document.getElementById('parse-btn').disabled=v.length<3;
+}
+
+/* ══════════════════════════════════════════════
+   시술 항목 매핑 테이블
+══════════════════════════════════════════════ */
+const TREATMENT_ITEMS = [
+  '제네시스+PTT','제네시스','수액','튠페이스','슈링크','티타늄','울쎄라(100샷)',
+  '튠라이너','아이리프팅','튠라이트IPL','피코슈어','피코웨이','듀얼피코','트리플피코',
+  '여드름관리','CO2','필러(국산)','필러(수입)','보톡스(국산)','보톡스(수입)',
+  '리투핏주사','리투업주사','쥬베룩볼륨','리쥬란','쥬베룩','튠바디','리투핏주사(바디)',
+  '플라즈마','라라필','포텐자(모공)','포텐자(기미)','인텐스울트라','코레지셀핏','LDM',
+  '크라이오','제모(여자)','제모(남자)','새살주사','펌핑팁','수면비','히알라제',
+  '상담만','TA','아쿠아필','포텐자(펌핑)','아그네스','PDRN','줄기세포','VIP회원권',
+  '프락셀','써마지300','아이써마지225','하이쿡스','리쥬란아이','써마지600',
+  '리쥬란HB','소프웨이브(50샷)','위고비','미라젯','엠페이스','온다','스킨바이브',
+  '써마지900샷','줄기세포30cc','줄기세포60cc','줄기세포120cc','줄기세포240cc',
+  'BBL(색소)','BBL(스킨타이트닝)','BBL(여드름)','moxi','오푸스','쥬베룩아이',
+  '리투오','쥬브아셀','자가엑소좀','힐로웨이브','스컬트라','아이써마지450샷',
+  '엑소좀','플라즈마엑소좀','MOXI'
+];
+
+/* ── Claude API 파싱 ── */
+async function parsePayment(){
+  const text = document.getElementById('f-payment-text').value.trim();
+  if(!text) return;
+
+  const btn = document.getElementById('parse-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>분석 중...';
+
+  const systemPrompt = `당신은 피부과 수납 내역을 파싱하는 전문가입니다.
+입력된 결제내역 텍스트에서 시술 항목과 수량을 추출하세요.
+
+아래 매핑 규칙을 반드시 따르세요:
+
+1. 울쎄라: "울쎄라(100샷)" 항목에 (샷수÷100)개. 예: 울쎄라400샷→4개
+2. 소프웨이브: "소프웨이브(50샷)" 항목에 (샷수÷50)개. 예: 소프200샷→4개
+3. 써마지300샷→"써마지300" 1개, 써마지600샷→"써마지600" 1개, 써마지900샷→"써마지900샷" 1개
+4. 아이써마지225샷→"아이써마지225" 1개, 아이써마지450샷→"아이써마지450샷" 1개
+5. 튠페이스/튠페: "튠페이스" 회차수. 예: 튠페40kj 3회→3개
+6. 튠라이너: "튠라이너" 회차수. 튠라이너10분도 1회=1개
+7. 티타늄: "티타늄" 회차수 (KJ 무관)
+8. 온다/바디온다: "온다" 회차수
+9. 리쥬란Ncc: "리쥬란" N÷2개. 예: 리쥬란4cc→2개. 개수로쓰면 그대로
+10. 리쥬란HB: "리쥬란HB" cc수=개수. 예: 리쥬란hb2cc→2개
+11. 아이리쥬란/리쥬란아이: "리쥬란아이" cc수=개수
+12. 힐로웨이브Ncc: "힐로웨이브" N÷2개. 예: 힐로웨이브4cc→2개. 개수표현이면 그대로
+13. 미라젯: "미라젯" 1개 (sv/서비스도 포함, 무조건 등장하면 1개)
+14. 쥬베룩볼륨: "쥬베룩볼륨" 회차수 (앞볼3회→3, 1병3회→3, 부위무관)
+15. 쥬베룩아이: "쥬베룩아이" 회차수
+16. 쥬브아셀: "쥬브아셀" 병/회차수
+17. 리투오: "리투오" 병수
+18. 엠페이스: "엠페이스" 회차수 (20분/40분/60분 관계없이 회차)
+19. 오푸스: "오푸스" 회차수
+20. 포텐자펌핑/펌핑쥬베룩/펌핑팁: "포텐자(펌핑)" 1개
+21. 포텐자(모공): "포텐자(모공)" 1개
+22. 포텐자(기미): "포텐자(기미)" 1개
+23. BBL포에버영/색소/홍조/화이트닝: "BBL(색소)" 1개
+24. BBL여드름: "BBL(여드름)" 1개
+25. BBL스킨타이트닝: "BBL(스킨타이트닝)" 1개
+26. 필러(수입): "필러(수입)" 1cc=1개
+27. 필러(국산): "필러(국산)" 1cc=1개
+28. 보톡스국산(이마/미간/눈가/턱/사각턱등): "보톡스(국산)" 부위당 1개
+29. 보톡스제오민/수입: "보톡스(수입)" 부위당 1개
+30. 듀얼피코: "듀얼피코" 회차수
+31. 피코슈어/피코포커스: "피코슈어" 1개
+32. LDM: "LDM" 1개 (sv포함)
+33. 플라즈마: "플라즈마" 1개
+34. 라라필: "라라필" 1개
+35. 수면/수면비: "수면비" 1개
+36. 아이리프팅: "아이리프팅" 1개
+37. 코레지셀핏: "코레지셀핏" 1개
+38. 아그네스: "아그네스" 1개
+39. 리투핏주사: "리투핏주사" 부위/회차수
+40. 줄기세포30cc: "줄기세포30cc" 1개, 60cc→"줄기세포60cc", 120cc→"줄기세포120cc", 240cc→"줄기세포240cc"
+41. 자가엑소좀: "자가엑소좀" 1개
+42. 위고비: "위고비" 펜수
+43. MOXI/moxi: "moxi" 1개
+44. TA: "TA" 개수
+45. 아쿠아필: "아쿠아필" 1개
+46. 제네시스PTT: "제네시스+PTT" 회차수
+47. 제네시스(단독): "제네시스" 1개
+48. 티타튠: "티타늄" 1개 + "튠라이너" 1개 (조합시술)
+49. 스킨바이브: "스킨바이브" 1cc=1개
+50. CO2: "CO2" 1개
+51. 새살주사: "새살주사" 1개
+52. VIP: "VIP회원권" 1개 (금액만 결제, 시술 없음)
+53. 상담비: "상담만" 1개
+54. 예약금: "예약금" 1개
+
+중요 규칙:
+- sv/s.v/SV = 서비스(무료)이지만 시술 카운트는 반드시 포함
+- 예약금제외/할인 등은 무시하고 시술만 추출
+- 3월e)/4월e) 등 이벤트 표시는 무시
+- 마지막 =숫자m은 결제금액, 시술이 아님
+- 괄호 안 부위설명은 무시
+- 회차가 명시된 경우 그 회차를 수량으로
+
+반드시 아래 JSON 형식으로만 응답하세요. 다른 텍스트 없이:
+{"treatments":[{"item":"시술항목명","qty":숫자},...],"notes":"파싱 특이사항(없으면 빈문자열)"}`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:1000,
+        system: systemPrompt,
+        messages:[{role:'user',content:text}]
+      })
+    });
+    const data = await resp.json();
+    const raw = data.content?.[0]?.text||'{}';
+    let parsed;
+    try { parsed = JSON.parse(raw.replace(/```json|```/g,'')); }
+    catch(e) { parsed = {treatments:[], notes:'파싱 오류'}; }
+    showParseResult(parsed);
+  } catch(e) {
+    showToast('AI 분석 오류: '+e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '✨ AI 분석';
+  }
+}
+
+/* ── 파싱 결과 표시 ── */
+function showParseResult(parsed){
+  const result = document.getElementById('parse-result');
+  const list = document.getElementById('treatment-list');
+  result.style.display = 'block';
+  list.innerHTML = '';
+
+  const treatments = parsed.treatments||[];
+  document.getElementById('treatment-count').textContent = treatments.length;
+
+  treatments.forEach((t,i) => {
+    const matched = TREATMENT_ITEMS.includes(t.item);
+    const row = document.createElement('div');
+    row.className = 'treatment-row'+(matched?'':' treatment-unmatched');
+    row.dataset.index = i;
+    row.innerHTML = `
+      <div class="treatment-name">${t.item}${matched?'':'  ⚠ 미등록 항목'}</div>
+      <div class="treatment-qty-wrap">
+        <div class="treatment-qty-label">수량</div>
+        <input class="treatment-qty" type="number" min="0" value="${t.qty}" onchange="updateTreatmentQty(${i},this.value)">
+      </div>
+      <button class="treatment-remove" onclick="removeTreatment(${i})" title="삭제">×</button>
+    `;
+    list.appendChild(row);
+  });
+
+  window._parsedTreatments = JSON.parse(JSON.stringify(treatments));
+
+  if(parsed.notes){
+    const raw = document.getElementById('parse-raw-text');
+    raw.style.display = 'block';
+    raw.textContent = '📝 ' + parsed.notes;
+  }
+}
+
+function updateTreatmentQty(idx, val){
+  if(window._parsedTreatments && window._parsedTreatments[idx])
+    window._parsedTreatments[idx].qty = parseFloat(val)||0;
+}
+
+function removeTreatment(idx){
+  if(!window._parsedTreatments) return;
+  window._parsedTreatments.splice(idx,1);
+  showParseResult({treatments: window._parsedTreatments});
+}
+
+function addManualTreatment(){
+  const name = prompt('시술 항목명 입력 (목록에 있는 이름 그대로):');
+  if(!name) return;
+  const qty = parseFloat(prompt('수량:')||'1');
+  if(!window._parsedTreatments) window._parsedTreatments = [];
+  window._parsedTreatments.push({item:name.trim(), qty});
+  showParseResult({treatments: window._parsedTreatments});
+}
+
+/* ── 금액 확인 ── */
+function checkAmountMatch(){
+  const v = parseFloat(document.getElementById('f-amount').value)||0;
+  const disp = document.getElementById('amount-display');
+  const show = document.getElementById('amount-show');
+  const msg = document.getElementById('amount-match-msg');
+  if(v>0){
+    disp.style.display='flex';
+    show.textContent = v.toLocaleString()+'만원';
+  }
+}
+
+/* ── 로그인/로그아웃 ── */
+async function doLogin(){
+  const email = document.getElementById('login-email').value.trim();
+  const pw = document.getElementById('login-pw').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-err');
+  if(!email||!pw){err.textContent='이메일과 비밀번호를 입력해주세요';err.style.display='block';return;}
+  btn.textContent='로그인 중...';btn.disabled=true;
+  const res = await window.fbLogin(email, pw);
+  if(!res.ok){
+    err.textContent=res.msg;err.style.display='block';
+    btn.textContent='로그인';btn.disabled=false;
+  }
+}
+
+async function doLogout(){
+  if(window.fbLogout) await window.fbLogout();
+}
+
+/* ── 저장 ── */
+async function submitConsultation(){
+  const date = document.getElementById('f-date').value;
+  const chart = document.getElementById('f-chart').value.trim();
+  const name = document.getElementById('f-name').value.trim();
+  const doctorSel = document.getElementById('f-doctor').value;
+  const doctor = doctorSel==='직접입력' ? document.getElementById('f-doctor-custom').value.trim() : doctorSel;
+  const cat1 = document.getElementById('f-cat1').value;
+  const cat2sel = document.getElementById('f-cat2').value;
+  const cat2custom = document.getElementById('f-cat2-custom').value.trim();
+  const cat2 = cat2sel==='기타(직접입력)' ? cat2custom : cat2sel;
+  const payText = document.getElementById('f-payment-text').value.trim();
+  const amount = currentMode==='vip' ? 0 : (parseFloat(document.getElementById('f-amount').value)||0);
+  const staff = document.getElementById('f-staff').value;
+
+  if(!date){showToast('날짜를 입력해주세요','error');return;}
+  if(!chart){showToast('차트번호를 입력해주세요','error');return;}
+  if(!name){showToast('이름을 입력해주세요','error');return;}
+  if(!doctor){showToast('진료의사를 선택해주세요','error');return;}
+  if(!cat1){showToast('분류1을 선택해주세요','error');return;}
+  if(!payText){showToast('결제내역을 입력해주세요','error');return;}
+  if(currentMode==='normal' && amount===0){showToast('결제금액을 입력해주세요','error');return;}
+
+  if(!window._parsedTreatments || window._parsedTreatments.length===0){
+    if(!confirm('시술 항목이 없습니다. 그래도 저장할까요?')) return;
+  }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled=true;btn.textContent='저장 중...';
+
+  try {
+    await window.fbSaveConsultation({
+      type: currentMode,
+      date, chart, name, doctor, cat1, cat2, staff,
+      paymentText: payText,
+      amount,
+      treatments: window._parsedTreatments||[],
+    });
+    showToast(currentMode==='vip'?'VIP 재료 소모 기록 완료!':'상담 내역 저장 완료!','success');
+    resetForm();
+  } catch(e) {
+    showToast('저장 실패: '+e.message,'error');
+  } finally {
+    btn.disabled=false;
+    btn.textContent=currentMode==='vip'?'VIP 재료 소모 저장':'저장하기';
+  }
+}
+
+/* ── 초기화 ── */
+function resetForm(){
+  document.getElementById('f-chart').value='';
+  document.getElementById('f-name').value='';
+  document.getElementById('f-doctor').value='';
+  document.getElementById('f-doctor-custom').style.display='none';
+  document.getElementById('f-cat1').value='';
+  document.getElementById('cat2-wrap').style.display='none';
+  document.getElementById('f-payment-text').value='';
+  document.getElementById('f-amount').value='';
+  document.getElementById('parse-result').style.display='none';
+  document.getElementById('amount-display').style.display='none';
+  document.getElementById('parse-btn').disabled=true;
+  window._parsedTreatments=[];
+  initDate();
+}
+
+/* ── 히스토리 렌더 ── */
+function renderHistory(items){
+  const el = document.getElementById('history-list');
+  if(!items.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:13px">아직 오늘 입력한 내역이 없어요</div>';
+    return;
+  }
+  el.innerHTML = items.map(it=>`
+    <div class="history-item">
+      <div class="history-meta">
+        <div class="history-date">${it.date} · ${it.cat1||''}</div>
+        ${it.type==='vip'?'<span class="history-vip-tag">VIP재료</span>':''}
+        <div class="history-name">${it.name||''} (${it.chart||''})</div>
+        <div class="history-amount">${it.amount?it.amount+'만':'0만'}</div>
+      </div>
+      <div class="history-detail">${it.paymentText||''}</div>
+    </div>
+  `).join('');
+}
+
+/* ── 토스트 ── */
+function showToast(msg, type='info'){
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.className='toast '+type+' show';
+  setTimeout(()=>t.className='toast '+type, 2500);
+}
+</script>
+</body>
+</html>
