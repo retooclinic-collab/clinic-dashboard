@@ -750,7 +750,7 @@ function render(){
   /* ② 시술별집계 → 재료비 */
   if(ad){
     h+='<div class="sdiv">② 시술별 재료비 ('+esc(G.aFile)+')</div>';
-    var priced=ad.items.filter(function(i){return i.price>0});
+    var priced=ad.items.filter(function(i){return i.price>0}).sort(function(a,b){return b.subtotal-a.subtotal});
     var unpriced=ad.items.filter(function(i){return i.price===0}).sort(function(a,b){return b.count-a.count});
     h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">시술별 재료비 집계</div>';
     h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">시술이름(건수) 자동 파싱 · 건수 × 단가 = 소계</div>';
@@ -1201,16 +1201,37 @@ async function doSave(){
   if(G.arc.find(function(a){return a.label===lbl})){
     if(!confirm('"'+lbl+'" 덮어쓸까요?'))return;
   }
+
+  // Firebase는 undefined 거부 → JSON 왕복으로 정리 (undefined → 제거, null 유지)
+  function clean(v){
+    if(v===undefined)return null;
+    try{return JSON.parse(JSON.stringify(v,function(k,val){return val===undefined?null:val}));}
+    catch(e){return null;}
+  }
+
   var entry={
     label:lbl, savedAt:new Date().toISOString(),
-    cData:G.cData, aData:G.aData, bData:G.bData,
-    cardRows:G.cardRows, bankData:G.bankData, bankManualCards:G.bankManualCards,
-    bankEditedCards:G.bankEditedCards, fixedEditedCosts:G.fixedEditedCosts,
-    // 원본 rows 저장 (재계산, CSV 다운로드용)
-    cRows:G.cRows||null, aRows:G.aRows||null, bRows:G.bRows||null,
-    cFile:G.cFile, aFile:G.aFile, bFile:G.bFile,
-    cCols:G.cCols||null
+    cData:clean(G.cData), aData:clean(G.aData), bData:clean(G.bData),
+    bankData:clean(G.bankData), bankManualCards:clean(G.bankManualCards)||[],
+    bankEditedCards:clean(G.bankEditedCards)||[],
+    fixedEditedCosts:G.fixedEditedCosts!==null?clean(G.fixedEditedCosts):null,
+    cFile:G.cFile||'', aFile:G.aFile||'', bFile:G.bFile||'',
+    cCols:clean(G.cCols),
+    // 원본 rows: 크기 체크 후 저장
+    cRows:clean(G.cRows), aRows:clean(G.aRows), bRows:clean(G.bRows)
   };
+
+  // 크기 체크 (Firestore 1MB 제한)
+  var sz=JSON.stringify(entry).length;
+  if(sz>900000){
+    // rows가 너무 크면 제외하고 저장
+    entry.cRows=null; entry.aRows=null; entry.bRows=null;
+    entry._rowsOmitted=true;
+    var sz2=JSON.stringify(entry).length;
+    if(sz2>900000){alert('데이터가 너무 커서 저장할 수 없어요.');return;}
+    alert('파일이 커서 원본 데이터 제외하고 저장해요.\n(분석 결과는 정상 저장됩니다)');
+  }
+
   var btn=document.querySelector('#save-mdl .btn-g');
   if(btn){btn.textContent='저장 중...';btn.disabled=true;}
   if(window.fbSave){
@@ -1294,13 +1315,13 @@ function renderFixedDisplay(){
   h+='<button class="btn btn-sm" style="background:#1e3a5f;color:#93c5fd;font-size:11px;" onclick="applyFixedEdits()">✓ 수정값 반영</button>';
   h+='</div></div>';
 
-  // 편집 가능한 행들
-  h+='<div id="fixed-edit-rows">';
+  // 편집 가능한 행들 — 2열 그리드로 컴팩트하게
+  h+='<div id="fixed-edit-rows" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:5px;margin-bottom:10px;">';
   list.forEach(function(f,i){
-    h+='<div class="fe-row" style="display:grid;grid-template-columns:1fr 150px 32px;gap:6px;margin-bottom:6px;" data-idx="'+i+'">';
-    h+='<input type="text" class="fe-nm" placeholder="항목명" value="'+esc(f.name||'')+'" oninput="updateFixedTotal()">';
-    h+='<input type="number" class="fe-am" placeholder="금액" value="'+(f.amount||'')+'" min="0" oninput="updateFixedTotal()">';
-    h+='<button class="btn btn-r btn-sm" style="padding:4px;" onclick="delFixedEdit('+i+')">×</button>';
+    h+='<div class="fe-row" style="display:flex;gap:4px;align-items:center;background:#f8fafc;border-radius:7px;padding:5px 7px;" data-idx="'+i+'">';
+    h+='<input type="text" class="fe-nm" placeholder="항목명" value="'+esc(f.name||'')+'" oninput="updateFixedTotal()" style="flex:1;font-size:11px;padding:4px 6px;min-width:0;">';
+    h+='<input type="number" class="fe-am" placeholder="금액" value="'+(f.amount||'')+'" min="0" oninput="updateFixedTotal()" style="width:90px;font-size:11px;padding:4px 6px;">';
+    h+='<button class="btn btn-r btn-sm" style="padding:2px 6px;font-size:11px;flex-shrink:0;" onclick="delFixedEdit('+i+')">×</button>';
     h+='</div>';
   });
   h+='</div>';
