@@ -463,16 +463,24 @@ var DEFAULT_ROUTES={
 
 /* ═══ STORAGE ═══ */
 function loadCfg(){
-  try{
-    var raw=localStorage.getItem(SKEY);
-    var c=raw?JSON.parse(raw):{};
-    if(!c.procedures||!Object.keys(c.procedures).length)c.procedures=Object.assign({},DEFAULT_PROCEDURES);
-    // 수수료 경로: 비어있으면 기본값
-    if(!c.routes||!Object.keys(c.routes).length)c.routes=Object.assign({},DEFAULT_ROUTES);
-    // 고정비: 비어있으면 기본값
-    if(!c.hasOwnProperty('fixedCosts')||!c.fixedCosts||!c.fixedCosts.length)c.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
-    return c;
-  }catch(e){return{procedures:Object.assign({},DEFAULT_PROCEDURES),routes:Object.assign({},DEFAULT_ROUTES),fixedCosts:DEFAULT_FIXED.map(function(f){return Object.assign({},f)})}}
+  var c;
+  try{var raw=localStorage.getItem(SKEY);c=raw?JSON.parse(raw):{};}
+  catch(e){c={};}
+  if(!c.procedures)c.procedures={};
+  if(!c.routes)c.routes={};
+  if(!c.fixedCosts||!c.fixedCosts.length)
+    c.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
+  // 기본 시술단가: 매번 호출 시 가격 0이거나 없으면 강제 적용
+  Object.keys(DEFAULT_PROCEDURES).forEach(function(k){
+    if(!c.procedures[k]||!(c.procedures[k].price>0))
+      c.procedures[k]={price:DEFAULT_PROCEDURES[k].price};
+  });
+  // 기본 수수료: 매번 호출 시 value 0이거나 없으면 강제 적용
+  Object.keys(DEFAULT_ROUTES).forEach(function(k){
+    if(!c.routes[k]||!(c.routes[k].value>0))
+      c.routes[k]=Object.assign({},DEFAULT_ROUTES[k]);
+  });
+  return c;
 }
 function saveCfg(c){
   localStorage.setItem(SKEY,JSON.stringify(c));
