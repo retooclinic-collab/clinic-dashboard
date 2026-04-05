@@ -486,6 +486,32 @@ try {
     });
   };
 
+  // ── 관리자: 상담데이터 집계 쿼리 ──
+  window.fbGetConsultations = async function(from, to) {
+    const q = query(
+      collection(db, 'consultations'),
+      where('date', '>=', from),
+      where('date', '<=', to)
+    );
+    const snap = await getDocs(q);
+    const items = [];
+    snap.forEach(function(d) { items.push(d.data()); });
+    return items.filter(function(it){ return !it.deleted; });
+  };
+
+  // ── 관리자: 감사로그 조회 ──
+  window.fbGetAuditLog = async function(limitN) {
+    const q = query(
+      collection(db, 'audit_log'),
+      orderBy('at', 'desc'),
+      limit(limitN || 50)
+    );
+    const snap = await getDocs(q);
+    const logs = [];
+    snap.forEach(function(d) { logs.push(d.data()); });
+    return logs;
+  };
+
   // ── 설정값 저장/불러오기 ──
   window.fbSaveSettings = async function(s) {
     try { await setDoc(settingsDoc, s); }
@@ -2231,17 +2257,8 @@ async function runAdminAggregation(){
   resultEl.innerHTML='<div style="color:#64748b;font-size:12px;padding:20px;text-align:center">집계 중...</div>';
 
   try {
-    var q = query(
-      collection(db,'consultations'),
-      where('date','>=',from),
-      where('date','<=',to),
-      where('deleted','!=',true)
-    );
-    var snap = await getDocs(q);
-    var items = [];
-    snap.forEach(function(d){ items.push(d.data()); });
-
-    if(!items.length){
+    var items = await window.fbGetConsultations(from, to);
+    if(!items || !items.length){
       resultEl.innerHTML='<div style="color:#64748b;font-size:12px;padding:20px;text-align:center">'+ym+' 데이터 없음</div>';
       return;
     }
@@ -2368,12 +2385,8 @@ async function loadAuditLog(){
   listEl.innerHTML='<div style="color:#64748b;font-size:12px;padding:16px;text-align:center">로딩 중...</div>';
 
   try {
-    var q = query(collection(db,'audit_log'), orderBy('at','desc'), limit(50));
-    var snap = await getDocs(q);
-    var logs = [];
-    snap.forEach(function(d){ logs.push(d.data()); });
-
-    if(!logs.length){
+    var logs = await window.fbGetAuditLog(50);
+    if(!logs || !logs.length){
       listEl.innerHTML='<div style="color:#64748b;font-size:12px;padding:16px;text-align:center">감사로그 없음</div>';
       return;
     }
