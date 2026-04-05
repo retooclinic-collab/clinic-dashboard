@@ -1670,34 +1670,34 @@ function renderImportPreview(){
   container.innerHTML = _importRows.map((r,idx)=>{
     const treatSum = (r.treatments||[]).reduce((s,t)=>s+(t.price||0),0);
     const sumOk = Math.abs(treatSum - r.amount) < 0.1;
-    const treatBadge = `<span style="font-size:10px;padding:2px 7px;border:1px solid ${sumOk?'var(--green)':'var(--yellow)'};border-radius:10px;color:${sumOk?'var(--green)':'var(--yellow)'};cursor:pointer" onclick="toggleImportTreat(${idx})">${r.treatments?.length||0}개 ${sumOk?'✓':'⚠'}</span>`;
+    const treatBadge = `<span style="font-size:10px;padding:2px 7px;border:1px solid ${sumOk?'#4ade80':'#facc15'};border-radius:10px;color:${sumOk?'#4ade80':'#facc15'};cursor:pointer;white-space:nowrap" onclick="toggleImportTreat(${idx})">${r.treatments?.length||0}개 ${sumOk?'✓':'⚠'}</span>`;
 
     return `
-    <div style="background:var(--panel);border-radius:12px;border:1px solid var(--border);overflow:hidden">
+    <div style="background:#1e293b;border-radius:10px;border:1px solid #2d3f55;overflow:hidden;margin-bottom:2px">
       <!-- 행 헤더 -->
       <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;flex-wrap:wrap">
-        <span style="font-size:11px;color:var(--muted);white-space:nowrap">${r.date}</span>
-        <span style="font-size:11px;color:var(--muted)">${r.chart}</span>
-        <span style="font-size:13px;font-weight:700;min-width:60px">${r.name}</span>
-        <span style="font-size:11px;color:var(--sub)">${r.cat1}${r.cat2?'·'+r.cat2:''}</span>
-        <span style="font-size:11px;color:${r.staffRaw!==r.staff?'var(--green)':'var(--muted)'}">${r.staff}</span>
-        <span style="margin-left:auto;font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap">${r.amount}만</span>
+        <span style="font-size:11px;color:#64748b;white-space:nowrap">${r.date}</span>
+        <span style="font-size:11px;color:#64748b">${r.chart}</span>
+        <span style="font-size:13px;font-weight:700;color:#f1f5f9;min-width:60px">${r.name}</span>
+        <span style="font-size:11px;color:#94a3b8">${r.cat1}${r.cat2?'·'+r.cat2:''}</span>
+        <span style="font-size:11px;color:${r.staffRaw!==r.staff?'#4ade80':'#94a3b8'}">${r.staff}</span>
+        <span style="margin-left:auto;font-size:13px;font-weight:700;color:#38bdf8;white-space:nowrap">${r.amount}만</span>
         ${treatBadge}
         <button onclick="openImportEditModal(${idx})"
-          style="font-size:11px;padding:4px 10px;background:var(--accent);color:#0f172a;border:none;border-radius:8px;cursor:pointer;font-weight:700;white-space:nowrap">
+          style="font-size:11px;padding:4px 10px;background:#38bdf8;color:#0f172a;border:none;border-radius:8px;cursor:pointer;font-weight:700;white-space:nowrap">
           ✏ 수정
         </button>
       </div>
-      <!-- 결제내역 (전체 표시) -->
-      <div style="padding:6px 12px 10px;font-size:11px;color:var(--sub);line-height:1.5;border-top:1px solid #1a2236;word-break:break-all">
+      <!-- 결제내역 -->
+      <div style="padding:6px 12px 10px;font-size:11px;color:#94a3b8;line-height:1.5;border-top:1px solid #2d3f55;word-break:break-all">
         ${r.payText}
       </div>
       <!-- 시술 펼침 -->
-      <div id="import-treat-${idx}" style="display:none;padding:8px 12px 10px;border-top:1px solid #1a2236;background:#0a0f1a">
+      <div id="import-treat-${idx}" style="display:none;padding:8px 12px 10px;border-top:1px solid #2d3f55;background:#0f172a">
         <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
-          ${(r.treatments||[]).map(t=>`<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;background:#1a2236;border-radius:10px;font-size:11px"><span style="color:var(--sub)">${t.item}</span><span style="color:var(--accent)">×${t.qty}</span><span style="color:var(--muted)">${t.price}만</span></span>`).join('')}
+          ${(r.treatments||[]).map(t=>`<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;background:#1e293b;border-radius:10px;font-size:11px;color:#94a3b8">${t.item}<span style="color:#38bdf8;margin-left:3px">×${t.qty}</span><span style="color:#64748b;margin-left:2px">${t.price}만</span></span>`).join('')}
         </div>
-        <div style="font-size:11px;color:${sumOk?'var(--green)':'var(--yellow)'}">합계 ${treatSum.toLocaleString()}만 / 결제 ${r.amount}만 ${sumOk?'✓':'← 수정 필요'}</div>
+        <div style="font-size:11px;color:${sumOk?'#4ade80':'#facc15'}">합계 ${treatSum.toLocaleString()}만 / 결제 ${r.amount}만 ${sumOk?'✓':'← 수정 필요'}</div>
       </div>
     </div>`;
   }).join('');
@@ -2048,20 +2048,32 @@ async function confirmImport(){
     const r = _importRows[i];
     progress.textContent = `저장 중... ${i+1}/${_importRows.length}`;
     try {
-      const parsed = localParse(r.payText);
+      // 이미 파싱된 treatments 우선 사용, 없으면 재파싱
+      let treatments = r.treatments;
+      if(!treatments || treatments.length===0){
+        try {
+          const parsed = localParse(r.payText);
+          treatments = distributePrices(parsed.treatments, r.amount, r.payText);
+        } catch(e){ treatments = []; }
+      }
+      // 결제방식: 수정 모달에서 저장된 것 우선
+      let paymentMethods = r.paymentMethods;
+      if(!paymentMethods){
+        try { paymentMethods = extractPayment(r.payText); } catch(e){ paymentMethods = {}; }
+      }
       await window.fbSaveConsultation({
-        type:'normal',
+        type: r.type||'normal',
         date: r.date,
         chart: r.chart,
         name: r.name,
         cat1: r.cat1,
-        cat2: r.cat2,
+        cat2: r.cat2||'',
         staff: r.staff,
-        doctor: '',
+        doctor: r.doctor||'',
         paymentText: r.payText,
         amount: r.amount,
-        treatments: parsed.treatments||[],
-        paymentMethods: extractPayment(r.payText),
+        treatments,
+        paymentMethods,
         importedAt: new Date().toISOString(),
         isImported: true,
       });
@@ -2070,7 +2082,7 @@ async function confirmImport(){
       console.error('import error:', e);
       failed++;
     }
-    await new Promise(res=>setTimeout(res,100)); // rate limit 방지
+    await new Promise(res=>setTimeout(res,80));
   }
 
   progress.textContent = `완료! ${saved}건 저장 성공${failed>0?`, ${failed}건 실패`:''}`;
@@ -2184,12 +2196,12 @@ function showPaymentMethod(payInfo){
   el.style.display='block';
 
   const PAY_OPTIONS = ['카드','현금(자진)','이체','이체(현영)','위챗','알리페이'];
+  const total = parseFloat(document.getElementById('f-amount')?.value)||0;
 
-  // 내부 데이터 정규화: splitDetails 우선, 없으면 methods로 생성
+  // 내부 데이터 정규화
   if(!window._paymentMethods) window._paymentMethods = payInfo;
   const pm = window._paymentMethods;
   if(!pm.items){
-    // items: [{method, amt}] 형태로 정규화
     if(pm.splitDetails && pm.splitDetails.length > 0){
       pm.items = pm.splitDetails.map(d=>({method:d.method, amt:d.amt||0}));
     } else {
@@ -2200,8 +2212,6 @@ function showPaymentMethod(payInfo){
       }
     }
   }
-
-  const total = parseFloat(document.getElementById('f-amount')?.value)||0;
   const pmSum = pm.items.reduce((s,i)=>s+(parseFloat(i.amt)||0), 0);
   const diff = Math.round((total - pmSum)*10)/10;
   const matched = Math.abs(diff) < 0.1;
@@ -2380,8 +2390,15 @@ function resetForm(){
   document.getElementById('f-amount').value='';
   document.getElementById('parse-result').style.display='none';
   document.getElementById('amount-display').style.display='none';
-  document.getElementById('parse-btn').disabled=true;
+  // 결제방식 초기화
+  const pmDisp = document.getElementById('payment-method-display');
+  if(pmDisp) pmDisp.style.display='none';
+  // 시술합계바 초기화
+  const sumBar = document.getElementById('price-sum-bar');
+  if(sumBar) sumBar.remove();
+  // 전역 상태 초기화
   window._parsedTreatments=[];
+  window._paymentMethods=null;
   initDate();
 }
 
