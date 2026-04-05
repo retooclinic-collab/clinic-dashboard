@@ -900,7 +900,14 @@ function extractTextPrices(raw, treatments){
 function distributePrices(treatments, total, rawText){
   if(!total || total<=0) return treatments.map(t=>({...t, price:0}));
 
-  const {found={}, foundParen={}} = rawText ? extractTextPrices(rawText, treatments) : {found:{}, foundParen:{}};
+  let found={}, foundParen={};
+  try {
+    if(rawText){
+      const result = extractTextPrices(rawText, treatments);
+      found = result.found || {};
+      foundParen = result.foundParen || {};
+    }
+  } catch(e){ console.warn('extractTextPrices 오류:', e); }
 
   // 외부 명시가 합계
   const topLevelSum = treatments.reduce((s,t)=>{
@@ -1525,7 +1532,12 @@ function parseDate(s, prevDate){
 function parseImportData(){
   const text = document.getElementById('import-text').value;
   if(!text.trim()){ showToast('데이터를 붙여넣기 해주세요','error'); return; }
-  processImportText(text);
+  try {
+    processImportText(text);
+  } catch(e) {
+    showToast('파싱 오류: '+e.message,'error');
+    console.error('parseImportData error:', e);
+  }
 }
 
 function processImportText(text){
@@ -1666,11 +1678,16 @@ function isHeaderRow(row){
 function renderImportPreview(){
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요','error'); return; }
 
-  // 시술 항목 파싱 (미리보기 시점에 수행)
+  // 시술 항목 파싱 (미리보기 시점에 수행, 에러나도 계속 진행)
   _importRows.forEach(r=>{
     if(!r.treatments){
-      const parsed = localParse(r.payText);
-      r.treatments = distributePrices(parsed.treatments, r.amount, r.payText);
+      try {
+        const parsed = localParse(r.payText);
+        r.treatments = distributePrices(parsed.treatments, r.amount, r.payText);
+      } catch(e) {
+        r.treatments = [];
+        console.warn('치료 파싱 오류:', r.payText, e);
+      }
     }
   });
 
