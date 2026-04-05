@@ -739,7 +739,7 @@ const CHARGE_PRICE = {
   '울쎄라(100샷)':66, '소프웨이브(50샷)':66,
   '써마지300':165, '써마지600':275, '써마지900샷':429,
   '아이써마지225':132, '아이써마지450샷':198,
-  '튠페이스':55, '튠라이너':55, '티타늄':0, '온다':0,
+  '튠페이스':55, '튠라이너':55, '티타늄':99, '온다':0,
   '티타튠':132, '티타튠max':165,
   '리쥬란':55, '리쥬란HB':49.5, '리쥬란아이':55,
   '힐로웨이브':66, '미라젯':38.5, '미라젯쥬베룩':99,
@@ -799,11 +799,16 @@ function extractTextPrices(raw, treatments){
 
   // 세그먼트에서 가격 숫자 추출
   function getPrice(seg){
+    // 차감/남은금액 패턴 먼저 제거 (-남은금액203.5 등이 가격으로 오인되는 것 방지)
+    const seg2 = seg
+      .replace(/[-－]\s*(?:남은\s*)?(?:적립금|선납금|금액|잔액|포인트|할인)\s*[\d.]+[^\d]*/gi, '')
+      .replace(/[-－]\s*[가-힣]{1,6}[\d.]+\s*(?:차감|제외|공제)?/g, '')
+      .replace(/[-－]\s*(?:남은|잔여|예약금제외)\S*/g, '');
     // 패턴1: /숫자 형식 (예: 울쎄라300/191.4)
-    const slashPrice = seg.match(/\/\s*([\d]+\.?\d*)/);
+    const slashPrice = seg2.match(/\/\s*([\d]+\.?\d*)/);
     if(slashPrice){ const v=parseFloat(slashPrice[1]); if(v>=1&&v<3000) return v; }
-    // 패턴2: 괄호 밖 마지막 숫자 (단, cc/샷/회/개/kj 뒤 숫자는 제외)
-    const clean = seg.replace(/\d+\s*(?:cc|샷|회|개|kj|병|ml|분|m)/gi, '?');
+    // 패턴2: 괄호 밖 마지막 숫자 (cc/샷/회/개/kj 뒤 숫자 제외)
+    const clean = seg2.replace(/\d+\s*(?:cc|샷|회|개|kj|병|ml|분|m)/gi, '?');
     const nums = [...clean.matchAll(/([\d]+\.?\d*)/g)].map(m=>parseFloat(m[1]));
     const prices = nums.filter(n=>n>=1 && n<2000);
     return prices.length>0 ? prices[prices.length-1] : null;
@@ -931,8 +936,10 @@ function distributePrices(treatments, total, rawText){
     if(foundParen[t.item]!==undefined && !parenOverflows){
       return {...t, price: foundParen[t.item], fromText:true};
     }
-    // 표준가 추정
-    const unit = CHARGE_PRICE[t.item]??0;
+    // 표준가 추정 (티타늄은 KJ 기반 동적 가격)
+    const unit = t.item==='티타늄' && window._titaniumPrice
+      ? window._titaniumPrice
+      : (CHARGE_PRICE[t.item]??0);
     return {...t, price: Math.round(unit*t.qty*10)/10, fromText:false};
   });
 
@@ -948,12 +955,22 @@ function distributePrices(treatments, total, rawText){
     const freeItems = priced.filter(t=>!t.fromText);
     if(freeItems.length > 0){
       const estSum = freeItems.reduce((s,t)=>s+(CHARGE_PRICE[t.item]??0)*t.qty, 0);
-      priced = priced.map(t=>{
-        if(t.fromText) return t;
-        const est = (CHARGE_PRICE[t.item]??0)*t.qty;
-        const share = estSum>0 ? Math.round(remaining*est/estSum*10)/10 : Math.round(remaining/freeItems.length*10)/10;
-        return {...t, price: share};
-      });
+      if(estSum > 0){
+        // 표준가 비율로 배분
+        priced = priced.map(t=>{
+          if(t.fromText) return t;
+          const est = (CHARGE_PRICE[t.item]??0)*t.qty;
+          const share = Math.round(remaining*est/estSum*10)/10;
+          return {...t, price: share};
+        });
+      } else {
+        // 표준가가 모두 0인 경우 → remaining을 균등 배분
+        const each = Math.round(remaining/freeItems.length*10)/10;
+        priced = priced.map(t=>{
+          if(t.fromText) return t;
+          return {...t, price: each};
+        });
+      }
     } else if(allFromText){
       // 모두 명시가인데 합계가 total보다 클 때 → 명시가 그대로 유지 (예약금차감 등으로 설명 가능)
       // 비율 조정 최소화: 5% 이내면 명시가 유지
@@ -1046,11 +1063,18 @@ function localParse(raw){
     if(titaTuneMax) results.push({item:'티타튠max', qty:1});
     else results.push({item:'티타튠', qty:1});
   } else {
-    // ── 티타늄 (단독) ──
+    // ── 티타늄 (단독) — KJ에 따라 가격 다름 ──
     const titanM = raw.match(/티타늄\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
     const titanS = /티타늄/i.test(raw) && !titanM;
     if(titanM) results.push({item:'티타늄', qty: titanM[1]?parseInt(titanM[1]):1});
     else if(titanS) results.push({item:'티타늄', qty:1});
+    // KJ 추출 → CHARGE_PRICE 동적 보정
+    const titanKjM = raw.match(/티타늄\s*(\d+)\s*kj/i);
+    if(titanKjM){
+      const kj = parseInt(titanKjM[1]);
+      const kjPrice = kj>=80?132 : kj>=60?99 : kj>=40?66 : 99;
+      window._titaniumPrice = kjPrice;
+    } else { window._titaniumPrice = null; }
 
     // ── 튠라이너 ──
     const tuneL = raw.match(/튠라이너(?:\s*10분)?\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
@@ -1699,13 +1723,28 @@ function handleImportFile(input){
   const file = input.files[0];
   if(!file) return;
 
+  // CSV 파일 처리 (백업 CSV 포함)
+  if(file.name.toLowerCase().endsWith('.csv')){
+    const reader = new FileReader();
+    reader.onload = function(e){
+      try {
+        processBackupCSV(e.target.result);
+      } catch(err) {
+        showToast('CSV 읽기 오류: '+err.message, 'error');
+        console.error(err);
+      }
+    };
+    reader.readAsText(file, 'utf-8');
+    return;
+  }
+
+  // XLSX 파일 처리
   const reader = new FileReader();
   reader.onload = function(e){
     try {
       const data = new Uint8Array(e.target.result);
       const workbook = XLSX.read(data, {type:'array', cellDates:true});
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      // 탭 구분 텍스트로 변환 후 기존 파서 재활용
       const tsv = XLSX.utils.sheet_to_csv(sheet, {FS:'\t', RS:'\n'});
       document.getElementById('import-text').value = tsv;
       processImportText(tsv);
@@ -1715,6 +1754,75 @@ function handleImportFile(input){
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+// CSV 백업 파일 파서 (헤더 기반 자동 매핑)
+function processBackupCSV(text){
+  _importRows = [];
+  // BOM 제거
+  text = text.replace(/^\uFEFF/, '');
+
+  // CSV 파싱 (따옴표 안의 콤마 처리)
+  function parseCSVLine(line){
+    const result = [];
+    let cur = '', inQ = false;
+    for(let i=0; i<line.length; i++){
+      const ch = line[i];
+      if(ch==='"'){
+        if(inQ && line[i+1]==='"'){ cur+='"'; i++; }
+        else inQ = !inQ;
+      } else if(ch===',' && !inQ){
+        result.push(cur.trim()); cur='';
+      } else {
+        cur += ch;
+      }
+    }
+    result.push(cur.trim());
+    return result;
+  }
+
+  const lines = text.split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length){ showToast('데이터가 없어요','error'); return; }
+
+  // 헤더 파싱
+  const headers = parseCSVLine(lines[0]).map(h=>h.toLowerCase().trim());
+  const idx = {
+    date:     headers.indexOf('날짜'),
+    chart:    headers.indexOf('차트번호'),
+    name:     headers.indexOf('이름'),
+    cat1:     headers.indexOf('분류1'),
+    cat2:     headers.indexOf('분류2'),
+    payText:  headers.indexOf('결제내역'),
+    amount:   headers.indexOf('결제금액'),
+    staff:    headers.indexOf('상담자'),
+    doctor:   headers.indexOf('진료의사'),
+  };
+
+  for(let i=1; i<lines.length; i++){
+    const cols = parseCSVLine(lines[i]);
+    if(!cols.length || cols.every(c=>!c)) continue;
+
+    const get = (key) => (idx[key]>=0 ? (cols[idx[key]]||'').trim() : '');
+
+    const date    = get('date');
+    const chart   = get('chart');
+    const name    = get('name');
+    const cat1    = get('cat1');
+    const cat2    = get('cat2');
+    const payText = get('payText');
+    const amount  = parseFloat(get('amount'))||0;
+    const staffRaw= get('staff');
+    const doctor  = get('doctor');
+    const staff   = mapStaff(staffRaw) || staffRaw;
+
+    if(!name && !payText) continue;
+
+    _importRows.push({date, chart, name, cat1, cat2, payText, amount, staff, staffRaw, doctor});
+  }
+
+  if(!_importRows.length){ showToast('파싱된 데이터가 없어요. 헤더를 확인해주세요','error'); return; }
+  showToast(`${_importRows.length}건 파싱됨`, 'success');
+  renderImportPreview();
 }
 
 function isHeaderRow(row){
