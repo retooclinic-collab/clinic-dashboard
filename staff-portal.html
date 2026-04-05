@@ -729,7 +729,7 @@ const TREATMENT_ITEMS = [
   '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트',
   'NAD','미라젯쥬베룩','알라딘필','문신제거',
   '적립금차감','선납금차감','상품권차감','할인차감',
-  '예약금','환불'
+  '예약금','환불','위약금'
 ];
 
 /* ══════════════════════════════════════════════
@@ -763,7 +763,7 @@ const CHARGE_PRICE = {
   '예약금':0, '하이쿡스':5.5, '플라즈마엑소좀':55,
   '새살주사':27.5, '인텐스울트라':27.5, '히알라제':16.5,
   '적립금차감':0, '선납금차감':0, '상품권차감':0, '할인차감':0,
-  '예약금':0, '환불':0,
+  '예약금':0, '환불':0, '위약금':0,
 };
 
 /* ── 텍스트에서 시술별 명시 가격 추출 ── */
@@ -1133,9 +1133,10 @@ function localParse(raw){
     results.push({item:'미라젯', qty:q});
     results.push({item:'쥬브아셀', qty:q});
   }
-  // 단독 미라젯 (조합 없이)
+  // 단독 미라젯 (조합 없이) - N회 수량 인식
   if(!hasMjRjHB && !hasMjRj && !hasMjJbv && !hasMjJba && !hasMjLto && /미라젯/i.test(raw)){
-    results.push({item:'미라젯', qty:1});
+    const mjQtyM = raw.match(/미라젯\s*(\d+)\s*회/i);
+    results.push({item:'미라젯', qty: mjQtyM ? parseInt(mjQtyM[1]) : 1});
   }
 
   // ── 쥬베룩볼륨 ──
@@ -1164,12 +1165,17 @@ function localParse(raw){
 
   // ── 리투오 ──
   const ltoM = raw.match(/리투오\s*(\d+)\s*병/i);
+  const ltoQtyM = raw.match(/(?:리투오\s*\/\s*쥬브아셀|쥬브아셀\s*\/\s*리투오)\s*(\d+)\s*회/i) || raw.match(/리투오\s*(?:또는|or)?\s*쥬브아셀\s*(\d+)\s*회/i);
+  const ltoQtyM2 = raw.match(/리투오\s*(\d+)\s*회/i);
   if(ltoM) results.push({item:'리투오', qty: parseInt(ltoM[1])});
+  else if(ltoQtyM) results.push({item:'리투오', qty: parseInt(ltoQtyM[1])});
+  else if(ltoQtyM2) results.push({item:'리투오', qty: parseInt(ltoQtyM2[1])});
   else if(/리투오/i.test(raw)) results.push({item:'리투오', qty:1});
 
   // ── BBL ──
-  // bbl포에버영3회, bbl(색소)3회 등 회차 파싱
-  const bblColorM = raw.match(/bbl\s*(?:\([^)]*\))?\s*(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))[^+,\n]*?(\d+)\s*회/i);
+  // bbl(포에버영)3회, bbl포에버영3회, bbl(포에버영+색소)3회 등 회차 파싱
+  // 괄호 안 설명 포함한 경우도 처리: bbl\s*(\([^)]*\))?\s*N회
+  const bblColorM = raw.match(/bbl\s*(?:\([^)]*\))?\s*(?:(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))[^+,\n=()]*?)?(\d+)\s*회/i);
   const bblColorQty = bblColorM ? parseInt(bblColorM[1]) : 1;
   if(/bbl.*?(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))/i.test(raw)) results.push({item:'BBL(색소)', qty:bblColorQty});
   if(/bbl.*?(?:스킨타이트닝)/i.test(raw)) results.push({item:'BBL(스킨타이트닝)', qty:1});

@@ -113,6 +113,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
     <button class="sbn" id="nav-trend" onclick="goTab('trend')">📈 종합 분석</button>
     <button class="sbn" id="nav-cloud" onclick="goTab('cloud')">☁ 저장 현황</button>
     <button class="sbn" id="nav-cfg" onclick="goTab('cfg')">⚙️ 설정</button>
+    <button class="sbn" id="nav-admin" onclick="goTab('admin')" style="background:#1a0a2e;color:#a78bfa;border-left:2px solid #7c3aed;margin-top:8px">👑 관리자</button>
   </div>
   <div class="sb-arc">
     <div class="sbl">월별 아카이브</div>
@@ -295,9 +296,66 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
     </div>
   </div>
 </div>
-</div>
 
-<!-- 열 선택 모달 -->
+<!-- 관리자 탭 -->
+<div id="tab-admin" style="display:none;">
+  <h2 style="font-size:20px;font-weight:800;margin-bottom:4px;">👑 관리자 패널</h2>
+  <p style="color:#64748b;font-size:13px;margin-bottom:20px;">직원 관리 · 감사로그 · 상담데이터 집계</p>
+
+  <!-- 직원 열람기한 관리 -->
+  <div class="card" style="margin-bottom:16px;">
+    <div style="font-size:15px;font-weight:700;margin-bottom:12px;">👤 직원 열람기한 설정</div>
+    <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">
+      각 직원의 수납리스트 열람 가능 기간을 설정합니다. Firebase Console → Firestore → users 컬렉션에서 직접 관리하세요.<br>
+      <code style="background:#1e293b;padding:2px 6px;border-radius:4px;font-size:11px;">users/{uid} → readDays: 60</code>
+    </div>
+    <div style="background:#0f172a;border-radius:10px;padding:14px;margin-bottom:12px;">
+      <div style="font-size:12px;color:#64748b;margin-bottom:8px;">현재 직원 목록 (드롭다운에 등록된 직원)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        <span style="padding:4px 12px;background:#1e293b;border-radius:20px;font-size:12px;">김구슬</span>
+        <span style="padding:4px 12px;background:#1e293b;border-radius:20px;font-size:12px;">길연주</span>
+        <span style="padding:4px 12px;background:#1e293b;border-radius:20px;font-size:12px;">김도은</span>
+        <span style="padding:4px 12px;background:#1e293b;border-radius:20px;font-size:12px;">호아신</span>
+        <span style="padding:4px 12px;background:#1e293b;border-radius:20px;font-size:12px;">장나은</span>
+      </div>
+    </div>
+    <div style="font-size:12px;color:#64748b;padding:10px;background:#0f172a;border-radius:8px;border-left:3px solid #7c3aed">
+      💡 계정 생성: Firebase Console → Authentication → Add User → 이메일/임시비밀번호 설정 후 직원에게 전달
+    </div>
+  </div>
+
+  <!-- 상담데이터 집계 -->
+  <div class="card" style="margin-bottom:16px;">
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px;">📊 상담데이터 월별 집계</div>
+    <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">수납 기록에서 직접 집계합니다</div>
+
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
+      <div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">집계 월</div>
+        <input type="month" id="admin-month" style="background:#0f172a;border:1px solid #334155;border-radius:8px;color:#f1f5f9;padding:8px 12px;font-size:13px;outline:none;">
+      </div>
+      <button onclick="runAdminAggregation()" style="margin-top:18px;padding:10px 20px;background:#7c3aed;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;">
+        ⚡ 집계 실행
+      </button>
+    </div>
+
+    <div id="admin-agg-result" style="display:none;">
+      <!-- 집계 결과 렌더링 -->
+    </div>
+  </div>
+
+  <!-- 감사로그 -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="font-size:15px;font-weight:700;">🔍 감사로그</div>
+      <button onclick="loadAuditLog()" style="padding:6px 14px;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:8px;font-size:12px;cursor:pointer;">새로고침</button>
+    </div>
+    <div style="font-size:12px;color:#94a3b8;margin-bottom:12px;">수정·삭제 기록이 자동으로 남습니다</div>
+    <div id="audit-log-list" style="max-height:400px;overflow-y:auto;">
+      <div style="color:#64748b;font-size:12px;padding:20px;text-align:center;">위 새로고침 버튼을 눌러 로드해주세요</div>
+    </div>
+  </div>
+</div>
 <div class="mbg" id="col-mdl">
   <div class="mbox">
     <h3 style="font-size:17px;font-weight:700;margin-bottom:4px;">수납기록 열 선택</h3>
@@ -333,7 +391,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
 <!-- ═══ FIREBASE ═══ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, getDoc, deleteDoc, onSnapshot, query, where, getDocs, orderBy, limit } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
 const cfg = {
@@ -1344,13 +1402,14 @@ document.getElementById('col-mdl').addEventListener('click',function(e){if(e.tar
 
 /* ═══ NAV ═══ */
 function goTab(t){
-  ['an','trend','cloud','cfg'].forEach(function(id){
+  ['an','trend','cloud','cfg','admin'].forEach(function(id){
     document.getElementById('tab-'+id).style.display=t===id?'block':'none';
     var nav=document.getElementById('nav-'+id);
     if(nav)nav.classList.toggle('on',t===id);
   });
   if(t==='trend')renderTrendTab();
   if(t==='cloud')renderCloudTab();
+  if(t==='admin')renderAdminTab();
 }
 function resetAll(){
   Object.assign(G,{cRows:null,aRows:null,bRows:null,cData:null,aData:null,bData:null,cFile:'',aFile:'',bFile:'',cCols:null,
@@ -2142,6 +2201,204 @@ window.addEventListener('fb-error', function(e){
   if(st){st.textContent='⚠ 연결 실패';st.style.color='#ef4444';}
   console.error('Firebase error:', e.detail);
 });
-</script>
+
+/* ══════════════════════════════════════════════
+   관리자 패널 함수
+══════════════════════════════════════════════ */
+
+function renderAdminTab(){
+  // 현재 월 자동 설정
+  var monthEl = document.getElementById('admin-month');
+  if(monthEl && !monthEl.value){
+    var now = new Date();
+    var y = now.getFullYear();
+    var m = String(now.getMonth()+1).padStart(2,'0');
+    monthEl.value = y+'-'+m;
+  }
+  loadAuditLog();
+}
+
+/* ── 상담데이터 집계 ── */
+async function runAdminAggregation(){
+  var monthEl = document.getElementById('admin-month');
+  if(!monthEl || !monthEl.value){ alert('집계할 월을 선택해주세요'); return; }
+  var ym = monthEl.value; // "2025-03"
+  var from = ym+'-01';
+  var to = ym+'-31';
+
+  var resultEl = document.getElementById('admin-agg-result');
+  resultEl.style.display='block';
+  resultEl.innerHTML='<div style="color:#64748b;font-size:12px;padding:20px;text-align:center">집계 중...</div>';
+
+  try {
+    var q = query(
+      collection(db,'consultations'),
+      where('date','>=',from),
+      where('date','<=',to),
+      where('deleted','!=',true)
+    );
+    var snap = await getDocs(q);
+    var items = [];
+    snap.forEach(function(d){ items.push(d.data()); });
+
+    if(!items.length){
+      resultEl.innerHTML='<div style="color:#64748b;font-size:12px;padding:20px;text-align:center">'+ym+' 데이터 없음</div>';
+      return;
+    }
+
+    // 집계
+    var totalAmt = 0;
+    var byStaff = {};
+    var byDoctor = {};
+    var byCat1 = {};
+    var byTreat = {};
+    var byPayMethod = {};
+
+    items.forEach(function(it){
+      var amt = parseFloat(it.amount)||0;
+      if(it.type==='vip') return; // VIP 재료는 매출 제외
+
+      totalAmt += amt;
+
+      // 상담직원별
+      var s = it.staff||'미입력';
+      byStaff[s] = (byStaff[s]||0)+amt;
+
+      // 진료의사별
+      var d = it.doctor||'미입력';
+      byDoctor[d] = (byDoctor[d]||0)+amt;
+
+      // 분류1별
+      var c1 = it.cat1||'미입력';
+      byCat1[c1] = (byCat1[c1]||0)+amt;
+
+      // 시술별
+      (it.treatments||[]).forEach(function(t){
+        if(!t.item) return;
+        if(!byTreat[t.item]) byTreat[t.item]={qty:0,amt:0};
+        byTreat[t.item].qty += (t.qty||1);
+        byTreat[t.item].amt += (t.price||0);
+      });
+
+      // 결제방식별
+      var pm = it.paymentMethods;
+      if(pm && pm.items && pm.items.length){
+        pm.items.forEach(function(pi){
+          var mth = pi.method||'기타';
+          byPayMethod[mth] = (byPayMethod[mth]||0)+(parseFloat(pi.amt)||0);
+        });
+      } else if(pm && pm.methods && pm.methods.length){
+        pm.methods.forEach(function(mth){
+          byPayMethod[mth] = (byPayMethod[mth]||0)+amt;
+        });
+      }
+    });
+
+    // 렌더링
+    var cnt = items.length;
+    var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:16px;">';
+
+    // KPI 카드
+    html += kpiCard('총 수납건수', cnt+'건', '#38bdf8');
+    html += kpiCard('총 매출', totalAmt.toLocaleString()+'만원', '#4ade80');
+    html += kpiCard('건당 평균', Math.round(totalAmt/cnt*10)/10+'만원', '#a78bfa');
+    html += '</div>';
+
+    // 분류별 테이블들
+    html += aggTable('📍 내원경로별', byCat1, totalAmt);
+    html += aggTable('👩‍⚕️ 진료의사별', byDoctor, totalAmt);
+    html += aggTable('👤 상담직원별', byStaff, totalAmt);
+    html += aggTable('💳 결제방식별', byPayMethod, totalAmt);
+    html += treatTable(byTreat);
+
+    resultEl.innerHTML = html;
+
+  } catch(e){
+    resultEl.innerHTML='<div style="color:#ef4444;font-size:12px;padding:16px">오류: '+e.message+'</div>';
+    console.error(e);
+  }
+}
+
+function kpiCard(label, value, color){
+  return '<div style="background:#0f172a;border-radius:10px;padding:14px;border-left:3px solid '+color+'">'+
+    '<div style="font-size:11px;color:#64748b;margin-bottom:4px;">'+label+'</div>'+
+    '<div style="font-size:18px;font-weight:800;color:'+color+'">'+value+'</div>'+
+    '</div>';
+}
+
+function aggTable(title, data, total){
+  var sorted = Object.entries(data).sort(function(a,b){return b[1]-a[1];});
+  if(!sorted.length) return '';
+  var html = '<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">'+title+'</div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  html += '<thead><tr style="background:#0f172a;color:#64748b;"><th style="padding:7px 8px;text-align:left;">항목</th><th style="padding:7px 8px;text-align:right;">금액</th><th style="padding:7px 8px;text-align:right;">비중</th></tr></thead><tbody>';
+  sorted.forEach(function(e){
+    var pct = total>0 ? Math.round(e[1]/total*1000)/10 : 0;
+    html += '<tr style="border-bottom:1px solid #1e293b;">';
+    html += '<td style="padding:7px 8px;color:#f1f5f9;">'+e[0]+'</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#38bdf8;font-weight:700;">'+Math.round(e[1]*10)/10+'만</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#64748b;">'+pct+'%</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function treatTable(data){
+  var sorted = Object.entries(data).sort(function(a,b){return b[1].qty-a[1].qty;});
+  if(!sorted.length) return '';
+  var html = '<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">🧪 시술별 집계</div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  html += '<thead><tr style="background:#0f172a;color:#64748b;"><th style="padding:7px 8px;text-align:left;">시술</th><th style="padding:7px 8px;text-align:right;">건수</th><th style="padding:7px 8px;text-align:right;">매출(만)</th></tr></thead><tbody>';
+  sorted.forEach(function(e){
+    html += '<tr style="border-bottom:1px solid #1e293b;">';
+    html += '<td style="padding:7px 8px;color:#f1f5f9;">'+e[0]+'</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#a78bfa;">'+e[1].qty+'</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#38bdf8;">'+Math.round(e[1].amt*10)/10+'</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+/* ── 감사로그 ── */
+async function loadAuditLog(){
+  var listEl = document.getElementById('audit-log-list');
+  if(!listEl) return;
+  listEl.innerHTML='<div style="color:#64748b;font-size:12px;padding:16px;text-align:center">로딩 중...</div>';
+
+  try {
+    var q = query(collection(db,'audit_log'), orderBy('at','desc'), limit(50));
+    var snap = await getDocs(q);
+    var logs = [];
+    snap.forEach(function(d){ logs.push(d.data()); });
+
+    if(!logs.length){
+      listEl.innerHTML='<div style="color:#64748b;font-size:12px;padding:16px;text-align:center">감사로그 없음</div>';
+      return;
+    }
+
+    var html = '';
+    logs.forEach(function(log){
+      var actionColor = log.action==='delete' ? '#ef4444' : log.action==='update' ? '#f59e0b' : '#38bdf8';
+      var actionLabel = log.action==='delete' ? '🗑 삭제' : log.action==='update' ? '✏ 수정' : '➕ 추가';
+      var name = (log.before && log.before.name) || (log.after && log.after.name) || log.targetId || '';
+      var date = (log.before && log.before.date) || (log.after && log.after.date) || '';
+      var timeStr = log.at ? log.at.slice(0,16).replace('T',' ') : '';
+
+      html += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #1e293b;">';
+      html += '<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:'+actionColor+'22;color:'+actionColor+';white-space:nowrap;margin-top:2px;">'+actionLabel+'</span>';
+      html += '<div style="flex:1;">';
+      html += '<div style="font-size:12px;color:#f1f5f9;font-weight:600;">'+name+' <span style="color:#64748b;font-weight:400;">'+date+'</span></div>';
+      html += '<div style="font-size:11px;color:#64748b;">'+log.by+' · '+timeStr+'</div>';
+      html += '</div></div>';
+    });
+
+    listEl.innerHTML = html;
+  } catch(e){
+    listEl.innerHTML='<div style="color:#ef4444;font-size:12px;padding:16px">오류: '+e.message+'</div>';
+    console.error(e);
+  }
+}
 </body>
 </html>
