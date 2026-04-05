@@ -2429,7 +2429,22 @@ function openEditModal(id){
           <textarea id="edit-paytext" class="form-textarea" style="min-height:80px;padding-bottom:38px">${item.paymentText||''}</textarea>
           <button onclick="reparseEditModal()" style="position:absolute;right:8px;bottom:8px;background:var(--accent);color:#0f172a;border:none;border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;z-index:1">⚡ 재분석</button>
         </div>
-        <div id="edit-parse-result" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
+        <div id="edit-parse-result" style="margin-top:6px;font-size:11px;color:var(--muted)"></div>
+      </div>
+
+      <!-- 시술항목 편집 -->
+      <div style="margin-bottom:12px">
+        <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:6px">시술 항목</div>
+        <div id="edit-treat-list" style="display:flex;flex-direction:column;gap:4px"></div>
+        <div id="edit-treat-sum" style="font-size:11px;margin-top:6px;color:var(--muted)"></div>
+        <button onclick="editAddTreat()" style="margin-top:6px;width:100%;padding:8px;background:none;border:1px dashed var(--border);border-radius:8px;color:var(--muted);cursor:pointer;font-size:12px">+ 시술 추가</button>
+      </div>
+
+      <!-- 결제방식 편집 -->
+      <div style="margin-bottom:16px">
+        <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:6px">결제방식</div>
+        <div id="edit-pay-list" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"></div>
+        <div id="edit-pay-sum" style="font-size:11px;margin-top:6px;color:var(--muted)"></div>
       </div>
 
       <div style="display:flex;gap:10px">
@@ -2450,6 +2465,21 @@ function openEditModal(id){
   `;
   document.body.appendChild(modal);
   window._editId = id;
+
+  // 시술항목 초기화
+  window._editTreatments = JSON.parse(JSON.stringify(item.treatments||[]));
+  // 결제방식 초기화
+  const pm = item.paymentMethods||{};
+  window._editPayItems = [];
+  if(pm.items?.length) window._editPayItems = JSON.parse(JSON.stringify(pm.items));
+  else if(pm.splitDetails?.length) window._editPayItems = pm.splitDetails.map(d=>({method:d.method,amt:d.amt||0}));
+  else if(pm.methods?.length) {
+    const amt = item.amount||0;
+    window._editPayItems = pm.methods.map((m,i)=>({method:m, amt: pm.methods.length===1?amt:0}));
+  }
+
+  renderEditTreatList();
+  renderEditPayList();
 }
 
 async function confirmDeleteRecord(id){
@@ -2463,6 +2493,30 @@ async function confirmDeleteRecord(id){
   } catch(e) {
     showToast('삭제 실패: '+e.message,'error');
   }
+}
+
+function reparseEditModal(){
+  const text = document.getElementById('edit-paytext')?.value.trim();
+  if(!text){ showToast('결제내역을 입력해주세요','error'); return; }
+  const amt = parseFloat(document.getElementById('edit-amount')?.value)||extractAmount(text)||0;
+  if(amt) document.getElementById('edit-amount').value = amt;
+  try {
+    const parsed = localParse(text);
+    window._editTreatments = distributePrices(parsed.treatments, amt, text);
+    renderEditTreatList();
+  } catch(e) { console.warn(e); }
+  // 결제방식 재추출
+  try {
+    const payInfo = extractPayment(text);
+    if(payInfo?.methods?.length){
+      window._editPayItems = payInfo.splitDetails?.length
+        ? payInfo.splitDetails.map(d=>({method:d.method,amt:d.amt||0}))
+        : payInfo.methods.map(m=>({method:m, amt:payInfo.methods.length===1?amt:0}));
+      renderEditPayList();
+    }
+  } catch(e) { console.warn(e); }
+  const el = document.getElementById('edit-parse-result');
+  if(el) el.innerHTML = `<span style="color:var(--green)">✓ ${(window._editTreatments||[]).length}개 항목 재추출됨</span>`;
 }
 
 async function saveEditModal(id){
@@ -2485,34 +2539,108 @@ async function saveEditModal(id){
 
   // 재분석된 시술항목 있으면 포함
   if(window._editTreatments) data.treatments = window._editTreatments;
-  // 시술항목 없고 결제내역 있으면 자동 파싱
   if(!data.treatments && payText){
-    const parsed = localParse(payText);
-    data.treatments = distributePrices(parsed.treatments, amt, payText);
+    try { const parsed = localParse(payText); data.treatments = distributePrices(parsed.treatments, amt, payText); } catch(e){}
+  }
+  // 결제방식 저장
+  if(window._editPayItems?.length){
+    data.paymentMethods = {
+      items: window._editPayItems,
+      splitDetails: window._editPayItems.filter(i=>i.amt>0),
+      methods: window._editPayItems.map(i=>i.method)
+    };
   }
 
   try {
     await window.fbUpdateConsultation(id, data);
     document.getElementById('edit-modal')?.remove();
     window._editTreatments = null;
+    window._editPayItems = null;
     showToast('수정 완료! ✅','success');
   } catch(e) {
     showToast('수정 실패: '+e.message,'error');
   }
 }
 
-function reparseEditModal(){
-  const text = document.getElementById('edit-paytext')?.value.trim();
-  if(!text){ showToast('결제내역을 입력해주세요','error'); return; }
-  const amt = parseFloat(document.getElementById('edit-amount')?.value)||extractAmount(text)||0;
-  if(amt) document.getElementById('edit-amount').value = amt;
-  const parsed = localParse(text);
-  const withPrices = distributePrices(parsed.treatments, amt, text);
-  window._editTreatments = withPrices;
-  const el = document.getElementById('edit-parse-result');
-  if(el) el.innerHTML = `<span style="color:var(--green)">✓ ${withPrices.length}개 항목</span> — ${withPrices.map(t=>`${t.item}×${t.qty}`).join(', ')}`;
+/* ── 수정 모달: 시술항목 렌더 ── */
+function renderEditTreatList(){
+  const list = document.getElementById('edit-treat-list');
+  const sumEl = document.getElementById('edit-treat-sum');
+  if(!list) return;
+  const treats = window._editTreatments||[];
+  const amt = parseFloat(document.getElementById('edit-amount')?.value)||0;
+  const sum = Math.round(treats.reduce((s,t)=>s+(t.price||0),0)*10)/10;
+  const ok = Math.abs(sum-amt)<0.1;
+
+  list.innerHTML = treats.map((t,i)=>`
+    <div style="display:flex;align-items:center;gap:6px;background:#0f172a;border-radius:8px;padding:7px 10px;border:1px solid var(--border)">
+      <span style="flex:1;font-size:12px;font-weight:600">${t.item}</span>
+      <span style="font-size:11px;color:var(--muted)">수량</span>
+      <input type="number" value="${t.qty}" min="0" step="1" style="width:48px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:3px 6px;text-align:center;outline:none"
+        onchange="window._editTreatments[${i}].qty=parseFloat(this.value)||0;renderEditTreatList()">
+      <span style="font-size:11px;color:var(--muted)">가격(만)</span>
+      <input type="number" value="${t.price||0}" min="0" step="0.1" style="width:60px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--accent);font-size:12px;padding:3px 6px;text-align:right;outline:none"
+        onchange="window._editTreatments[${i}].price=parseFloat(this.value)||0;renderEditTreatList()">
+      <button onclick="window._editTreatments[${i}].price=Math.round((parseFloat(document.getElementById('edit-amount').value||0)-window._editTreatments.reduce((s,t,j)=>j===${i}?s:s+(t.price||0),0))*10)/10;renderEditTreatList()" title="이 항목으로 총액 맞추기"
+        style="background:none;border:none;color:var(--yellow);cursor:pointer;font-size:13px;padding:0 2px">⚖</button>
+      <button onclick="window._editTreatments.splice(${i},1);renderEditTreatList()"
+        style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 2px">×</button>
+    </div>
+  `).join('');
+
+  if(sumEl) sumEl.innerHTML = `시술합계 <strong style="color:${ok?'var(--green)':'var(--yellow)'}">${sum}만원</strong>${amt?' / 결제 '+amt+'만원':''} ${ok&&amt?'✓':amt?'← 차이 '+(Math.round((sum-amt)*10)/10)+'만':''}`;
 }
 
+function editAddTreat(){
+  const name = prompt('시술 항목명:'); if(!name) return;
+  const qty = parseFloat(prompt('수량:','1')||'1');
+  const price = parseFloat(prompt('가격(만원):','0')||'0');
+  if(!window._editTreatments) window._editTreatments=[];
+  window._editTreatments.push({item:name.trim(), qty, price});
+  renderEditTreatList();
+}
+
+/* ── 수정 모달: 결제방식 렌더 ── */
+function renderEditPayList(){
+  const list = document.getElementById('edit-pay-list');
+  const sumEl = document.getElementById('edit-pay-sum');
+  if(!list) return;
+  const items = window._editPayItems||[];
+  const amt = parseFloat(document.getElementById('edit-amount')?.value)||0;
+  const sum = Math.round(items.reduce((s,i)=>s+(parseFloat(i.amt)||0),0)*10)/10;
+  const ok = Math.abs(sum-amt)<0.1;
+  const PAY_OPTIONS=['카드','현금(자진)','이체','이체(현영)','위챗','알리페이'];
+
+  list.innerHTML = items.map((it,i)=>`
+    <span style="display:inline-flex;align-items:center;gap:4px;background:#0f172a;border:1px solid var(--border);border-radius:20px;padding:4px 6px 4px 10px;font-size:12px">
+      <span style="color:var(--sub)">${it.method}</span>
+      <input type="number" value="${it.amt||''}" placeholder="금액" step="0.1" min="0"
+        style="width:52px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--accent);font-size:12px;font-weight:700;text-align:right;outline:none;padding:0 2px"
+        onchange="window._editPayItems[${i}].amt=parseFloat(this.value)||0;renderEditPayList()">
+      <span style="color:var(--muted);font-size:11px">만</span>
+      <button onclick="window._editPayItems[${i}].amt=Math.round((parseFloat(document.getElementById('edit-amount').value||0)-window._editPayItems.reduce((s,it,j)=>j===${i}?s:s+(parseFloat(it.amt)||0),0))*10)/10;renderEditPayList()" title="총액 맞추기"
+        style="background:none;border:none;color:var(--yellow);cursor:pointer;font-size:11px;padding:0 2px">⚖</button>
+      <button onclick="window._editPayItems.splice(${i},1);renderEditPayList()"
+        style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0 2px">×</button>
+    </span>`).join('');
+
+  list.innerHTML += `<select onchange="editAddPay(this)" style="background:#0f172a;border:1px solid var(--border);border-radius:20px;color:var(--muted);font-size:11px;padding:4px 8px;cursor:pointer;outline:none">
+    <option value="">+ 추가</option>
+    ${PAY_OPTIONS.map(o=>`<option value="${o}">${o}</option>`).join('')}
+    <option value="__custom__">직접입력</option>
+  </select>`;
+
+  if(sumEl) sumEl.innerHTML = `결제방식 합계 <strong style="color:${ok?'var(--green)':'var(--yellow)'}">${sum}만원</strong>${amt?' / 결제 '+amt+'만원':''} ${ok&&amt?'✓':''}`;
+}
+
+function editAddPay(sel){
+  const val=sel.value; if(!val) return; sel.value='';
+  let method=val;
+  if(val==='__custom__'){ method=prompt('결제방식:'); if(!method) return; }
+  if(!window._editPayItems) window._editPayItems=[];
+  window._editPayItems.push({method, amt:0});
+  renderEditPayList();
+}
 
 /* ── 토스트 ── */
 function showToast(msg, type='info'){
