@@ -218,27 +218,11 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
         </button>
 
         <div id="import-preview" style="display:none;margin-top:14px">
-          <div style="font-size:12px;font-weight:700;color:var(--sub);margin-bottom:8px">
-            미리보기 <span id="import-count" style="color:var(--accent)"></span>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="font-size:12px;font-weight:700;color:var(--sub)">미리보기 <span id="import-count" style="color:var(--accent)"></span></div>
           </div>
-          <div style="overflow-x:auto">
-            <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:600px">
-              <thead>
-                <tr style="background:#0a0f1a;color:var(--muted)">
-                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">날짜</th>
-                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">차트</th>
-                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">이름</th>
-                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">분류</th>
-                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">결제내역</th>
-                  <th style="padding:6px 8px;text-align:right;border-bottom:1px solid var(--border)">금액</th>
-                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">상담자</th>
-                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">시술</th>
-                </tr>
-              </thead>
-              <tbody id="import-preview-body"></tbody>
-            </table>
-          </div>
-          <!-- 저장 버튼: 미리보기 확인 즉시 표시 -->
+          <!-- 카드 레이아웃 -->
+          <div id="import-preview-body" style="display:flex;flex-direction:column;gap:6px;max-height:55vh;overflow-y:auto;padding-right:4px"></div>
           <div style="display:flex;gap:10px;margin-top:14px">
             <button onclick="confirmImport()" id="import-btn"
               style="flex:1;padding:14px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer">
@@ -623,7 +607,7 @@ window.startListenHistory = (uid, email) => {
     });
     window._allItems = items;
 
-    const dateFilter = document.getElementById('filter-date')?.value;
+    const dateFilter = document.getElementById('filter-from')?.value;
     if(dateFilter){
       renderHistory(items.filter(it=>it.date===dateFilter));
     } else {
@@ -1440,14 +1424,6 @@ function removeTreatment(idx){
   showParseResult({treatments: window._parsedTreatments}, amt);
 }
 
-function addManualTreatment(){
-  const name = prompt('시술 항목명 입력 (목록에 있는 이름 그대로):');
-  if(!name) return;
-  const qty = parseFloat(prompt('수량:')||'1');
-  if(!window._parsedTreatments) window._parsedTreatments = [];
-  window._parsedTreatments.push({item:name.trim(), qty});
-  showParseResult({treatments: window._parsedTreatments});
-}
 
 /* ── 결제금액 추출 (m/M/만원/만 모두 처리) ── */
 function extractAmount(text){
@@ -1678,7 +1654,7 @@ function isHeaderRow(row){
 function renderImportPreview(){
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요','error'); return; }
 
-  // 시술 항목 파싱 (미리보기 시점에 수행, 에러나도 계속 진행)
+  // 시술 항목 파싱
   _importRows.forEach(r=>{
     if(!r.treatments){
       try {
@@ -1686,60 +1662,44 @@ function renderImportPreview(){
         r.treatments = distributePrices(parsed.treatments, r.amount, r.payText);
       } catch(e) {
         r.treatments = [];
-        console.warn('치료 파싱 오류:', r.payText, e);
       }
     }
   });
 
-  const tbody = document.getElementById('import-preview-body');
-  tbody.innerHTML = _importRows.map((r,idx)=>{
-    const treatSummary = r.treatments && r.treatments.length > 0
-      ? r.treatments.map(t=>`<span style="display:inline-block;margin:1px 2px;padding:2px 6px;background:#1a2236;border-radius:10px;font-size:10px;color:var(--sub)">${t.item}<span style="color:var(--accent)">×${t.qty}</span> ${t.price}만</span>`).join('')
-      : '<span style="color:var(--muted);font-size:10px">항목 없음</span>';
-
+  const container = document.getElementById('import-preview-body');
+  container.innerHTML = _importRows.map((r,idx)=>{
     const treatSum = (r.treatments||[]).reduce((s,t)=>s+(t.price||0),0);
     const sumOk = Math.abs(treatSum - r.amount) < 0.1;
+    const treatBadge = `<span style="font-size:10px;padding:2px 7px;border:1px solid ${sumOk?'var(--green)':'var(--yellow)'};border-radius:10px;color:${sumOk?'var(--green)':'var(--yellow)'};cursor:pointer" onclick="toggleImportTreat(${idx})">${r.treatments?.length||0}개 ${sumOk?'✓':'⚠'}</span>`;
 
     return `
-    <tr style="border-bottom:1px solid #1a2236">
-      <td style="padding:5px 8px;color:var(--muted);white-space:nowrap;font-size:11px">${r.date}</td>
-      <td style="padding:5px 8px;font-size:11px">${r.chart}</td>
-      <td style="padding:5px 8px;font-weight:600;white-space:nowrap;font-size:12px">${r.name}</td>
-      <td style="padding:5px 8px;font-size:11px;white-space:nowrap">${r.cat1}${r.cat2?'·'+r.cat2:''}</td>
-      <td style="padding:5px 8px;max-width:180px;word-break:break-all;font-size:10px;color:var(--muted)">${r.payText}</td>
-      <td style="padding:5px 8px;text-align:right;color:var(--accent);font-weight:700;white-space:nowrap;font-size:12px">${r.amount}만</td>
-      <td style="padding:5px 8px;font-size:11px;white-space:nowrap;color:${r.staffRaw!==r.staff?'var(--green)':'var(--sub)'}">${r.staff}</td>
-      <td style="padding:5px 8px">
-        <button onclick="toggleImportTreat(${idx})"
-          style="font-size:10px;padding:3px 8px;background:none;border:1px solid ${sumOk?'var(--green)':'var(--yellow)'};border-radius:10px;color:${sumOk?'var(--green)':'var(--yellow)'};cursor:pointer;white-space:nowrap">
-          ${r.treatments?.length||0}개 ${sumOk?'✓':'⚠'}
+    <div style="background:var(--panel);border-radius:12px;border:1px solid var(--border);overflow:hidden">
+      <!-- 행 헤더 -->
+      <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--muted);white-space:nowrap">${r.date}</span>
+        <span style="font-size:11px;color:var(--muted)">${r.chart}</span>
+        <span style="font-size:13px;font-weight:700;min-width:60px">${r.name}</span>
+        <span style="font-size:11px;color:var(--sub)">${r.cat1}${r.cat2?'·'+r.cat2:''}</span>
+        <span style="font-size:11px;color:${r.staffRaw!==r.staff?'var(--green)':'var(--muted)'}">${r.staff}</span>
+        <span style="margin-left:auto;font-size:13px;font-weight:700;color:var(--accent);white-space:nowrap">${r.amount}만</span>
+        ${treatBadge}
+        <button onclick="openImportEditModal(${idx})"
+          style="font-size:11px;padding:4px 10px;background:var(--accent);color:#0f172a;border:none;border-radius:8px;cursor:pointer;font-weight:700;white-space:nowrap">
+          ✏ 수정
         </button>
-      </td>
-    </tr>
-    <tr id="import-treat-${idx}" style="display:none;background:#0a0f1a">
-      <td colspan="8" style="padding:8px 12px">
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
-          ${(r.treatments||[]).map((t,ti)=>`
-            <span style="display:inline-flex;align-items:center;gap:3px;margin:1px;padding:3px 6px;background:#1a2236;border-radius:10px;font-size:11px">
-              <span style="color:var(--sub)">${t.item}</span>
-              <span style="color:var(--muted)">×</span>
-              <input type="number" value="${t.qty}" min="0" step="1"
-                style="width:36px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:11px;text-align:center;outline:none"
-                onchange="updateImportTreat(${idx},${ti},'qty',this.value)">
-              <input type="number" value="${t.price}" min="0" step="0.1"
-                style="width:44px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--accent);font-size:11px;text-align:right;outline:none"
-                onchange="updateImportTreat(${idx},${ti},'price',this.value)">
-              <span style="color:var(--muted);font-size:10px">만</span>
-              <button onclick="removeImportTreat(${idx},${ti})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;line-height:1;padding:0">×</button>
-            </span>
-          `).join('')}
-          <button onclick="addImportTreat(${idx})" style="font-size:10px;padding:2px 8px;background:none;border:1px dashed var(--border);border-radius:10px;color:var(--muted);cursor:pointer">+ 추가</button>
+      </div>
+      <!-- 결제내역 (전체 표시) -->
+      <div style="padding:6px 12px 10px;font-size:11px;color:var(--sub);line-height:1.5;border-top:1px solid #1a2236;word-break:break-all">
+        ${r.payText}
+      </div>
+      <!-- 시술 펼침 -->
+      <div id="import-treat-${idx}" style="display:none;padding:8px 12px 10px;border-top:1px solid #1a2236;background:#0a0f1a">
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+          ${(r.treatments||[]).map(t=>`<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;background:#1a2236;border-radius:10px;font-size:11px"><span style="color:var(--sub)">${t.item}</span><span style="color:var(--accent)">×${t.qty}</span><span style="color:var(--muted)">${t.price}만</span></span>`).join('')}
         </div>
-        <div style="font-size:11px;color:${sumOk?'var(--green)':'var(--yellow)'}">
-          시술합계 <span id="import-treat-sum-${idx}">${treatSum.toLocaleString()}</span>만원 / 결제금액 ${r.amount}만원 ${sumOk?'✓':'← 확인 필요'}
-        </div>
-      </td>
-    </tr>`;
+        <div style="font-size:11px;color:${sumOk?'var(--green)':'var(--yellow)'}">합계 ${treatSum.toLocaleString()}만 / 결제 ${r.amount}만 ${sumOk?'✓':'← 수정 필요'}</div>
+      </div>
+    </div>`;
   }).join('');
 
   document.getElementById('import-count').textContent = `${_importRows.length}건 파싱됨`;
@@ -1819,9 +1779,232 @@ async function bulkDeleteAll(){
 }
 
 /* ── 탭 구분 행 파싱 ── */
+/* ── 임포트 행 수정 팝업 ── */
+function openImportEditModal(idx){
+  const r = _importRows[idx];
+  if(!r) return;
+
+  const existing = document.getElementById('import-edit-modal');
+  if(existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'import-edit-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
+
+  const STAFF_LIST = ['김구슬','길연주','명재은','장나은','호아신','데스크','퇴사-장','퇴사-황','퇴사-이','퇴사-공','퇴사-한빛','퇴사-유엄진','퇴사-주미진'];
+  const CAT1_LIST = ['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국원내','일본(통)','외국인'];
+  const DOCTORS = ['김재림','김선민','윤규성','송승아','장명선','기록없음'];
+
+  modal.innerHTML = `
+    <div style="background:var(--panel);border-radius:16px;padding:24px;width:100%;max-width:580px;border:1px solid var(--border);max-height:92vh;overflow-y:auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div style="font-size:15px;font-weight:800">✏ 임포트 행 수정 <span style="font-size:12px;color:var(--muted)">(#${idx+1})</span></div>
+        <button onclick="document.getElementById('import-edit-modal').remove()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">×</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">날짜</div>
+          <input id="ie-date" type="date" class="form-input" value="${r.date||''}"></div>
+        <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">차트번호</div>
+          <input id="ie-chart" type="text" class="form-input" value="${r.chart||''}"></div>
+        <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">이름</div>
+          <input id="ie-name" type="text" class="form-input" value="${r.name||''}"></div>
+        <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">진료의사</div>
+          <select id="ie-doctor" class="form-select">
+            ${DOCTORS.map(d=>`<option value="${d}" ${r.doctor===d?'selected':''}>${d}</option>`).join('')}
+            <option value="">기록없음</option>
+          </select></div>
+        <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류1</div>
+          <select id="ie-cat1" class="form-select">
+            ${CAT1_LIST.map(o=>`<option value="${o}" ${r.cat1===o?'selected':''}>${o}</option>`).join('')}
+          </select></div>
+        <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류2</div>
+          <input id="ie-cat2" type="text" class="form-input" value="${r.cat2||''}"></div>
+        <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">결제금액(만)</div>
+          <input id="ie-amount" type="number" step="0.1" class="form-input" value="${r.amount||''}"></div>
+        <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">상담직원</div>
+          <select id="ie-staff" class="form-select">
+            ${STAFF_LIST.map(s=>`<option value="${s}" ${r.staff===s?'selected':''}>${s}</option>`).join('')}
+          </select></div>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">결제내역</div>
+        <div style="position:relative">
+          <textarea id="ie-paytext" class="form-textarea" style="min-height:70px;padding-bottom:36px">${r.payText||''}</textarea>
+          <button onclick="reparseImportRow(${idx})" style="position:absolute;right:8px;bottom:8px;background:var(--accent);color:#0f172a;border:none;border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;z-index:1">⚡ 재분석</button>
+        </div>
+      </div>
+
+      <!-- 시술항목 -->
+      <div style="margin-bottom:12px">
+        <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:6px">시술 항목</div>
+        <div id="ie-treat-list" style="display:flex;flex-direction:column;gap:4px"></div>
+        <div id="ie-treat-sum" style="font-size:11px;margin-top:6px;color:var(--muted)"></div>
+        <button onclick="ieAddTreat(${idx})" style="margin-top:6px;width:100%;padding:7px;background:none;border:1px dashed var(--border);border-radius:8px;color:var(--muted);cursor:pointer;font-size:12px">+ 시술 추가</button>
+      </div>
+
+      <!-- 결제방식 -->
+      <div style="margin-bottom:16px">
+        <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:6px">결제방식</div>
+        <div id="ie-pay-list" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"></div>
+        <div id="ie-pay-sum" style="font-size:11px;margin-top:6px;color:var(--muted)"></div>
+      </div>
+
+      <div style="display:flex;gap:10px">
+        <button onclick="saveImportRow(${idx})"
+          style="flex:1;padding:13px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">
+          💾 저장
+        </button>
+        <button onclick="document.getElementById('import-edit-modal').remove()"
+          style="padding:13px 18px;background:var(--border);color:var(--muted);border:none;border-radius:12px;font-size:13px;cursor:pointer">
+          취소
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // 상태 초기화
+  window._ieTreats = JSON.parse(JSON.stringify(r.treatments||[]));
+  const pm = r.paymentMethods||{};
+  if(pm.items?.length) window._iePays = JSON.parse(JSON.stringify(pm.items));
+  else if(pm.splitDetails?.length) window._iePays = pm.splitDetails.map(d=>({method:d.method,amt:d.amt||0}));
+  else if(pm.methods?.length) window._iePays = pm.methods.map(m=>({method:m,amt:pm.methods.length===1?(r.amount||0):0}));
+  else {
+    // 결제내역에서 추출 시도
+    try { const pi=extractPayment(r.payText); window._iePays = pi?.splitDetails?.length ? pi.splitDetails.map(d=>({method:d.method,amt:d.amt||0})) : (pi?.methods||[]).map(m=>({method:m,amt:pi.methods.length===1?(r.amount||0):0})); }
+    catch(e){ window._iePays=[]; }
+  }
+  renderIETreatList(idx);
+  renderIEPayList(idx);
+}
+
+function renderIETreatList(idx){
+  const list = document.getElementById('ie-treat-list');
+  const sumEl = document.getElementById('ie-treat-sum');
+  if(!list) return;
+  const treats = window._ieTreats||[];
+  const amt = parseFloat(document.getElementById('ie-amount')?.value)||0;
+  const sum = Math.round(treats.reduce((s,t)=>s+(t.price||0),0)*10)/10;
+  const ok = Math.abs(sum-amt)<0.1;
+
+  list.innerHTML = treats.map((t,i)=>`
+    <div style="display:flex;align-items:center;gap:6px;background:#0f172a;border-radius:8px;padding:6px 10px;border:1px solid var(--border)">
+      <span style="flex:1;font-size:12px;font-weight:600">${t.item}</span>
+      <span style="font-size:11px;color:var(--muted)">수량</span>
+      <input type="number" value="${t.qty}" min="0" step="1" style="width:44px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:3px 5px;text-align:center;outline:none"
+        onchange="window._ieTreats[${i}].qty=parseFloat(this.value)||0;renderIETreatList(${idx})">
+      <span style="font-size:11px;color:var(--muted)">가격</span>
+      <input type="number" value="${t.price||0}" min="0" step="0.1" style="width:56px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--accent);font-size:12px;padding:3px 5px;text-align:right;outline:none"
+        onchange="window._ieTreats[${i}].price=parseFloat(this.value)||0;renderIETreatList(${idx})">
+      <button onclick="window._ieTreats[${i}].price=Math.round((parseFloat(document.getElementById('ie-amount').value||0)-window._ieTreats.reduce((s,t,j)=>j===${i}?s:s+(t.price||0),0))*10)/10;renderIETreatList(${idx})" title="총액 맞추기"
+        style="background:none;border:none;color:var(--yellow);cursor:pointer;font-size:13px;padding:0 2px">⚖</button>
+      <button onclick="window._ieTreats.splice(${i},1);renderIETreatList(${idx})"
+        style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 2px">×</button>
+    </div>`).join('');
+
+  if(sumEl) sumEl.innerHTML = `합계 <strong style="color:${ok?'var(--green)':'var(--yellow)'}">${sum}만</strong>${amt?' / 결제 '+amt+'만':''} ${ok&&amt?'✓':amt?'← 차이 '+(Math.round((sum-amt)*10)/10)+'만':''}`;
+}
+
+function renderIEPayList(idx){
+  const list = document.getElementById('ie-pay-list');
+  const sumEl = document.getElementById('ie-pay-sum');
+  if(!list) return;
+  const items = window._iePays||[];
+  const amt = parseFloat(document.getElementById('ie-amount')?.value)||0;
+  const sum = Math.round(items.reduce((s,i)=>s+(parseFloat(i.amt)||0),0)*10)/10;
+  const ok = Math.abs(sum-amt)<0.1;
+  const PAY_OPTIONS=['카드','현금(자진)','이체','이체(현영)','위챗','알리페이'];
+
+  list.innerHTML = items.map((it,i)=>`
+    <span style="display:inline-flex;align-items:center;gap:4px;background:#0f172a;border:1px solid var(--border);border-radius:20px;padding:4px 6px 4px 10px;font-size:12px">
+      <span style="color:var(--sub)">${it.method}</span>
+      <input type="number" value="${it.amt||''}" placeholder="금액" step="0.1" min="0"
+        style="width:52px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--accent);font-size:12px;font-weight:700;text-align:right;outline:none"
+        onchange="window._iePays[${i}].amt=parseFloat(this.value)||0;renderIEPayList(${idx})">
+      <span style="color:var(--muted);font-size:11px">만</span>
+      <button onclick="window._iePays[${i}].amt=Math.round((parseFloat(document.getElementById('ie-amount').value||0)-window._iePays.reduce((s,p,j)=>j===${i}?s:s+(parseFloat(p.amt)||0),0))*10)/10;renderIEPayList(${idx})" title="총액 맞추기"
+        style="background:none;border:none;color:var(--yellow);cursor:pointer;font-size:11px">⚖</button>
+      <button onclick="window._iePays.splice(${i},1);renderIEPayList(${idx})"
+        style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">×</button>
+    </span>`).join('');
+
+  list.innerHTML += `<select onchange="ieAddPay(this,${idx})" style="background:#0f172a;border:1px solid var(--border);border-radius:20px;color:var(--muted);font-size:11px;padding:4px 8px;cursor:pointer;outline:none">
+    <option value="">+ 추가</option>
+    ${PAY_OPTIONS.map(o=>`<option value="${o}">${o}</option>`).join('')}
+    <option value="__custom__">직접입력</option>
+  </select>`;
+
+  if(sumEl) sumEl.innerHTML = `결제방식 합계 <strong style="color:${ok?'var(--green)':'var(--yellow)'}">${sum}만</strong>${amt?' / 결제 '+amt+'만':''} ${ok&&amt?'✓':''}`;
+}
+
+function ieAddPay(sel, idx){
+  const val=sel.value; if(!val) return; sel.value='';
+  let method=val;
+  if(val==='__custom__'){ method=prompt('결제방식:'); if(!method) return; }
+  if(!window._iePays) window._iePays=[];
+  window._iePays.push({method, amt:0});
+  renderIEPayList(idx);
+}
+
+function ieAddTreat(idx){
+  const name=prompt('시술 항목명:'); if(!name) return;
+  const qty=parseFloat(prompt('수량:','1')||'1');
+  const unitP = CHARGE_PRICE[name.trim()]??0;
+  const price=parseFloat(prompt('가격(만원):',String(Math.round(unitP*qty*10)/10))||'0');
+  if(!window._ieTreats) window._ieTreats=[];
+  window._ieTreats.push({item:name.trim(), qty, price});
+  renderIETreatList(idx);
+}
+
+function reparseImportRow(idx){
+  const text = document.getElementById('ie-paytext')?.value.trim();
+  if(!text) return;
+  const amt = parseFloat(document.getElementById('ie-amount')?.value)||extractAmount(text)||0;
+  if(amt) document.getElementById('ie-amount').value = amt;
+  try {
+    const parsed = localParse(text);
+    window._ieTreats = distributePrices(parsed.treatments, amt, text);
+    renderIETreatList(idx);
+  } catch(e){}
+  try {
+    const pi = extractPayment(text);
+    if(pi?.methods?.length){
+      window._iePays = pi.splitDetails?.length
+        ? pi.splitDetails.map(d=>({method:d.method,amt:d.amt||0}))
+        : pi.methods.map(m=>({method:m, amt:pi.methods.length===1?amt:0}));
+      renderIEPayList(idx);
+    }
+  } catch(e){}
+}
+
+function saveImportRow(idx){
+  const r = _importRows[idx];
+  if(!r) return;
+  r.date    = document.getElementById('ie-date').value;
+  r.chart   = document.getElementById('ie-chart').value.trim();
+  r.name    = document.getElementById('ie-name').value.trim();
+  r.doctor  = document.getElementById('ie-doctor').value;
+  r.cat1    = document.getElementById('ie-cat1').value;
+  r.cat2    = document.getElementById('ie-cat2').value.trim();
+  r.amount  = parseFloat(document.getElementById('ie-amount').value)||0;
+  r.staff   = document.getElementById('ie-staff').value;
+  r.payText = document.getElementById('ie-paytext').value.trim();
+  r.treatments = window._ieTreats||[];
+  r.paymentMethods = {
+    items: window._iePays||[],
+    splitDetails: (window._iePays||[]).filter(p=>p.amt>0),
+    methods: (window._iePays||[]).map(p=>p.method)
+  };
+  document.getElementById('import-edit-modal')?.remove();
+  renderImportPreview();
+  showToast(`#${idx+1} ${r.name} 수정됨`,'success');
+}
+
 function toggleImportTreat(idx){
   const el = document.getElementById(`import-treat-${idx}`);
-  if(el) el.style.display = el.style.display==='none' ? 'table-row' : 'none';
+  if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
 }
 function updateImportTreat(rowIdx, treatIdx, field, val){
   if(!_importRows[rowIdx]?.treatments) return;
@@ -1837,7 +2020,7 @@ function removeImportTreat(rowIdx, treatIdx){
   renderImportPreview();
   // 펼침 상태 유지
   const el = document.getElementById(`import-treat-${rowIdx}`);
-  if(el) el.style.display='table-row';
+  if(el) el.style.display='block';
 }
 function addImportTreat(rowIdx){
   const name = prompt('시술 항목명:'); if(!name) return;
@@ -1847,7 +2030,7 @@ function addImportTreat(rowIdx){
   _importRows[rowIdx].treatments.push({item:name.trim(), qty, price});
   renderImportPreview();
   const el = document.getElementById(`import-treat-${rowIdx}`);
-  if(el) el.style.display='table-row';
+  if(el) el.style.display='block';
 }
 
 
