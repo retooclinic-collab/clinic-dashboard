@@ -550,12 +550,11 @@ window.fbSoftDelete = async (id) => {
 
 window.startListenHistory = (uid, email) => {
   const isAdmin = email === 'retooclinic@gmail.com';
+  window._isAdmin = isAdmin;
   let q;
   if(isAdmin){
-    // 원장님: 전체 조회
     q = query(collection(db,'consultations'));
   } else {
-    // 직원: 60일 이내만
     const since = new Date();
     since.setDate(since.getDate() - 60);
     q = query(
@@ -577,7 +576,8 @@ window.startListenHistory = (uid, email) => {
     if(dateFilter){
       renderHistory(items.filter(it=>it.date===dateFilter));
     } else {
-      renderHistory(filterRecent3Days(items));
+      // 원장님: 전체 표시, 직원: 최근 기록 있는 3일
+      renderHistory(isAdmin ? items : filterRecent3Days(items));
     }
   }, err => {
     console.error('history listener error:', err);
@@ -1624,11 +1624,25 @@ function renderImportPreview(){
     </tr>
     <tr id="import-treat-${idx}" style="display:none;background:#0a0f1a">
       <td colspan="8" style="padding:8px 12px">
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
-          ${treatSummary}
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+          ${(r.treatments||[]).map((t,ti)=>`
+            <span style="display:inline-flex;align-items:center;gap:3px;margin:1px;padding:3px 6px;background:#1a2236;border-radius:10px;font-size:11px">
+              <span style="color:var(--sub)">${t.item}</span>
+              <span style="color:var(--muted)">×</span>
+              <input type="number" value="${t.qty}" min="0" step="1"
+                style="width:36px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:11px;text-align:center;outline:none"
+                onchange="updateImportTreat(${idx},${ti},'qty',this.value)">
+              <input type="number" value="${t.price}" min="0" step="0.1"
+                style="width:44px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--accent);font-size:11px;text-align:right;outline:none"
+                onchange="updateImportTreat(${idx},${ti},'price',this.value)">
+              <span style="color:var(--muted);font-size:10px">만</span>
+              <button onclick="removeImportTreat(${idx},${ti})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px;line-height:1;padding:0">×</button>
+            </span>
+          `).join('')}
+          <button onclick="addImportTreat(${idx})" style="font-size:10px;padding:2px 8px;background:none;border:1px dashed var(--border);border-radius:10px;color:var(--muted);cursor:pointer">+ 추가</button>
         </div>
         <div style="font-size:11px;color:${sumOk?'var(--green)':'var(--yellow)'}">
-          시술합계 ${treatSum.toLocaleString()}만원 / 결제금액 ${r.amount}만원 ${sumOk?'✓':'← 차이 있음'}
+          시술합계 <span id="import-treat-sum-${idx}">${treatSum.toLocaleString()}</span>만원 / 결제금액 ${r.amount}만원 ${sumOk?'✓':'← 확인 필요'}
         </div>
       </td>
     </tr>`;
@@ -1642,6 +1656,32 @@ function renderImportPreview(){
 function toggleImportTreat(idx){
   const el = document.getElementById(`import-treat-${idx}`);
   if(el) el.style.display = el.style.display==='none' ? 'table-row' : 'none';
+}
+function updateImportTreat(rowIdx, treatIdx, field, val){
+  if(!_importRows[rowIdx]?.treatments) return;
+  _importRows[rowIdx].treatments[treatIdx][field] = parseFloat(val)||0;
+  // 합계 업데이트
+  const sum = _importRows[rowIdx].treatments.reduce((s,t)=>s+(t.price||0),0);
+  const el = document.getElementById(`import-treat-sum-${rowIdx}`);
+  if(el) el.textContent = Math.round(sum*10)/10;
+}
+function removeImportTreat(rowIdx, treatIdx){
+  if(!_importRows[rowIdx]?.treatments) return;
+  _importRows[rowIdx].treatments.splice(treatIdx, 1);
+  renderImportPreview();
+  // 펼침 상태 유지
+  const el = document.getElementById(`import-treat-${rowIdx}`);
+  if(el) el.style.display='table-row';
+}
+function addImportTreat(rowIdx){
+  const name = prompt('시술 항목명:'); if(!name) return;
+  const qty = parseFloat(prompt('수량:','1')||'1');
+  const price = parseFloat(prompt('가격(만원):','0')||'0');
+  if(!_importRows[rowIdx].treatments) _importRows[rowIdx].treatments=[];
+  _importRows[rowIdx].treatments.push({item:name.trim(), qty, price});
+  renderImportPreview();
+  const el = document.getElementById(`import-treat-${rowIdx}`);
+  if(el) el.style.display='table-row';
 }
 
 
@@ -2005,14 +2045,14 @@ function filterByDate(){
   const d = document.getElementById('filter-date').value;
   if(!window._allItems) return;
   if(!d){
-    renderHistory(filterRecent3Days(window._allItems));
+    renderHistory(window._isAdmin ? window._allItems : filterRecent3Days(window._allItems));
   } else {
     renderHistory(window._allItems.filter(it => it.date === d));
   }
 }
 function clearDateFilter(){
   document.getElementById('filter-date').value = '';
-  if(window._allItems) renderHistory(filterRecent3Days(window._allItems));
+  if(window._allItems) renderHistory(window._isAdmin ? window._allItems : filterRecent3Days(window._allItems));
 }
 
 /* ── 수납 리스트 테이블 렌더 ── */
