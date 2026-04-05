@@ -1513,80 +1513,109 @@ function parseImportData(){
 
 function processImportText(text){
   _importRows = [];
-  // 줄 분리
+  // 줄 분리 (탭 없으면 공백 여러개도 시도)
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   let prevDate = '';
 
-  lines.forEach((line, lineIdx) => {
-    // 탭으로 분리
-    const cols = line.split('\t').map(c => (c||'').trim());
+  // 탭이 전혀 없으면 사용자에게 알림
+  const hasTabs = text.includes('\t');
+  if(!hasTabs){
+    showToast('탭 구분자가 없어요. 구글시트에서 Ctrl+C 후 붙여넣기 해주세요','error');
+    return;
+  }
 
-    // 빈 줄 무시
+  lines.forEach((line, lineIdx) => {
+    const cols = line.split('\t').map(c => (c||'').trim());
     if(cols.every(c => !c)) return;
 
-    // 헤더 줄 감지 (날짜/차트/이름 같은 단어 있으면 스킵)
+    // 헤더 감지
     const joined = cols.join('').toLowerCase();
-    if(/^(날짜|차트|date|chart)/.test(joined)) return;
+    if(/^(날짜|차트|date|chart|내원)/.test(joined)) return;
 
-    // ── 컬럼 구조 파악 ──
-    // 8컬럼: 날짜, 차트, 이름, 분류1, 분류2, 결제내역, 금액, 상담자
-    // 7컬럼: 날짜, 차트, 이름, 분류1, 결제내역, 금액, 상담자 (분류2 없음)
-    // 첫 컬럼이 날짜인지 확인: 숫자/슬래시 패턴
-    const firstIsDate = /^\d{0,4}[-\/]?\d{0,2}$/.test(cols[0]) || cols[0] === '';
+    let date='', chart='', name='', cat1='', cat2='', payText='', amount=0, staffRaw='';
 
-    let date, chart, name, cat1, cat2, payText, amount, staffRaw;
+    // 컬럼 수와 관계없이 최대한 유연하게 파싱
+    // 첫 컬럼이 날짜인지 (숫자/슬래시, 또는 빈칸)
+    const c0 = cols[0]||'';
+    const firstIsDate = c0==='' || /^\d{1,4}[\/\-]\d{1,2}/.test(c0) || /^\d{4}$/.test(c0);
 
-    if(cols.length >= 8 && firstIsDate){
-      [date, chart, name, cat1, cat2, payText, amount, staffRaw] = cols;
-    } else if(cols.length === 7 && firstIsDate){
-      [date, chart, name, cat1, payText, amount, staffRaw] = cols;
-      cat2 = '';
-    } else if(cols.length >= 7 && !firstIsDate){
-      // 날짜 컬럼 없는 경우 (이전 날짜 사용)
-      [chart, name, cat1, cat2, payText, amount, staffRaw] = cols;
-      date = '';
-    } else if(cols.length >= 6 && !firstIsDate){
-      [chart, name, cat1, payText, amount, staffRaw] = cols;
-      date = ''; cat2 = '';
+    if(firstIsDate){
+      date   = cols[0]||'';
+      chart  = cols[1]||'';
+      name   = cols[2]||'';
+      cat1   = cols[3]||'';
+      // 5컬럼 이상: 분류2 있는지 확인 (분류2는 내원경로 서브카테고리)
+      if(cols.length >= 8){
+        cat2    = cols[4]||'';
+        payText = cols[5]||'';
+        amount  = cols[6]||'';
+        staffRaw= cols[7]||'';
+      } else if(cols.length === 7){
+        cat2    = cols[4]||'';
+        payText = cols[5]||'';
+        amount  = cols[6]||'';
+      } else if(cols.length === 6){
+        payText = cols[4]||'';
+        amount  = cols[5]||'';
+      } else if(cols.length === 5){
+        payText = cols[4]||'';
+      } else {
+        // 컬럼 적으면 마지막 컬럼에서 결제내역 찾기
+        payText = cols[cols.length-1]||'';
+      }
     } else {
-      // 컬럼 수 부족 — 결제내역이라도 있으면 저장
-      console.warn(`Line ${lineIdx}: only ${cols.length} cols`, cols);
-      return;
+      // 날짜 없음
+      chart  = cols[0]||'';
+      name   = cols[1]||'';
+      cat1   = cols[2]||'';
+      if(cols.length >= 7){
+        cat2    = cols[3]||'';
+        payText = cols[4]||'';
+        amount  = cols[5]||'';
+        staffRaw= cols[6]||'';
+      } else if(cols.length >= 5){
+        payText = cols[3]||'';
+        amount  = cols[4]||'';
+        staffRaw= cols[5]||'';
+      } else {
+        payText = cols[cols.length-1]||'';
+      }
     }
 
     // 날짜 처리
-    date = parseDate(date || '', prevDate);
+    date = parseDate(date, prevDate);
     if(date) prevDate = date;
     else date = prevDate;
 
-    // 결제내역 끝의 /숫자 패턴 제거 (금액 중복 표기)
+    // payText 정리: 끝의 /숫자 제거
     payText = (payText||'').replace(/\/[\d.,]+\s*$/, '').trim();
 
-    // 금액: 별도 컬럼 또는 결제내역에서 추출
-    const amtRaw = (amount||'').replace(/,/g,'').replace(/[mM만원]/g,'');
-    const amtNum = parseFloat(amtRaw) || 0;
-    const amtFromText = extractAmount(payText) || 0;
-    const finalAmt = amtNum > 0 ? amtNum : amtFromText;
+    // 금액 파싱
+    const amtRaw = String(amount||'').replace(/,/g,'').replace(/[mM만원]/g,'');
+    const amtNum = parseFloat(amtRaw)||0;
+    const amtFromText = extractAmount(payText)||0;
+    const finalAmt = amtNum>0 ? amtNum : amtFromText;
 
-    const staffMapped = mapStaff((staffRaw||'').trim());
-
-    if(!name && !payText) return; // 완전히 비어있는 행
+    // 이름이나 결제내역 없으면 스킵
+    if(!name && !payText) return;
+    // 결제내역이 너무 짧으면 (1~2글자) 의미없는 행 스킵
+    if(!payText || payText.length < 2) return;
 
     _importRows.push({
       date,
-      chart: (chart||'').trim(),
-      name: (name||'').trim(),
-      cat1: (cat1||'').trim(),
-      cat2: (cat2||'').trim(),
+      chart: chart.trim(),
+      name:  name.trim(),
+      cat1:  cat1.trim(),
+      cat2:  cat2.trim(),
       payText,
       amount: finalAmt,
-      staff: staffMapped,
-      staffRaw: (staffRaw||'').trim(),
+      staff:  mapStaff(staffRaw.trim()),
+      staffRaw: staffRaw.trim(),
     });
   });
 
   if(!_importRows.length){
-    showToast('파싱 실패. 구글시트에서 복사(Ctrl+C) 후 붙여넣기(Ctrl+V) 해주세요','error');
+    showToast('파싱 실패. 아래 형식 확인:\n날짜\\t차트\\t이름\\t분류1\\t결제내역\\t금액\\t상담자','error');
     return;
   }
   renderImportPreview();
