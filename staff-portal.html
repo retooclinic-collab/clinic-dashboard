@@ -580,9 +580,11 @@ window.fbBulkDelete = async (ids, progressCb) => {
   for(let i=0; i<ids.length; i++){
     await deleteDoc(doc(db, 'consultations', ids[i]));
     if(progressCb) progressCb(i+1, ids.length);
-    if(i % 10 === 9) await new Promise(r=>setTimeout(r,200)); // rate limit
+    if(i % 10 === 9) await new Promise(r=>setTimeout(r,200));
   }
 };
+
+window.startListenHistory = (uid, email) => {
   const isAdmin = email === 'retooclinic@gmail.com';
   window._isAdmin = isAdmin;
   let q;
