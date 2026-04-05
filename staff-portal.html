@@ -251,6 +251,16 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           </div>
           <div id="import-progress" style="margin-top:10px;font-size:12px;color:var(--accent);display:none"></div>
         </div>
+
+        <!-- 관리자 전용: 전체 삭제 -->
+        <div id="admin-delete-section" style="display:none;margin-top:20px;padding:16px;background:#1a0808;border:1px solid var(--red);border-radius:12px">
+          <div style="font-size:12px;color:var(--red);font-weight:700;margin-bottom:8px">⚠ 관리자 전용 — 전체 데이터 삭제</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:12px">consultations 컬렉션의 모든 기록을 삭제합니다. 되돌릴 수 없어요.</div>
+          <button onclick="bulkDeleteAll()" style="width:100%;padding:12px;background:var(--red);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">
+            🗑 전체 삭제 (현재 ${window._allItems?.length||0}건)
+          </button>
+          <div id="delete-progress" style="margin-top:8px;font-size:12px;color:var(--red);display:none"></div>
+        </div>
       </div>
     </div>
 
@@ -392,15 +402,31 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
     <div class="history-section" id="history-section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
         <div class="history-title" style="margin-bottom:0">📋 수납 리스트</div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input type="date" id="filter-date" style="background:#0f172a;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;padding:6px 10px;outline:none" onchange="filterByDate()">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <input type="date" id="filter-from" style="background:#0f172a;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;padding:6px 10px;outline:none" onchange="applyDateFilter()">
+          <span style="color:var(--muted);font-size:12px">~</span>
+          <input type="date" id="filter-to" style="background:#0f172a;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;padding:6px 10px;outline:none" onchange="applyDateFilter()">
           <button onclick="clearDateFilter()" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">전체</button>
+          <button onclick="setQuickFilter(7)" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">7일</button>
+          <button onclick="setQuickFilter(30)" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">30일</button>
           <button onclick="downloadCurrentCSV()" style="font-size:11px;color:var(--sub);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">⬇ CSV</button>
         </div>
       </div>
       <!-- 테이블 -->
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
-        <table id="consult-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:700px">
+        <table id="consult-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:700px;table-layout:fixed">
+          <colgroup>
+            <col style="width:90px">   <!-- 날짜 -->
+            <col style="width:60px">   <!-- 차트 -->
+            <col style="width:80px">   <!-- 이름 -->
+            <col style="width:70px">   <!-- 분류1 -->
+            <col style="width:60px">   <!-- 분류2 -->
+            <col style="width:auto">   <!-- 결제내역 -->
+            <col style="width:70px">   <!-- 금액 -->
+            <col style="width:70px">   <!-- 결제 -->
+            <col style="width:60px">   <!-- 상담자 -->
+            <col style="width:90px">   <!-- 수정/삭제 -->
+          </colgroup>
           <thead>
             <tr style="background:#0a0f1a;color:var(--muted);font-size:11px;letter-spacing:1px">
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">날짜</th>
@@ -440,7 +466,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
 ══════════════════════════════════════════════ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, updateDoc, query, where, onSnapshot, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, query, where, onSnapshot, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
 const cfg = {
@@ -481,12 +507,14 @@ onAuthStateChanged(auth, user => {
     const emailToStaff = {
       'retooclinic@gmail.com':'김구슬', // 원장님은 기본 김구슬
     };
-    // STAFF_MAP에서 이메일 앞부분으로 매핑 시도
     const emailPrefix = user.email.split('@')[0];
     const mappedStaff = emailToStaff[user.email] || Object.values(STAFF_MAP||{}).find(v=>v===emailPrefix) || null;
     const staffSel = document.getElementById('f-staff');
-    if(staffSel && mappedStaff){
-      staffSel.value = mappedStaff;
+    if(staffSel && mappedStaff) staffSel.value = mappedStaff;
+    // 관리자 전용 UI 표시
+    if(user.email === 'retooclinic@gmail.com'){
+      const adminDel = document.getElementById('admin-delete-section');
+      if(adminDel) adminDel.style.display='block';
     }
     window.startListenHistory(user.uid, user.email);
   } else {
@@ -548,7 +576,13 @@ window.fbSoftDelete = async (id) => {
   });
 };
 
-window.startListenHistory = (uid, email) => {
+window.fbBulkDelete = async (ids, progressCb) => {
+  for(let i=0; i<ids.length; i++){
+    await deleteDoc(doc(db, 'consultations', ids[i]));
+    if(progressCb) progressCb(i+1, ids.length);
+    if(i % 10 === 9) await new Promise(r=>setTimeout(r,200)); // rate limit
+  }
+};
   const isAdmin = email === 'retooclinic@gmail.com';
   window._isAdmin = isAdmin;
   let q;
@@ -576,8 +610,8 @@ window.startListenHistory = (uid, email) => {
     if(dateFilter){
       renderHistory(items.filter(it=>it.date===dateFilter));
     } else {
-      // 원장님: 전체 표시, 직원: 최근 기록 있는 3일
-      renderHistory(isAdmin ? items : filterRecent3Days(items));
+      // 원장님: 전체, 직원: 60일치 전체 (filterRecent3Days 제거)
+      renderHistory(items);
     }
   }, err => {
     console.error('history listener error:', err);
@@ -1652,6 +1686,31 @@ function renderImportPreview(){
   document.getElementById('import-preview').style.display='block';
 }
 
+/* ── 전체 삭제 (관리자 전용) ── */
+async function bulkDeleteAll(){
+  const items = window._allItems||[];
+  if(!items.length){ showToast('삭제할 데이터가 없어요','error'); return; }
+  const count = items.length;
+  if(!confirm(`⚠ 경고\n\n전체 ${count}건을 모두 삭제합니다.\n이 작업은 되돌릴 수 없어요.\n\n정말 삭제할까요?`)) return;
+  if(!confirm(`마지막 확인\n\n${count}건 전체 삭제를 진행합니다.`)) return;
+
+  const prog = document.getElementById('delete-progress');
+  prog.style.display='block';
+  prog.textContent='삭제 준비 중...';
+
+  const ids = items.map(it=>it.id).filter(Boolean);
+  try {
+    await window.fbBulkDelete(ids, (done, total)=>{
+      prog.textContent = `삭제 중... ${done}/${total}`;
+    });
+    prog.textContent = `✅ ${ids.length}건 삭제 완료!`;
+    showToast(`${ids.length}건 삭제 완료!`,'success');
+  } catch(e) {
+    prog.textContent = '삭제 오류: '+e.message;
+    showToast('삭제 오류: '+e.message,'error');
+  }
+}
+
 /* ── 탭 구분 행 파싱 ── */
 function toggleImportTreat(idx){
   const el = document.getElementById(`import-treat-${idx}`);
@@ -2041,18 +2100,31 @@ function filterRecent3Days(items){
 }
 
 /* ── 날짜 필터 ── */
-function filterByDate(){
-  const d = document.getElementById('filter-date').value;
+function applyDateFilter(){
   if(!window._allItems) return;
-  if(!d){
-    renderHistory(window._isAdmin ? window._allItems : filterRecent3Days(window._allItems));
-  } else {
-    renderHistory(window._allItems.filter(it => it.date === d));
-  }
+  const from = document.getElementById('filter-from').value;
+  const to = document.getElementById('filter-to').value;
+  let filtered = window._allItems;
+  if(from) filtered = filtered.filter(it=>(it.date||'') >= from);
+  if(to)   filtered = filtered.filter(it=>(it.date||'') <= to);
+  renderHistory(filtered);
 }
 function clearDateFilter(){
-  document.getElementById('filter-date').value = '';
-  if(window._allItems) renderHistory(window._isAdmin ? window._allItems : filterRecent3Days(window._allItems));
+  document.getElementById('filter-from').value='';
+  document.getElementById('filter-to').value='';
+  if(window._allItems) renderHistory(window._allItems);
+}
+function setQuickFilter(days){
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate()-days);
+  const fmt = d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('filter-from').value = fmt(from);
+  document.getElementById('filter-to').value = fmt(to);
+  applyDateFilter();
+}
+function filterByDate(){
+  applyDateFilter();
 }
 
 /* ── 수납 리스트 테이블 렌더 ── */
@@ -2121,7 +2193,11 @@ function renderHistory(items){
         </td>
         <td style="padding:9px 8px;white-space:nowrap">${it.cat1||''}</td>
         <td style="padding:9px 8px;color:var(--sub);white-space:nowrap">${it.cat2||''}</td>
-        <td style="padding:9px 8px;color:var(--sub);max-width:300px;word-break:break-all;line-height:1.5">${it.paymentText||''}</td>
+        <td style="padding:9px 8px;color:var(--sub);max-width:200px">
+          <div id="pt-${it.id}" style="overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:12px;line-height:1.4;cursor:pointer;word-break:break-all"
+            onclick="this.style.webkitLineClamp=this.style.webkitLineClamp?'':'2';this.style.display=this.style.webkitLineClamp?'-webkit-box':'block'"
+            title="클릭하면 펼치기">${it.paymentText||''}</div>
+        </td>
         <td style="padding:9px 8px;text-align:right;color:${isVip?'var(--muted)':'var(--accent)'};font-weight:700;white-space:nowrap">${isVip?'-':amt.toLocaleString()}</td>
         <td style="padding:9px 8px;color:var(--sub);font-size:11px;white-space:nowrap">${payStr}</td>
         <td style="padding:9px 8px;color:var(--muted);white-space:nowrap">${it.staff||''}</td>
@@ -2137,14 +2213,11 @@ function renderHistory(items){
 
   // 요약
   if(summary){
-    const dates = [...new Set(items.map(it=>it.date).filter(Boolean))].sort();
-    const rangeStr = dates.length > 1
-      ? `${dates[0]} ~ ${dates[dates.length-1]}`
-      : dates[0] || '';
-    const filterDate = document.getElementById('filter-date').value;
-    const rangeLabel = filterDate
-      ? `📅 ${filterDate}`
-      : `최근 기록 있는 3일 (${rangeStr})`;
+    const filterFrom = document.getElementById('filter-from')?.value;
+    const filterTo = document.getElementById('filter-to')?.value;
+    const rangeLabel = (filterFrom||filterTo)
+      ? `📅 ${filterFrom||'~'} ~ ${filterTo||'~'}`
+      : `전체 ${items.length}건`;
     summary.innerHTML = `
       <span style="color:var(--muted)">${rangeLabel}</span>
       <span>총 <strong style="color:var(--text)">${totalCount}건</strong></span>
@@ -2174,7 +2247,7 @@ function downloadCurrentCSV(){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href=url;
-  const dateStr = document.getElementById('filter-date').value || new Date().toISOString().slice(0,10);
+  const dateStr = document.getElementById('filter-from')?.value || new Date().toISOString().slice(0,10);
   a.download=`수납리스트_${dateStr}.csv`;
   a.click(); URL.revokeObjectURL(url);
   showToast('CSV 다운로드 완료','success');
