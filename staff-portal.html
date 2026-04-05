@@ -1654,55 +1654,94 @@ function isHeaderRow(row){
 function renderImportPreview(){
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요','error'); return; }
 
-  // 시술 항목 파싱
   _importRows.forEach(r=>{
     if(!r.treatments){
       try {
         const parsed = localParse(r.payText);
         r.treatments = distributePrices(parsed.treatments, r.amount, r.payText);
-      } catch(e) {
-        r.treatments = [];
-      }
+      } catch(e){ r.treatments = []; }
     }
   });
 
   const container = document.getElementById('import-preview-body');
-  container.innerHTML = _importRows.map((r,idx)=>{
-    const treatSum = (r.treatments||[]).reduce((s,t)=>s+(t.price||0),0);
+  container.innerHTML = '';
+
+  _importRows.forEach((r, idx)=>{
+    const treatSum = (r.treatments||[]).reduce((s,t)=>s+(t.price||0), 0);
     const sumOk = Math.abs(treatSum - r.amount) < 0.1;
-    const treatBadge = `<span style="font-size:10px;padding:2px 7px;border:1px solid ${sumOk?'#4ade80':'#facc15'};border-radius:10px;color:${sumOk?'#4ade80':'#facc15'};cursor:pointer;white-space:nowrap" onclick="toggleImportTreat(${idx})">${r.treatments?.length||0}개 ${sumOk?'✓':'⚠'}</span>`;
 
-    return `
-    <div style="background:#1e293b;border-radius:10px;border:1px solid #2d3f55;overflow:hidden;margin-bottom:2px">
-      <!-- 행 헤더 -->
-      <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;flex-wrap:wrap">
-        <span style="font-size:11px;color:#64748b;white-space:nowrap">${r.date}</span>
-        <span style="font-size:11px;color:#64748b">${r.chart}</span>
-        <span style="font-size:13px;font-weight:700;color:#f1f5f9;min-width:60px">${r.name}</span>
-        <span style="font-size:11px;color:#94a3b8">${r.cat1}${r.cat2?'·'+r.cat2:''}</span>
-        <span style="font-size:11px;color:${r.staffRaw!==r.staff?'#4ade80':'#94a3b8'}">${r.staff}</span>
-        <span style="margin-left:auto;font-size:13px;font-weight:700;color:#38bdf8;white-space:nowrap">${r.amount}만</span>
-        ${treatBadge}
-        <button onclick="openImportEditModal(${idx})"
-          style="font-size:11px;padding:4px 10px;background:#38bdf8;color:#0f172a;border:none;border-radius:8px;cursor:pointer;font-weight:700;white-space:nowrap">
-          ✏ 수정
-        </button>
-      </div>
-      <!-- 결제내역 -->
-      <div style="padding:6px 12px 10px;font-size:11px;color:#94a3b8;line-height:1.5;border-top:1px solid #2d3f55;word-break:break-all">
-        ${r.payText}
-      </div>
-      <!-- 시술 펼침 -->
-      <div id="import-treat-${idx}" style="display:none;padding:8px 12px 10px;border-top:1px solid #2d3f55;background:#0f172a">
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
-          ${(r.treatments||[]).map(t=>`<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;background:#1e293b;border-radius:10px;font-size:11px;color:#94a3b8">${t.item}<span style="color:#38bdf8;margin-left:3px">×${t.qty}</span><span style="color:#64748b;margin-left:2px">${t.price}만</span></span>`).join('')}
-        </div>
-        <div style="font-size:11px;color:${sumOk?'#4ade80':'#facc15'}">합계 ${treatSum.toLocaleString()}만 / 결제 ${r.amount}만 ${sumOk?'✓':'← 수정 필요'}</div>
-      </div>
-    </div>`;
-  }).join('');
+    // 카드 래퍼
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;margin-bottom:4px';
 
-  document.getElementById('import-count').textContent = `${_importRows.length}건 파싱됨`;
+    // 헤더 행
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:8px;padding:10px 12px;flex-wrap:wrap';
+
+    const dateEl = document.createElement('span');
+    dateEl.style.cssText = 'font-size:11px;color:#64748b;white-space:nowrap';
+    dateEl.textContent = r.date;
+
+    const chartEl = document.createElement('span');
+    chartEl.style.cssText = 'font-size:11px;color:#64748b';
+    chartEl.textContent = r.chart;
+
+    const nameEl = document.createElement('span');
+    nameEl.style.cssText = 'font-size:13px;font-weight:700;color:#f1f5f9';
+    nameEl.textContent = r.name;
+
+    const catEl = document.createElement('span');
+    catEl.style.cssText = 'font-size:11px;color:#94a3b8';
+    catEl.textContent = r.cat1 + (r.cat2 ? '·'+r.cat2 : '');
+
+    const staffEl = document.createElement('span');
+    staffEl.style.cssText = 'font-size:11px;color:' + (r.staffRaw!==r.staff ? '#4ade80' : '#94a3b8');
+    staffEl.textContent = r.staff;
+
+    const amtEl = document.createElement('span');
+    amtEl.style.cssText = 'margin-left:auto;font-size:13px;font-weight:700;color:#38bdf8;white-space:nowrap';
+    amtEl.textContent = r.amount + '만';
+
+    const badge = document.createElement('span');
+    badge.style.cssText = 'font-size:10px;padding:2px 7px;border:1px solid ' + (sumOk?'#4ade80':'#facc15') + ';border-radius:10px;color:' + (sumOk?'#4ade80':'#facc15') + ';cursor:pointer;white-space:nowrap';
+    badge.textContent = (r.treatments?.length||0) + '개 ' + (sumOk?'✓':'⚠');
+    badge.onclick = ()=>toggleImportTreat(idx);
+
+    const editBtn = document.createElement('button');
+    editBtn.style.cssText = 'font-size:11px;padding:4px 10px;background:#38bdf8;color:#0f172a;border:none;border-radius:8px;cursor:pointer;font-weight:700;white-space:nowrap';
+    editBtn.textContent = '✏ 수정';
+    editBtn.onclick = ()=>openImportEditModal(idx);
+
+    header.append(dateEl, chartEl, nameEl, catEl, staffEl, amtEl, badge, editBtn);
+
+    // 결제내역
+    const payDiv = document.createElement('div');
+    payDiv.style.cssText = 'padding:6px 12px 10px;font-size:11px;color:#94a3b8;line-height:1.5;border-top:1px solid #334155;word-break:break-all';
+    payDiv.textContent = r.payText;
+
+    // 시술 펼침
+    const treatDiv = document.createElement('div');
+    treatDiv.id = 'import-treat-' + idx;
+    treatDiv.style.cssText = 'display:none;padding:8px 12px 10px;border-top:1px solid #334155;background:#0f172a';
+
+    const badges = document.createElement('div');
+    badges.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px';
+    (r.treatments||[]).forEach(t=>{
+      const b = document.createElement('span');
+      b.style.cssText = 'display:inline-flex;align-items:center;gap:3px;padding:2px 8px;background:#1e293b;border-radius:10px;font-size:11px;color:#94a3b8';
+      b.innerHTML = t.item + ' <span style="color:#38bdf8">×'+t.qty+'</span> <span style="color:#64748b">'+t.price+'만</span>';
+      badges.appendChild(b);
+    });
+    const sumLine = document.createElement('div');
+    sumLine.style.cssText = 'font-size:11px;color:' + (sumOk?'#4ade80':'#facc15');
+    sumLine.textContent = '합계 ' + treatSum + '만 / 결제 ' + r.amount + '만 ' + (sumOk?'✓':'← 수정 필요');
+    treatDiv.append(badges, sumLine);
+
+    card.append(header, payDiv, treatDiv);
+    container.appendChild(card);
+  });
+
+  document.getElementById('import-count').textContent = _importRows.length + '건 파싱됨';
   document.getElementById('import-preview').style.display='block';
 }
 
