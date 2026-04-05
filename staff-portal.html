@@ -584,6 +584,21 @@ window.fbBulkDelete = async (ids, progressCb) => {
   }
 };
 
+window.fbArchiveAll = async (items, progressCb) => {
+  const dateStr = new Date().toISOString().slice(0,19).replace(/[:.]/g,'-');
+  const backupCol = `consultations_backup_${dateStr}`;
+  for(let i=0; i<items.length; i++){
+    const item = items[i];
+    if(!item.id) continue;
+    await setDoc(doc(db, backupCol, item.id), {
+      ...item, archivedAt: new Date().toISOString()
+    });
+    if(progressCb) progressCb(i+1, items.length);
+    if(i % 20 === 19) await new Promise(r=>setTimeout(r,200));
+  }
+  return backupCol;
+};
+
 window.startListenHistory = (uid, email) => {
   const isAdmin = email === 'retooclinic@gmail.com';
   window._isAdmin = isAdmin;
@@ -1515,19 +1530,16 @@ function parseImportData(){
 
 function processImportText(text){
   _importRows = [];
-  // 줄 분리 (탭 없으면 공백 여러개도 시도)
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   let prevDate = '';
 
-  // 탭이 전혀 없으면 사용자에게 알림
+  // 구분자 자동 감지: 탭 우선, 없으면 공백 2개 이상으로 시도
   const hasTabs = text.includes('\t');
-  if(!hasTabs){
-    showToast('탭 구분자가 없어요. 구글시트에서 Ctrl+C 후 붙여넣기 해주세요','error');
-    return;
-  }
 
   lines.forEach((line, lineIdx) => {
-    const cols = line.split('\t').map(c => (c||'').trim());
+    const cols = hasTabs
+      ? line.split('\t').map(c=>(c||'').trim())
+      : line.split(/  +/).map(c=>(c||'').trim()).filter(c=>c);
     if(cols.every(c => !c)) return;
 
     // 헤더 감지
@@ -1722,22 +1734,69 @@ async function bulkDeleteAll(){
   const items = window._allItems||[];
   if(!items.length){ showToast('삭제할 데이터가 없어요','error'); return; }
   const count = items.length;
-  if(!confirm(`⚠ 경고\n\n전체 ${count}건을 모두 삭제합니다.\n이 작업은 되돌릴 수 없어요.\n\n정말 삭제할까요?`)) return;
-  if(!confirm(`마지막 확인\n\n${count}건 전체 삭제를 진행합니다.`)) return;
+
+  if(!confirm(`⚠ 전체 ${count}건 삭제\n\n삭제 전 자동으로:\n1. CSV 파일 다운로드\n2. Firestore 백업 컬렉션에 복사\n\n진행할까요?`)) return;
+  if(!confirm(`마지막 확인\n\n${count}건 전체 삭제를 진행합니다.\n백업 후 삭제됩니다.`)) return;
 
   const prog = document.getElementById('delete-progress');
   prog.style.display='block';
-  prog.textContent='삭제 준비 중...';
 
+  // ── 1단계: CSV 자동 다운로드 ──
+  prog.textContent = '📥 1/3 CSV 백업 다운로드 중...';
+  try {
+    const dateStr = new Date().toISOString().slice(0,10);
+    const headers = ['id','날짜','차트번호','이름','분류1','분류2','결제내역','결제금액','결제방식','상담자','진료의사','시술항목','저장시각'];
+    const rows = items.map(it=>{
+      const pm = it.paymentMethods?.methods?.join('/')||'';
+      const treats = (it.treatments||[]).map(t=>`${t.item}×${t.qty}(${t.price}만)`).join('|');
+      return [
+        it.id||'', it.date||'', it.chart||'', it.name||'',
+        it.cat1||'', it.cat2||'',
+        `"${(it.paymentText||'').replace(/"/g,'""')}"`,
+        it.amount||0, pm, it.staff||'', it.doctor||'',
+        `"${treats}"`, it.createdAt||''
+      ].join(',');
+    });
+    const csv = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href=url;
+    a.download=`consultations_backup_${dateStr}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    await new Promise(r=>setTimeout(r,1000)); // 다운로드 대기
+  } catch(e) {
+    prog.textContent = '❌ CSV 백업 실패: '+e.message;
+    showToast('CSV 백업 실패, 삭제 중단','error');
+    return;
+  }
+
+  // ── 2단계: Firestore 아카이브 ──
+  prog.textContent = '☁ 2/3 Firestore 백업 중...';
+  try {
+    const backupCol = await window.fbArchiveAll(items, (done, total)=>{
+      prog.textContent = `☁ 2/3 Firestore 백업 중... ${done}/${total}`;
+    });
+    prog.textContent = `☁ Firestore 백업 완료 (컬렉션: ${backupCol})`;
+  } catch(e) {
+    if(!confirm(`Firestore 백업 실패: ${e.message}\n\nCSV는 다운로드됐어요.\n그래도 삭제를 진행할까요?`)) {
+      prog.textContent = '삭제 취소됨 (CSV 백업은 완료)';
+      return;
+    }
+  }
+
+  // ── 3단계: 실제 삭제 ──
+  prog.textContent = `🗑 3/3 삭제 중...`;
   const ids = items.map(it=>it.id).filter(Boolean);
   try {
     await window.fbBulkDelete(ids, (done, total)=>{
-      prog.textContent = `삭제 중... ${done}/${total}`;
+      prog.textContent = `🗑 3/3 삭제 중... ${done}/${total}`;
     });
-    prog.textContent = `✅ ${ids.length}건 삭제 완료!`;
-    showToast(`${ids.length}건 삭제 완료!`,'success');
+    prog.textContent = `✅ 완료! ${ids.length}건 삭제 (CSV + Firestore 백업 저장됨)`;
+    showToast(`${ids.length}건 삭제 완료! 백업 보존됨`,'success');
   } catch(e) {
-    prog.textContent = '삭제 오류: '+e.message;
+    prog.textContent = '❌ 삭제 오류: '+e.message;
     showToast('삭제 오류: '+e.message,'error');
   }
 }
