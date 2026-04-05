@@ -1994,6 +1994,10 @@ function showPaymentMethod(payInfo){
       pm.items = pm.splitDetails.map(d=>({method:d.method, amt:d.amt||0}));
     } else {
       pm.items = (pm.methods||[]).map(m=>({method:m, amt:0}));
+      // 결제방식 1개면 총 결제금액 자동 채우기
+      if(pm.items.length === 1 && total > 0){
+        pm.items[0].amt = total;
+      }
     }
   }
 
