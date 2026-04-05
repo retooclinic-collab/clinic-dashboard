@@ -228,11 +228,11 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
                   <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">날짜</th>
                   <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">차트</th>
                   <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">이름</th>
-                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">분류1</th>
-                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">분류2</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">분류</th>
                   <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">결제내역</th>
                   <th style="padding:6px 8px;text-align:right;border-bottom:1px solid var(--border)">금액</th>
                   <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">상담자</th>
+                  <th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border)">시술</th>
                 </tr>
               </thead>
               <tbody id="import-preview-body"></tbody>
@@ -1589,28 +1589,61 @@ function isHeaderRow(row){
 function renderImportPreview(){
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요','error'); return; }
 
+  // 시술 항목 파싱 (미리보기 시점에 수행)
+  _importRows.forEach(r=>{
+    if(!r.treatments){
+      const parsed = localParse(r.payText);
+      r.treatments = distributePrices(parsed.treatments, r.amount, r.payText);
+    }
+  });
+
   const tbody = document.getElementById('import-preview-body');
-  tbody.innerHTML = _importRows.map(r=>`
+  tbody.innerHTML = _importRows.map((r,idx)=>{
+    const treatSummary = r.treatments && r.treatments.length > 0
+      ? r.treatments.map(t=>`<span style="display:inline-block;margin:1px 2px;padding:2px 6px;background:#1a2236;border-radius:10px;font-size:10px;color:var(--sub)">${t.item}<span style="color:var(--accent)">×${t.qty}</span> ${t.price}만</span>`).join('')
+      : '<span style="color:var(--muted);font-size:10px">항목 없음</span>';
+
+    const treatSum = (r.treatments||[]).reduce((s,t)=>s+(t.price||0),0);
+    const sumOk = Math.abs(treatSum - r.amount) < 0.1;
+
+    return `
     <tr style="border-bottom:1px solid #1a2236">
-      <td style="padding:5px 8px;color:var(--muted);white-space:nowrap">${r.date}</td>
-      <td style="padding:5px 8px">${r.chart}</td>
-      <td style="padding:5px 8px;font-weight:600;white-space:nowrap">${r.name}</td>
-      <td style="padding:5px 8px;white-space:nowrap">${r.cat1}</td>
-      <td style="padding:5px 8px;color:var(--sub);white-space:nowrap">${r.cat2||''}</td>
-      <td style="padding:5px 8px;color:var(--sub);max-width:200px;word-break:break-all">${r.payText}</td>
-      <td style="padding:5px 8px;text-align:right;color:var(--accent);white-space:nowrap">${r.amount}</td>
-      <td style="padding:5px 8px;white-space:nowrap">
-        <span style="color:${r.staffRaw!==r.staff?'var(--green)':'var(--sub)'}">${r.staff}</span>
-        ${r.staffRaw!==r.staff?`<span style="font-size:10px;color:var(--muted)"> (${r.staffRaw})</span>`:''}
+      <td style="padding:5px 8px;color:var(--muted);white-space:nowrap;font-size:11px">${r.date}</td>
+      <td style="padding:5px 8px;font-size:11px">${r.chart}</td>
+      <td style="padding:5px 8px;font-weight:600;white-space:nowrap;font-size:12px">${r.name}</td>
+      <td style="padding:5px 8px;font-size:11px;white-space:nowrap">${r.cat1}${r.cat2?'·'+r.cat2:''}</td>
+      <td style="padding:5px 8px;max-width:180px;word-break:break-all;font-size:10px;color:var(--muted)">${r.payText}</td>
+      <td style="padding:5px 8px;text-align:right;color:var(--accent);font-weight:700;white-space:nowrap;font-size:12px">${r.amount}만</td>
+      <td style="padding:5px 8px;font-size:11px;white-space:nowrap;color:${r.staffRaw!==r.staff?'var(--green)':'var(--sub)'}">${r.staff}</td>
+      <td style="padding:5px 8px">
+        <button onclick="toggleImportTreat(${idx})"
+          style="font-size:10px;padding:3px 8px;background:none;border:1px solid ${sumOk?'var(--green)':'var(--yellow)'};border-radius:10px;color:${sumOk?'var(--green)':'var(--yellow)'};cursor:pointer;white-space:nowrap">
+          ${r.treatments?.length||0}개 ${sumOk?'✓':'⚠'}
+        </button>
       </td>
     </tr>
-  `).join('');
+    <tr id="import-treat-${idx}" style="display:none;background:#0a0f1a">
+      <td colspan="8" style="padding:8px 12px">
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
+          ${treatSummary}
+        </div>
+        <div style="font-size:11px;color:${sumOk?'var(--green)':'var(--yellow)'}">
+          시술합계 ${treatSum.toLocaleString()}만원 / 결제금액 ${r.amount}만원 ${sumOk?'✓':'← 차이 있음'}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
 
   document.getElementById('import-count').textContent = `${_importRows.length}건 파싱됨`;
   document.getElementById('import-preview').style.display='block';
 }
 
 /* ── 탭 구분 행 파싱 ── */
+function toggleImportTreat(idx){
+  const el = document.getElementById(`import-treat-${idx}`);
+  if(el) el.style.display = el.style.display==='none' ? 'table-row' : 'none';
+}
+
 
 async function confirmImport(){
   if(!_importRows.length){ showToast('업로드할 데이터가 없어요','error'); return; }
@@ -2054,6 +2087,7 @@ function renderHistory(items){
         <td style="padding:9px 8px;color:var(--muted);white-space:nowrap">${it.staff||''}</td>
         <td style="padding:6px 4px;white-space:nowrap">
           <button onclick="openEditModal('${it.id}')" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer">수정</button>
+          <button onclick="confirmDeleteRecord('${it.id}')" style="font-size:11px;padding:4px 8px;background:none;border:1px solid var(--red);border-radius:6px;color:var(--red);cursor:pointer;margin-left:4px">삭제</button>
         </td>
       </tr>`;
     });
