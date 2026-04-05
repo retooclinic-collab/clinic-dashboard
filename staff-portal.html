@@ -736,10 +736,10 @@ const TREATMENT_ITEMS = [
    시술별 표준 청구가 (만원, per unit)
 ══════════════════════════════════════════════ */
 const CHARGE_PRICE = {
-  '울쎄라(100샷)':66, '소프웨이브(50샷)':66,
+  '울쎄라(100샷)':60, '소프웨이브(50샷)':66,
   '써마지300':165, '써마지600':275, '써마지900샷':429,
   '아이써마지225':132, '아이써마지450샷':198,
-  '튠페이스':55, '튠라이너':55, '티타늄':99, '온다':0,
+  '튠페이스':55, '튠라이너':55, '티타늄':99, '온다':99,
   '티타튠':132, '티타튠max':165,
   '리쥬란':55, '리쥬란HB':49.5, '리쥬란아이':55,
   '힐로웨이브':66, '미라젯':38.5, '미라젯쥬베룩':99,
@@ -799,15 +799,19 @@ function extractTextPrices(raw, treatments){
 
   // 세그먼트에서 가격 숫자 추출
   function getPrice(seg){
-    // 차감/남은금액 패턴 먼저 제거 (-남은금액203.5 등이 가격으로 오인되는 것 방지)
     const seg2 = seg
+      // -어머님(최종임님)남은적립금121차감 같은 한글 이름 포함 복합 차감 패턴
+      .replace(/[-－]\s*[가-힣()\s]+?남은\s*적립금\s*[\d.]+\s*(?:차감|공제)?[^\d]*/gi, '')
+      // -남은금액N, -적립금N 등 직접 패턴
       .replace(/[-－]\s*(?:남은\s*)?(?:적립금|선납금|금액|잔액|포인트|할인)\s*[\d.]+[^\d]*/gi, '')
+      // -한글2~6자+숫자+차감
       .replace(/[-－]\s*[가-힣]{1,6}[\d.]+\s*(?:차감|제외|공제)?/g, '')
+      // -남은/잔여/예약금제외
       .replace(/[-－]\s*(?:남은|잔여|예약금제외)\S*/g, '');
-    // 패턴1: /숫자 형식 (예: 울쎄라300/191.4)
+    // /숫자 형식 (예: 울쎄라300/191.4)
     const slashPrice = seg2.match(/\/\s*([\d]+\.?\d*)/);
     if(slashPrice){ const v=parseFloat(slashPrice[1]); if(v>=1&&v<3000) return v; }
-    // 패턴2: 괄호 밖 마지막 숫자 (cc/샷/회/개/kj 뒤 숫자 제외)
+    // 마지막 유효 숫자 (cc/샷/회/개/kj 뒤 제외)
     const clean = seg2.replace(/\d+\s*(?:cc|샷|회|개|kj|병|ml|분|m)/gi, '?');
     const nums = [...clean.matchAll(/([\d]+\.?\d*)/g)].map(m=>parseFloat(m[1]));
     const prices = nums.filter(n=>n>=1 && n<2000);
@@ -936,10 +940,10 @@ function distributePrices(treatments, total, rawText){
     if(foundParen[t.item]!==undefined && !parenOverflows){
       return {...t, price: foundParen[t.item], fromText:true};
     }
-    // 표준가 추정 (티타늄은 KJ 기반 동적 가격)
-    const unit = t.item==='티타늄' && window._titaniumPrice
-      ? window._titaniumPrice
-      : (CHARGE_PRICE[t.item]??0);
+    // 표준가 추정 (티타늄·온다는 KJ 기반 동적 가격)
+    const unit = t.item==='티타늄' && window._titaniumPrice ? window._titaniumPrice
+               : t.item==='온다' && window._ondaPrice ? window._ondaPrice
+               : (CHARGE_PRICE[t.item]??0);
     return {...t, price: Math.round(unit*t.qty*10)/10, fromText:false};
   });
 
@@ -1083,24 +1087,27 @@ function localParse(raw){
     else if(tuneLs) results.push({item:'튠라이너', qty:1});
   }
 
-  // ── 튠페이스 ──
-  if(!/티타튠/i.test(raw)){
-    // "튠페max 2회", "튠페이스b 3회", "튠페60kj 3회" 등 회차 명시
+  // ── 튠페이스 — 티타튠과 공존 가능 ──
+  {
     const tuneF = raw.match(/튠페(?:이스)?\s*(?:b|r|max)?\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)\s*회/i);
-    // "튠페이스max 2회차", "튠페max(2회차)" 등
     const tuneFrc = raw.match(/튠페(?:이스)?\s*(?:b|r|max)?\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)\s*회차/i);
-    // 회차 없이 단독 등장
     const tuneFsingle = /튠페(?:이스)?/i.test(raw) && !tuneF && !tuneFrc;
     if(tuneFrc) results.push({item:'튠페이스', qty: parseInt(tuneFrc[1])});
     else if(tuneF) results.push({item:'튠페이스', qty: parseInt(tuneF[1])});
     else if(tuneFsingle) results.push({item:'튠페이스', qty:1});
   }
 
-  // ── 온다 ──
+  // ── 온다 — KJ에 따라 가격 다름 ──
   const ondaM = raw.match(/(?:바디)?온다\s*\d+\s*kj\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
   const ondaS = /온다/i.test(raw) && !ondaM;
   if(ondaM) results.push({item:'온다', qty: ondaM[1]?parseInt(ondaM[1]):1});
   else if(ondaS) results.push({item:'온다', qty:1});
+  // KJ 추출 → 동적 가격
+  const ondaKjM = raw.match(/온다\s*(\d+)\s*kj/i);
+  if(ondaKjM){
+    const kj = parseInt(ondaKjM[1]);
+    window._ondaPrice = kj>=100?165 : kj>=80?132 : kj>=60?99 : 66; // 40kj 이하=66
+  } else { window._ondaPrice = null; }
 
   // ── 엠페이스 ──
   const empeM = raw.match(/엠페(?:이스)?\s*(?:\d+분)?\s*(\d+)?\s*회/i);
