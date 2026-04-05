@@ -1654,95 +1654,70 @@ function isHeaderRow(row){
 function renderImportPreview(){
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요','error'); return; }
 
-  _importRows.forEach(r=>{
+  _importRows.forEach(function(r){
     if(!r.treatments){
       try {
-        const parsed = localParse(r.payText);
+        var parsed = localParse(r.payText);
         r.treatments = distributePrices(parsed.treatments, r.amount, r.payText);
       } catch(e){ r.treatments = []; }
     }
   });
 
-  const container = document.getElementById('import-preview-body');
-  container.innerHTML = '';
+  var container = document.getElementById('import-preview-body');
+  container.style.display = 'block';
+  container.style.maxHeight = '60vh';
+  container.style.overflowY = 'auto';
+  container.style.flexDirection = '';
 
-  _importRows.forEach((r, idx)=>{
-    const treatSum = (r.treatments||[]).reduce((s,t)=>s+(t.price||0), 0);
-    const sumOk = Math.abs(treatSum - r.amount) < 0.1;
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html += '<tr style="background:#0f172a;color:#64748b;font-size:11px">';
+  html += '<th style="padding:8px;text-align:left;border-bottom:1px solid #334155">날짜</th>';
+  html += '<th style="padding:8px;text-align:left;border-bottom:1px solid #334155">차트/이름</th>';
+  html += '<th style="padding:8px;text-align:left;border-bottom:1px solid #334155">분류</th>';
+  html += '<th style="padding:8px;text-align:left;border-bottom:1px solid #334155">결제내역</th>';
+  html += '<th style="padding:8px;text-align:right;border-bottom:1px solid #334155">금액</th>';
+  html += '<th style="padding:8px;text-align:left;border-bottom:1px solid #334155">상담자</th>';
+  html += '<th style="padding:8px;text-align:center;border-bottom:1px solid #334155">시술</th>';
+  html += '<th style="padding:8px;border-bottom:1px solid #334155"></th>';
+  html += '</tr>';
 
-    // 카드 래퍼
-    const card = document.createElement('div');
-    card.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;margin-bottom:4px';
+  for(var i=0; i<_importRows.length; i++){
+    var r = _importRows[i];
+    var treatSum = (r.treatments||[]).reduce(function(s,t){return s+(t.price||0);},0);
+    var sumOk = Math.abs(treatSum - r.amount) < 0.1;
+    var badgeColor = sumOk ? '#4ade80' : '#facc15';
+    var treatCount = (r.treatments||[]).length;
 
-    // 헤더 행
-    const header = document.createElement('div');
-    header.style.cssText = 'display:flex;align-items:center;gap:8px;padding:10px 12px;flex-wrap:wrap';
+    html += '<tr style="border-bottom:1px solid #1e293b;background:#0f172a">';
+    html += '<td style="padding:8px;color:#64748b;white-space:nowrap">' + r.date + '</td>';
+    html += '<td style="padding:8px;white-space:nowrap"><div style="color:#64748b;font-size:10px">' + r.chart + '</div><div style="color:#f1f5f9;font-weight:700">' + r.name + '</div></td>';
+    html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;font-size:11px">' + r.cat1 + (r.cat2?'<br>'+r.cat2:'') + '</td>';
+    html += '<td style="padding:8px;color:#94a3b8;font-size:11px;max-width:220px;word-break:break-all;line-height:1.4">' + r.payText + '</td>';
+    html += '<td style="padding:8px;text-align:right;color:#38bdf8;font-weight:700;white-space:nowrap">' + r.amount + '만</td>';
+    html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;font-size:11px">' + r.staff + '</td>';
+    html += '<td style="padding:8px;text-align:center"><span style="font-size:10px;padding:2px 7px;border:1px solid '+badgeColor+';border-radius:10px;color:'+badgeColor+';cursor:pointer" onclick="toggleImportTreat('+i+')">' + treatCount + '개 ' + (sumOk?'✓':'⚠') + '</span></td>';
+    html += '<td style="padding:8px"><button onclick="openImportEditModal('+i+')" style="font-size:11px;padding:4px 9px;background:#38bdf8;color:#0f172a;border:none;border-radius:7px;cursor:pointer;font-weight:700">수정</button></td>';
+    html += '</tr>';
 
-    const dateEl = document.createElement('span');
-    dateEl.style.cssText = 'font-size:11px;color:#64748b;white-space:nowrap';
-    dateEl.textContent = r.date;
-
-    const chartEl = document.createElement('span');
-    chartEl.style.cssText = 'font-size:11px;color:#64748b';
-    chartEl.textContent = r.chart;
-
-    const nameEl = document.createElement('span');
-    nameEl.style.cssText = 'font-size:13px;font-weight:700;color:#f1f5f9';
-    nameEl.textContent = r.name;
-
-    const catEl = document.createElement('span');
-    catEl.style.cssText = 'font-size:11px;color:#94a3b8';
-    catEl.textContent = r.cat1 + (r.cat2 ? '·'+r.cat2 : '');
-
-    const staffEl = document.createElement('span');
-    staffEl.style.cssText = 'font-size:11px;color:' + (r.staffRaw!==r.staff ? '#4ade80' : '#94a3b8');
-    staffEl.textContent = r.staff;
-
-    const amtEl = document.createElement('span');
-    amtEl.style.cssText = 'margin-left:auto;font-size:13px;font-weight:700;color:#38bdf8;white-space:nowrap';
-    amtEl.textContent = r.amount + '만';
-
-    const badge = document.createElement('span');
-    badge.style.cssText = 'font-size:10px;padding:2px 7px;border:1px solid ' + (sumOk?'#4ade80':'#facc15') + ';border-radius:10px;color:' + (sumOk?'#4ade80':'#facc15') + ';cursor:pointer;white-space:nowrap';
-    badge.textContent = (r.treatments?.length||0) + '개 ' + (sumOk?'✓':'⚠');
-    badge.onclick = ()=>toggleImportTreat(idx);
-
-    const editBtn = document.createElement('button');
-    editBtn.style.cssText = 'font-size:11px;padding:4px 10px;background:#38bdf8;color:#0f172a;border:none;border-radius:8px;cursor:pointer;font-weight:700;white-space:nowrap';
-    editBtn.textContent = '✏ 수정';
-    editBtn.onclick = ()=>openImportEditModal(idx);
-
-    header.append(dateEl, chartEl, nameEl, catEl, staffEl, amtEl, badge, editBtn);
-
-    // 결제내역
-    const payDiv = document.createElement('div');
-    payDiv.style.cssText = 'padding:6px 12px 10px;font-size:11px;color:#94a3b8;line-height:1.5;border-top:1px solid #334155;word-break:break-all';
-    payDiv.textContent = r.payText;
-
-    // 시술 펼침
-    const treatDiv = document.createElement('div');
-    treatDiv.id = 'import-treat-' + idx;
-    treatDiv.style.cssText = 'display:none;padding:8px 12px 10px;border-top:1px solid #334155;background:#0f172a';
-
-    const badges = document.createElement('div');
-    badges.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px';
-    (r.treatments||[]).forEach(t=>{
-      const b = document.createElement('span');
-      b.style.cssText = 'display:inline-flex;align-items:center;gap:3px;padding:2px 8px;background:#1e293b;border-radius:10px;font-size:11px;color:#94a3b8';
-      b.innerHTML = t.item + ' <span style="color:#38bdf8">×'+t.qty+'</span> <span style="color:#64748b">'+t.price+'만</span>';
-      badges.appendChild(b);
+    // 시술 펼침 행
+    html += '<tr id="import-treat-'+i+'" style="display:none;background:#0a0f1a">';
+    html += '<td colspan="8" style="padding:8px 12px">';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">';
+    (r.treatments||[]).forEach(function(t){
+      html += '<span style="background:#1e293b;border-radius:8px;padding:2px 8px;font-size:11px;color:#94a3b8">';
+      html += t.item + ' <span style="color:#38bdf8">×' + t.qty + '</span> <span style="color:#64748b">' + t.price + '만</span>';
+      html += '</span>';
     });
-    const sumLine = document.createElement('div');
-    sumLine.style.cssText = 'font-size:11px;color:' + (sumOk?'#4ade80':'#facc15');
-    sumLine.textContent = '합계 ' + treatSum + '만 / 결제 ' + r.amount + '만 ' + (sumOk?'✓':'← 수정 필요');
-    treatDiv.append(badges, sumLine);
+    html += '</div>';
+    html += '<div style="font-size:11px;color:'+badgeColor+'">합계 '+treatSum+'만 / 결제 '+r.amount+'만 '+(sumOk?'✓':'← 확인 필요')+'</div>';
+    html += '</td></tr>';
+  }
 
-    card.append(header, payDiv, treatDiv);
-    container.appendChild(card);
-  });
+  html += '</table>';
+  container.innerHTML = html;
 
   document.getElementById('import-count').textContent = _importRows.length + '건 파싱됨';
-  document.getElementById('import-preview').style.display='block';
+  document.getElementById('import-preview').style.display = 'block';
 }
 
 /* ── 전체 삭제 (관리자 전용) ── */
