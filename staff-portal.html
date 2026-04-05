@@ -42,7 +42,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
 .logout-btn:hover{color:var(--text)}
 
 /* ── MAIN ── */
-.main{max-width:960px;margin:0 auto;padding:24px 16px 80px}
+.main{max-width:1060px;margin:0 auto;padding:24px 16px 80px}
 
 /* ── MODE TABS ── */
 .mode-tabs{display:flex;gap:8px;margin-bottom:24px}
@@ -266,23 +266,11 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
         <div class="form-group">
           <div class="form-label">상담직원</div>
           <select class="form-select" id="f-staff">
-            <optgroup label="현직">
-              <option value="김구슬">김구슬</option>
-              <option value="길연주">길연주</option>
-              <option value="명재은">명재은</option>
-              <option value="장나은">장나은</option>
-              <option value="호아신">호아신</option>
-              <option value="데스크">데스크</option>
-            </optgroup>
-            <optgroup label="퇴사">
-              <option value="퇴사-장">퇴사-장</option>
-              <option value="퇴사-황">퇴사-황</option>
-              <option value="퇴사-이">퇴사-이</option>
-              <option value="퇴사-공">퇴사-공</option>
-              <option value="퇴사-한빛">퇴사-한빛</option>
-              <option value="퇴사-유엄진">퇴사-유엄진</option>
-              <option value="퇴사-주미진">퇴사-주미진</option>
-            </optgroup>
+            <option value="김구슬">김구슬</option>
+            <option value="길연주">길연주</option>
+            <option value="김도은">김도은</option>
+            <option value="호아신">호아신</option>
+            <option value="장나은">장나은</option>
           </select>
         </div>
         <div class="form-group">
@@ -323,11 +311,9 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           </select>
         </div>
         <div class="form-group" id="cat2-wrap" style="display:none">
-          <div class="form-label">분류2</div>
-          <select class="form-select" id="f-cat2" onchange="handleCat2Change()">
-            <option value="">선택</option>
-          </select>
-          <input class="form-input" id="f-cat2-custom" type="text" placeholder="직접 입력" style="display:none;margin-top:6px">
+          <div class="form-label">분류2 <span style="color:var(--muted);font-weight:400;font-size:11px">(선택 또는 직접입력)</span></div>
+          <input class="form-input" id="f-cat2" type="text" placeholder="분류2 입력 또는 아래에서 선택" list="cat2-datalist" autocomplete="off">
+          <datalist id="cat2-datalist"></datalist>
         </div>
       </div>
     </div>
@@ -400,16 +386,17 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
         <table id="consult-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:700px;table-layout:fixed">
           <colgroup>
-            <col style="width:90px">   <!-- 날짜 -->
-            <col style="width:60px">   <!-- 차트 -->
-            <col style="width:80px">   <!-- 이름 -->
-            <col style="width:70px">   <!-- 분류1 -->
-            <col style="width:60px">   <!-- 분류2 -->
+            <col style="width:88px">   <!-- 날짜 -->
+            <col style="width:55px">   <!-- 차트 -->
+            <col style="width:75px">   <!-- 이름 -->
+            <col style="width:65px">   <!-- 분류1 -->
+            <col style="width:55px">   <!-- 분류2 -->
             <col style="width:auto">   <!-- 결제내역 -->
-            <col style="width:70px">   <!-- 금액 -->
-            <col style="width:70px">   <!-- 결제 -->
-            <col style="width:60px">   <!-- 상담자 -->
-            <col style="width:90px">   <!-- 수정/삭제 -->
+            <col style="width:60px">   <!-- 금액 -->
+            <col style="width:60px">   <!-- 결제 -->
+            <col style="width:55px">   <!-- 의사 -->
+            <col style="width:55px">   <!-- 상담자 -->
+            <col style="width:88px">   <!-- 수정/삭제 -->
           </colgroup>
           <thead>
             <tr style="background:#0a0f1a;color:var(--muted);font-size:11px;letter-spacing:1px">
@@ -421,12 +408,13 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border)">결제내역</th>
               <th style="padding:10px 8px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap">금액(만)</th>
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">결제</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">의사</th>
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">상담자</th>
               <th style="padding:10px 8px;border-bottom:1px solid var(--border);width:40px"></th>
             </tr>
           </thead>
           <tbody id="consult-tbody">
-            <tr><td colspan="9" style="padding:20px;text-align:center;color:var(--muted)">데이터 로딩 중...</td></tr>
+            <tr><td colspan="11" style="padding:20px;text-align:center;color:var(--muted)">데이터 로딩 중...</td></tr>
           </tbody>
         </table>
       </div>
@@ -641,22 +629,15 @@ const CAT2_MAP = {
 function updateCat2(){
   const cat1 = document.getElementById('f-cat1').value;
   const wrap = document.getElementById('cat2-wrap');
-  const sel = document.getElementById('f-cat2');
   const opts = CAT2_MAP[cat1]||[];
-  if(opts.length===0){wrap.style.display='none';return;}
-  wrap.style.display='flex';
-  sel.innerHTML='<option value="">선택</option>';
-  opts.forEach(o=>{
-    const opt=document.createElement('option');
-    opt.value=o;opt.textContent=o;
-    sel.appendChild(opt);
-  });
-  document.getElementById('f-cat2-custom').style.display='none';
+  wrap.style.display = opts.length ? 'flex' : 'none';
+  const dl = document.getElementById('cat2-datalist');
+  if(dl) dl.innerHTML = opts.map(o=>`<option value="${o}">`).join('');
+  document.getElementById('f-cat2').value = '';
 }
 
 function handleCat2Change(){
-  const v=document.getElementById('f-cat2').value;
-  document.getElementById('f-cat2-custom').style.display=v==='기타(직접입력)'?'block':'none';
+  // datalist 기반 자유입력이므로 별도 처리 불필요
 }
 
 function handleDoctorChange(){
@@ -666,14 +647,14 @@ function handleDoctorChange(){
 
 /* ── 상담자 매핑 ── */
 const STAFF_MAP = {
-  '김':'김구슬', '길':'길연주', '명':'명재은',
+  '김':'김구슬', '길':'길연주', '명':'명재은', '도은':'김도은',
   '장':'퇴사-장', '황':'퇴사-황', '나은':'장나은',
   '이':'퇴사-이', '공':'퇴사-공', '데스크':'데스크',
   '한빛':'퇴사-한빛', '유엄진':'퇴사-유엄진',
   '주미진':'퇴사-주미진', '아신':'호아신',
-  // 이미 풀네임인 경우 그대로
+  // 풀네임 그대로
   '김구슬':'김구슬', '길연주':'길연주', '명재은':'명재은',
-  '장나은':'장나은', '호아신':'호아신'
+  '장나은':'장나은', '호아신':'호아신', '김도은':'김도은'
 };
 function mapStaff(s){
   if(!s) return s;
@@ -747,7 +728,8 @@ const TREATMENT_ITEMS = [
   '티타튠','티타튠max',
   '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트',
   'NAD','미라젯쥬베룩','알라딘필','문신제거',
-  '적립금차감','선납금차감','상품권차감','할인차감'
+  '적립금차감','선납금차감','상품권차감','할인차감',
+  '예약금','환불'
 ];
 
 /* ══════════════════════════════════════════════
@@ -781,12 +763,26 @@ const CHARGE_PRICE = {
   '예약금':0, '하이쿡스':5.5, '플라즈마엑소좀':55,
   '새살주사':27.5, '인텐스울트라':27.5, '히알라제':16.5,
   '적립금차감':0, '선납금차감':0, '상품권차감':0, '할인차감':0,
+  '예약금':0, '환불':0,
 };
 
 /* ── 텍스트에서 시술별 명시 가격 추출 ── */
 function extractTextPrices(raw, treatments){
   // 최종 결제금액 제거
-  const text = raw.replace(/[=＝]\s*[\d.,]+\s*[mM만][^)]*$/i, '');
+  const text = raw.replace(/[=＝]\s*[\d.,]+\s*[mM만].*$/i, '');
+
+  // BBL 가격 직접 추출 (세그먼트 분리 전)
+  // 패턴: BBL포에버영+색소49.5 → 마지막 숫자 49.5가 BBL 가격
+  // 패턴: BBL(포에버영+색소)49.5 → 49.5가 BBL 가격
+  const bblPriceMap = {};
+  const bblRe = /bbl\s*(?:\([^)]*\))?\s*(?:(?:포에버영|색소|홍조|화이트닝|미백|여드름|스킨타이트닝)\s*\+?\s*)*(?:[\d.]+\s*회\s*)?([\d.]+)/gi;
+  for(const m of raw.matchAll(bblRe)){
+    const price = parseFloat(m[1]);
+    if(price >= 1 && price < 2000){
+      if(/여드름/i.test(m[0])) bblPriceMap['BBL(여드름)'] = price;
+      else bblPriceMap['BBL(색소)'] = price;
+    }
+  }
 
   // 최상위 구분자(+,)로 분리 - 괄호 안 무시
   function splitTopLevel(s){
@@ -801,9 +797,12 @@ function extractTextPrices(raw, treatments){
     return parts;
   }
 
-  // 세그먼트에서 가격 숫자 추출 (마지막 단독 숫자)
+  // 세그먼트에서 가격 숫자 추출
   function getPrice(seg){
-    // 괄호 밖 마지막 숫자 (단, cc/샷/회/개/kj 뒤 숫자는 제외)
+    // 패턴1: /숫자 형식 (예: 울쎄라300/191.4)
+    const slashPrice = seg.match(/\/\s*([\d]+\.?\d*)/);
+    if(slashPrice){ const v=parseFloat(slashPrice[1]); if(v>=1&&v<3000) return v; }
+    // 패턴2: 괄호 밖 마지막 숫자 (단, cc/샷/회/개/kj 뒤 숫자는 제외)
     const clean = seg.replace(/\d+\s*(?:cc|샷|회|개|kj|병|ml|분|m)/gi, '?');
     const nums = [...clean.matchAll(/([\d]+\.?\d*)/g)].map(m=>parseFloat(m[1]));
     const prices = nums.filter(n=>n>=1 && n<2000);
@@ -850,6 +849,10 @@ function extractTextPrices(raw, treatments){
 
   const found={};        // item → price (확실한 가격)
   const foundParen={};   // item → price (괄호 안 참조가, 잔액으로 처리)
+
+  // BBL 직접 추출 가격 우선 반영
+  Object.assign(found, bblPriceMap);
+
   const segments = splitTopLevel(text);
 
   segments.forEach(seg=>{
@@ -884,7 +887,10 @@ function extractTextPrices(raw, treatments){
 
 /* ── 가격 분배 (텍스트 명시가 → 소폭 조정) ── */
 function distributePrices(treatments, total, rawText){
-  if(!total || total<=0) return treatments.map(t=>({...t, price:0}));
+  if(!total || total<=0) return treatments.map(t=>({
+    ...t,
+    price: t._deductAmt !== undefined ? t._deductAmt : Math.round((CHARGE_PRICE[t.item]??0)*t.qty*10)/10
+  }));
 
   let found={}, foundParen={};
   try {
@@ -911,11 +917,14 @@ function distributePrices(treatments, total, rawText){
   const parenOverflows = totalExplicit > total + 0.1;
 
   let priced = treatments.map(t=>{
+    // 적립금차감 등 차감항목: _deductAmt로 고정 가격
+    if(t._deductAmt !== undefined){
+      return {...t, price: t._deductAmt, fromText:true};
+    }
     if(found[t.item]!==undefined){
       return {...t, price: found[t.item], fromText:true};
     }
     if(foundParen[t.item]!==undefined && !parenOverflows){
-      // 합계 안 맞지 않으면 괄호 가격도 사용
       return {...t, price: foundParen[t.item], fromText:true};
     }
     // 표준가 추정
@@ -960,24 +969,37 @@ function distributePrices(treatments, total, rawText){
 
 
 function localParse(raw){
+  // ── 전처리 ──
   const text = raw
-    .replace(/[=＝]\s*[\d.,]+\s*[mM].*$/g, '') // =결제금액 제거
+    .replace(/[=＝]\s*[\d.,]+\s*[mM].*$/g, '')   // =결제금액 제거
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '') // 예약금제외 제거
-    .replace(/[-－]\s*남은.*?(?=[+,\n]|$)/g, '')   // 남은금액 제거
-    .replace(/[-－]\s*할인.*?(?=[+,\n]|$)/g, '')   // 할인 제거
-    .replace(/[34]월[eE]\)?/g, '')   // 3월e) 제거
-    .replace(/\d+월?[eE]\)?\s*/g, '') // 2e) / 3월e) 등 이벤트 표시 제거
-    .replace(/sv|s\.v|SV/gi, '')    // sv 제거 (카운트는 하되 텍스트 제거)
+    .replace(/\d+월?[eE]\)?\s*/g, '')              // 2e) 3월e) 이벤트 제거
+    .replace(/sv|s\.v|SV/gi, '')                   // sv 제거
     .toLowerCase();
 
   const results = [];
-  const notes = [];
 
-  // ── 울쎄라 (샷 있어도/없어도) ──
+  // ── 적립금/남은금액/선납금 차감 파싱 ──
+  // 패턴: -남은금액66, -남은적립금121차감, -어머님남은적립금121차감후, 적립금N차감, 상품권N
+  const deductPatterns = [
+    /[-－]\s*(?:남은\s*)?(?:적립금|선납금|금액|잔액|포인트)\s*([\d.]+)\s*(?:차감|제외|사용)?/gi,
+    /[-－]\s*[^0-9+,=m]+?([\d.]+)\s*(?:차감|제외|공제)/gi,
+    /[-－]\s*(?:상품권|쿠폰|이용권)\s*(?:사용|차감)?\s*([\d.]+)/gi,
+  ];
+  let totalDeduct = 0;
+  deductPatterns.forEach(pat=>{
+    const matches = [...raw.matchAll(pat)];
+    matches.forEach(m=>{ totalDeduct += parseFloat(m[1]||0); });
+  });
+  if(totalDeduct > 0){
+    results.push({item:'적립금차감', qty:1, _deductAmt: -totalDeduct});
+  }
+
+  // ── 울쎄라 ──
   const ulcera = raw.match(/울쎄라\s*(\d+)\s*샷?/i);
   if(ulcera){ results.push({item:'울쎄라(100샷)', qty: Math.round(parseInt(ulcera[1])/100)}); }
 
-  // ── 소프웨이브 (샷 있어도/없어도) ──
+  // ── 소프웨이브 ──
   const sopw = raw.match(/소프(?:웨이브)?\s*(\d+)\s*샷?/i);
   if(sopw){ results.push({item:'소프웨이브(50샷)', qty: Math.round(parseInt(sopw[1])/50)}); }
 
@@ -1049,11 +1071,13 @@ function localParse(raw){
   if(rjHB) results.push({item:'리쥬란HB', qty: parseInt(rjHB[1])});
   const rjEye = raw.match(/(?:아이리쥬란|리쥬란아이|리쥬란\s*e\s*아이)\s*(\d+)\s*cc/i);
   if(rjEye) results.push({item:'리쥬란아이', qty: parseInt(rjEye[1])});
+  // 미라젯리쥬란 콤보가 있을 경우 단독 리쥬란 파서는 스킵 (콤보에서 처리)
+  const hasMjRjCombo = /미라젯\s*리쥬란/i.test(raw);
   const rjNorm = raw.match(/리쥬란\s*(\d+)\s*cc/i);
-  if(rjNorm && !rjHB) {
+  if(rjNorm && !rjHB && !hasMjRjCombo) {
     const cc = parseInt(rjNorm[1]);
     results.push({item:'리쥬란', qty: Math.round(cc/2)});
-  } else if(/리쥬란\s*\d+개/i.test(raw)){
+  } else if(!hasMjRjCombo && /리쥬란\s*\d+개/i.test(raw)){
     const m2 = raw.match(/리쥬란\s*(\d+)개/i);
     if(m2) results.push({item:'리쥬란', qty: parseInt(m2[1])});
   }
@@ -1143,9 +1167,14 @@ function localParse(raw){
   else if(/리투오/i.test(raw)) results.push({item:'리투오', qty:1});
 
   // ── BBL ──
-  if(/bbl.*?(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))/i.test(raw)) results.push({item:'BBL(색소)', qty:1});
+  // bbl포에버영3회, bbl(색소)3회 등 회차 파싱
+  const bblColorM = raw.match(/bbl\s*(?:\([^)]*\))?\s*(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))[^+,\n]*?(\d+)\s*회/i);
+  const bblColorQty = bblColorM ? parseInt(bblColorM[1]) : 1;
+  if(/bbl.*?(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))/i.test(raw)) results.push({item:'BBL(색소)', qty:bblColorQty});
   if(/bbl.*?(?:스킨타이트닝)/i.test(raw)) results.push({item:'BBL(스킨타이트닝)', qty:1});
-  if(/bbl.*?여드름/i.test(raw)) results.push({item:'BBL(여드름)', qty:1});
+  const bblAcneM = raw.match(/bbl\s*(?:\([^)]*\))?\s*여드름[^+,\n]*?(\d+)\s*회/i);
+  const bblAcneQty = bblAcneM ? parseInt(bblAcneM[1]) : 1;
+  if(/bbl.*?여드름/i.test(raw)) results.push({item:'BBL(여드름)', qty:bblAcneQty});
 
   // ── 듀얼피코 ──
   const dpM = raw.match(/듀얼피코\s*(\d+)\s*회/i);
@@ -1807,7 +1836,8 @@ function openImportEditModal(idx){
   modal.id = 'import-edit-modal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
 
-  const STAFF_LIST = ['김구슬','길연주','명재은','장나은','호아신','데스크','퇴사-장','퇴사-황','퇴사-이','퇴사-공','퇴사-한빛','퇴사-유엄진','퇴사-주미진'];
+  const STAFF_LIST = ['김구슬','길연주','김도은','호아신','장나은'];
+  const STAFF_ALL = [...STAFF_LIST, '명재은','데스크','퇴사-장','퇴사-황','퇴사-이','퇴사-공','퇴사-한빛','퇴사-유엄진','퇴사-주미진'];
   const CAT1_LIST = ['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국원내','일본(통)','외국인'];
   const DOCTORS = ['김재림','김선민','윤규성','송승아','장명선','기록없음'];
 
@@ -1840,7 +1870,12 @@ function openImportEditModal(idx){
           <input id="ie-amount" type="number" step="0.1" class="form-input" value="${r.amount||''}"></div>
         <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">상담직원</div>
           <select id="ie-staff" class="form-select">
-            ${STAFF_LIST.map(s=>`<option value="${s}" ${r.staff===s?'selected':''}>${s}</option>`).join('')}
+            <optgroup label="현직">
+              ${STAFF_LIST.map(s=>`<option value="${s}" ${r.staff===s?'selected':''}>${s}</option>`).join('')}
+            </optgroup>
+            <optgroup label="퇴사/기타">
+              ${STAFF_ALL.slice(STAFF_LIST.length).map(s=>`<option value="${s}" ${r.staff===s?'selected':''}>${s}</option>`).join('')}
+            </optgroup>
           </select></div>
       </div>
 
@@ -2160,7 +2195,7 @@ function filterManualList(q){
   let html = filtered.slice(0,30).map(item=>`
     <div onclick="selectManualItem('${item}')"
       style="padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;background:${window._manualSelected===item?'#0c2a3a':'#0f172a'};border:1px solid ${window._manualSelected===item?'var(--accent)':'var(--border)'}">
-      ${item}${item.includes('차감')?'<span style="font-size:10px;color:var(--yellow);margin-left:6px">마이너스 가능</span>':''}
+      ${item}${item.includes('차감')||item==='환불'?'<span style="font-size:10px;color:var(--yellow);margin-left:6px">마이너스 가능</span>':''}
     </div>
   `).join('');
   if(q && !TREATMENT_ITEMS.includes(q)){
@@ -2355,9 +2390,7 @@ async function submitConsultation(){
   const doctorSel = document.getElementById('f-doctor').value;
   const doctor = doctorSel==='직접입력' ? document.getElementById('f-doctor-custom').value.trim() : doctorSel;
   const cat1 = document.getElementById('f-cat1').value;
-  const cat2sel = document.getElementById('f-cat2').value;
-  const cat2custom = document.getElementById('f-cat2-custom').value.trim();
-  const cat2 = cat2sel==='기타(직접입력)' ? cat2custom : cat2sel;
+  const cat2 = document.getElementById('f-cat2').value.trim();
   const payText = document.getElementById('f-payment-text').value.trim();
   const amount = currentMode==='vip' ? 0 : (parseFloat(document.getElementById('f-amount').value)||0);
   const staff = document.getElementById('f-staff').value;
@@ -2475,7 +2508,7 @@ function renderHistory(items){
   if(!tbody) return;
 
   if(!items.length){
-    tbody.innerHTML='<tr><td colspan="9" style="padding:24px;text-align:center;color:var(--muted)">저장된 내역이 없어요</td></tr>';
+    tbody.innerHTML='<tr><td colspan="11" style="padding:24px;text-align:center;color:var(--muted)">저장된 내역이 없어요</td></tr>';
     if(summary) summary.innerHTML='';
     return;
   }
@@ -2484,7 +2517,7 @@ function renderHistory(items){
   const visibleItems = items.filter(it => !it.deleted);
 
   if(!visibleItems.length){
-    tbody.innerHTML='<tr><td colspan="10" style="padding:24px;text-align:center;color:var(--muted)">저장된 내역이 없어요</td></tr>';
+    tbody.innerHTML='<tr><td colspan="11" style="padding:24px;text-align:center;color:var(--muted)">저장된 내역이 없어요</td></tr>';
     if(summary) summary.innerHTML='';
     return;
   }
@@ -2505,7 +2538,7 @@ function renderHistory(items){
     const dateTotal = grouped[date].filter(it=>it.type!=='vip').reduce((s,it)=>s+(parseFloat(it.amount)||0), 0);
     const dateCount = grouped[date].length;
     html += `<tr>
-      <td colspan="10" style="padding:8px 10px;background:#0a0f1a;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border)">
+      <td colspan="11" style="padding:8px 10px;background:#0a0f1a;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border)">
         📅 ${date}
         <span style="color:var(--muted);font-weight:400"> ${dateCount}건</span>
         <span style="color:var(--green);font-weight:700;margin-left:10px">${dateTotal.toLocaleString()}만원</span>
@@ -2541,6 +2574,7 @@ function renderHistory(items){
         </td>
         <td style="padding:9px 8px;text-align:right;color:${isVip?'var(--muted)':'var(--accent)'};font-weight:700;white-space:nowrap">${isVip?'-':amt.toLocaleString()}</td>
         <td style="padding:9px 8px;color:var(--sub);font-size:11px;white-space:nowrap">${payStr}</td>
+        <td style="padding:9px 8px;color:var(--muted);font-size:11px;white-space:nowrap">${it.doctor||''}</td>
         <td style="padding:9px 8px;color:var(--muted);white-space:nowrap">${it.staff||''}</td>
         <td style="padding:6px 4px;white-space:nowrap">
           <button onclick="openEditModal('${it.id}')" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer">수정</button>
@@ -2649,7 +2683,14 @@ function openEditModal(id){
         </div>
         <div>
           <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">상담직원</div>
-          <input id="edit-staff" type="text" class="form-input" value="${item.staff||''}">
+          <select id="edit-staff" class="form-select">
+            <optgroup label="현직">
+              ${['김구슬','길연주','김도은','호아신','장나은'].map(s=>`<option value="${s}" ${(item.staff||'')==s?'selected':''}>${s}</option>`).join('')}
+            </optgroup>
+            <optgroup label="퇴사/기타">
+              ${['명재은','데스크','퇴사-장','퇴사-황','퇴사-이','퇴사-공','퇴사-한빛','퇴사-유엄진','퇴사-주미진'].map(s=>`<option value="${s}" ${(item.staff||'')==s?'selected':''}>${s}</option>`).join('')}
+            </optgroup>
+          </select>
         </div>
       </div>
 
@@ -2763,7 +2804,7 @@ async function saveEditModal(id){
     cat1:        document.getElementById('edit-cat1').value,
     cat2:        document.getElementById('edit-cat2').value.trim(),
     amount:      amt,
-    staff:       document.getElementById('edit-staff').value.trim(),
+    staff:       document.getElementById('edit-staff').value,
     paymentText: payText,
   };
 
@@ -2866,6 +2907,16 @@ function editAddPay(sel){
   window._editPayItems.push({method, amt:0});
   renderEditPayList();
 }
+
+/* ── ESC 키로 모달 닫기 ── */
+document.addEventListener('keydown', function(e){
+  if(e.key !== 'Escape') return;
+  const modals = ['import-edit-modal','edit-modal','manual-modal'];
+  for(const id of modals){
+    const el = document.getElementById(id);
+    if(el){ el.remove(); return; }
+  }
+});
 
 /* ── 토스트 ── */
 function showToast(msg, type='info'){
