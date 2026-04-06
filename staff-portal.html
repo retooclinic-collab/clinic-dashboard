@@ -381,6 +381,15 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
       </div>
     </div>
 
+    <!-- 최근 3일 간단 목록 (입력폼 아래, 모든 사용자) -->
+    <div id="recent-entries-section" class="form-section" style="margin-top:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:700;color:var(--text)">📋 최근 수납 내역</div>
+        <span style="font-size:11px;color:var(--muted)">최근 3일</span>
+      </div>
+      <div id="recent-entries-list" style="font-size:12px;color:var(--muted)">로딩 중...</div>
+    </div>
+
     <!-- 수납 리스트 -->
     <div class="history-section" id="history-section" style="display:none">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
@@ -527,13 +536,15 @@ onAuthStateChanged(auth, user => {
       const listDel = document.getElementById('btn-list-delete-all');
       if(listDel) listDel.style.display='inline-block';
     } else {
-      // 직원: 전체삭제 제거, 일괄업로드 숨김, CSV 다운로드 숨김
+      // 직원: 전체삭제 제거, 일괄업로드 숨김, CSV 다운로드 숨김, 수납리스트 숨김
       const adminDel = document.getElementById('admin-delete-section');
       if(adminDel) adminDel.remove();
       const importTab = document.getElementById('tab-import');
       if(importTab) importTab.style.display='none';
       const csvBtn = document.getElementById('btn-csv-download');
       if(csvBtn) csvBtn.style.display='none';
+      const listTab = document.getElementById('tab-list');
+      if(listTab) listTab.style.display='none';
     }
     // 로그인 로그 기록
     try {
@@ -652,6 +663,7 @@ window.startListenHistory = (uid, email) => {
     });
     window._allItems = items;
     updateGroupFilterOptions(items);
+    renderRecentEntries(items);
 
     // 날짜 범위 필터가 있으면 범위로 적용, 그룹 필터도 함께 적용
     const from = document.getElementById('filter-from')?.value;
@@ -677,6 +689,41 @@ window.startListenHistory = (uid, email) => {
      APP LOGIC
 ══════════════════════════════════════════════ -->
 <script>
+/* ── 최근 3일 간단 목록 ── */
+function renderRecentEntries(items){
+  const el = document.getElementById('recent-entries-list');
+  if(!el) return;
+  const visible = (items||[]).filter(it => !it.deleted);
+  // 최근 3일 계산
+  const dates = [...new Set(visible.map(it=>it.date||''))].filter(Boolean).sort((a,b)=>b.localeCompare(a));
+  const recent3 = dates.slice(0, 3);
+  if(!recent3.length){ el.innerHTML='<div style="color:var(--muted);padding:8px 0">저장된 내역이 없어요</div>'; return; }
+  const filtered = visible.filter(it=> recent3.includes(it.date||''));
+  let html = '';
+  recent3.forEach(date=>{
+    const dayItems = filtered.filter(it=>it.date===date);
+    const dayTotal = dayItems.filter(it=>it.type!=='vip').reduce((s,it)=>s+(parseFloat(it.amount)||0), 0);
+    html += `<div style="margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;color:var(--accent);padding:4px 0;border-bottom:1px solid var(--border);margin-bottom:4px">
+        📅 ${date} <span style="color:var(--muted);font-weight:400">${dayItems.length}건</span>
+        <span style="color:var(--green);font-weight:700;margin-left:8px">${Math.round(dayTotal).toLocaleString()}만원</span>
+      </div>`;
+    dayItems.forEach(it=>{
+      const isVip = it.type==='vip';
+      const amt = parseFloat(it.amount)||0;
+      html += `<div style="display:flex;justify-content:space-between;padding:3px 4px;font-size:11px;border-bottom:1px solid #1a2236">
+        <span style="color:var(--text)">${it.name||'-'}
+          ${isVip?'<span style="font-size:9px;background:#2a1f00;color:var(--yellow);border-radius:10px;padding:1px 5px;margin-left:3px">VIP</span>':''}
+          <span style="color:var(--muted);margin-left:6px">${it.cat1||''}</span>
+        </span>
+        <span style="color:${isVip?'var(--muted)':'var(--accent)'};font-weight:${isVip?'400':'600'}">${isVip?'-':amt.toLocaleString()+'만'}</span>
+      </div>`;
+    });
+    html += '</div>';
+  });
+  el.innerHTML = html;
+}
+
 /* ── 분류2 연동 ── */
 const CAT2_MAP = {
   '국내신환':['인터넷','유튜브','인스타그램','구환소개','직원가족','워크인','체험단','원장님지인','기타(직접입력)'],
@@ -963,6 +1010,16 @@ function extractTextPrices(raw, treatments){
       if(found[t.item]===undefined && kw.test(outer)){
         const p = getPrice(outer);
         if(p!==null) found[t.item]=p;
+      }
+
+      // 세그먼트 전체(괄호 포함)에서 매칭되지만 outer만으로는 안 되는 경우
+      // 예: 보톡스(국)13.75 → outer에 보톡스, inner에 국 → 키워드가 둘 다 필요
+      if(found[t.item]===undefined && !kw.test(outer) && kw.test(seg)){
+        const baseName = t.item.replace(/\(.*\)/,'').replace(/[+]/g,'');
+        if(baseName && outer.toLowerCase().includes(baseName.toLowerCase())){
+          const p = getPrice(outer);
+          if(p!==null) found[t.item]=p;
+        }
       }
 
       // 괄호 안에서 발견 → 잠정 가격 (합계 초과 시 잔액으로 재계산)
