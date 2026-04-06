@@ -179,9 +179,10 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
   <div class="main">
     <!-- 모드 선택 -->
     <div class="mode-tabs">
-      <div class="mode-tab active" id="tab-normal" onclick="setMode('normal')">📝 일반 수납 입력</div>
-      <div class="mode-tab" id="tab-vip" onclick="setMode('vip')">💎 VIP 재료 소모 기록</div>
-      <div class="mode-tab" id="tab-import" onclick="setMode('import')" style="font-size:12px">📥 과거 데이터 일괄 업로드</div>
+      <div class="mode-tab active" id="tab-normal" onclick="setMode('normal')">📝 수납 입력</div>
+      <div class="mode-tab" id="tab-list" onclick="setMode('list')">📋 수납 리스트</div>
+      <div class="mode-tab" id="tab-vip" onclick="setMode('vip')">💎 VIP 재료</div>
+      <div class="mode-tab" id="tab-import" onclick="setMode('import')" style="font-size:11px">📥 일괄 업로드</div>
     </div>
 
     <!-- 일괄 업로드 섹션 -->
@@ -191,6 +192,18 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
         <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.8">
           구글시트에서 복사한 데이터를 붙여넣거나, 엑셀 파일을 업로드하세요.<br>
           <span style="color:var(--accent)">날짜(비어있으면 위 행 날짜 사용) · 차트 · 이름 · 분류1 · 분류2 · 결제내역 · 금액 · 상담자</span>
+        </div>
+
+        <!-- 기준 연도 선택 -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;background:#0a0f1a;border-radius:10px;padding:12px 16px;border:1px solid var(--border);flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--sub);font-weight:600">📅 연도 없는 날짜의 기준 연도:</span>
+          <select id="import-base-year" style="background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-weight:700;padding:6px 12px;outline:none">
+            <option value="2026">2026년</option>
+            <option value="2025" selected>2025년</option>
+            <option value="2024">2024년</option>
+            <option value="2023">2023년</option>
+          </select>
+          <span style="font-size:11px;color:var(--muted)">※ 월이 섞여있으면 자동으로 연도 넘김 처리됨</span>
         </div>
 
         <!-- 엑셀 파일 업로드 -->
@@ -369,8 +382,8 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
     </div>
 
     <!-- 수납 리스트 -->
-    <div class="history-section" id="history-section">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+    <div class="history-section" id="history-section" style="display:none">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
         <div class="history-title" style="margin-bottom:0">📋 수납 리스트</div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <input type="date" id="filter-from" style="background:#0f172a;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;padding:6px 10px;outline:none" onchange="applyDateFilter()">
@@ -381,6 +394,19 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <button onclick="setQuickFilter(30)" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">30일</button>
           <button onclick="downloadCurrentCSV()" style="font-size:11px;color:var(--sub);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">⬇ CSV</button>
         </div>
+      </div>
+      <!-- 필터 바 -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+        <select id="filter-staff" onchange="applyGroupFilter()" style="background:#0f172a;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;padding:6px 10px;outline:none">
+          <option value="">👤 상담자 전체</option>
+        </select>
+        <select id="filter-doctor" onchange="applyGroupFilter()" style="background:#0f172a;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;padding:6px 10px;outline:none">
+          <option value="">🩺 의사 전체</option>
+        </select>
+        <select id="filter-cat1" onchange="applyGroupFilter()" style="background:#0f172a;border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;padding:6px 10px;outline:none">
+          <option value="">📍 분류 전체</option>
+        </select>
+        <button onclick="resetGroupFilter()" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">필터 초기화</button>
       </div>
       <!-- 테이블 -->
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
@@ -594,12 +620,12 @@ window.startListenHistory = (uid, email) => {
       return (b.createdAt||'').localeCompare(a.createdAt||'');
     });
     window._allItems = items;
+    updateGroupFilterOptions(items);
 
     const dateFilter = document.getElementById('filter-from')?.value;
     if(dateFilter){
       renderHistory(items.filter(it=>it.date===dateFilter));
     } else {
-      // 원장님: 전체, 직원: 60일치 전체 (filterRecent3Days 제거)
       renderHistory(items);
     }
   }, err => {
@@ -669,17 +695,24 @@ function setMode(mode){
   document.getElementById('tab-normal').className='mode-tab'+(mode==='normal'?' active':'');
   document.getElementById('tab-vip').className='mode-tab'+(mode==='vip'?' vip-active':'');
   document.getElementById('tab-import').className='mode-tab'+(mode==='import'?' active':'');
+  const tabList = document.getElementById('tab-list');
+  if(tabList) tabList.className='mode-tab'+(mode==='list'?' active':'');
+
   document.getElementById('vip-notice').style.display=mode==='vip'?'block':'none';
   document.getElementById('import-section').style.display=mode==='import'?'block':'none';
 
-  // 입력폼 섹션 토글 (import 모드에서 숨김)
+  // 수납 리스트 탭 토글
+  const hs = document.getElementById('history-section');
+  if(hs) hs.style.display = mode==='list' ? 'block' : 'none';
+
+  // 입력폼 섹션 토글 (list/import 모드에서 숨김)
   document.querySelectorAll('.form-section').forEach(s=>{
-    s.style.display = mode==='import' ? 'none' : 'block';
+    s.style.display = (mode==='import'||mode==='list') ? 'none' : 'block';
   });
 
-  // 저장 버튼은 import 모드에서만 숨김
+  // 저장 버튼은 import/list 모드에서 숨김
   const sw = document.getElementById('submit-wrap');
-  if(sw) sw.style.display = mode==='import' ? 'none' : 'block';
+  if(sw) sw.style.display = (mode==='import'||mode==='list') ? 'none' : 'block';
 
   if(mode !== 'import'){
     document.getElementById('amount-wrap').style.display = mode==='vip' ? 'none' : 'flex';
@@ -1405,9 +1438,11 @@ function localParse(raw){
     results.push({item:'VIP회원권', qty:1, _fixedAmt: vipPrice||0});
   }
   if(/상담비|상담만/i.test(raw)) results.push({item:'상담만', qty:1});
-  // 예약금: "-예약금" 또는 "예약금제외" 등은 무시, 실제 결제 예약금만 추가
-  if(/예약금/i.test(raw) && !/예약금\s*제외|예약금\s*없|예약금\s*[\d.]+\s*제외|-\s*예약금|예약금\s*=|예약금\s*[\d]+m/i.test(raw)){
-    results.push({item:'예약금', qty:1});
+  // 예약금: "예약금=110m" 또는 단독 "예약금" 결제
+  // "-예약금제외", "-예약금" 등은 무시
+  if(/예약금/i.test(raw) && !/예약금\s*제외|예약금\s*없|-\s*예약금/i.test(raw)){
+    const ybTotal = extractAmount(raw) || 0;
+    results.push({item:'예약금', qty:1, _fixedAmt: ybTotal||0});
   }
   const co2M = raw.match(/co2\s*(\d+)\s*(?:ea|개)/i);
   if(co2M) results.push({item:'CO2', qty: parseInt(co2M[1])});
@@ -1641,11 +1676,22 @@ let _importRows = [];
 function parseDate(s, prevDate){
   if(!s || !s.trim()) return prevDate || '';
   const d = s.trim().replace(/\s/g,'');
+  // 이미 연도 있는 경우
   if(/^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}$/.test(d)) return d.replace(/\//g,'-');
-  if(/^\d{1,2}\/\d{1,2}$/.test(d)){
-    const [mo,dy] = d.split('/');
-    const yr = new Date().getFullYear();
-    return `${yr}-${mo.padStart(2,'0')}-${dy.padStart(2,'0')}`;
+  // M/D 또는 MM/DD 형식 — 연도 추론
+  if(/^\d{1,2}[\/\-]\d{1,2}$/.test(d)){
+    const [mo,dy] = d.split(/[\/\-]/).map(Number);
+    const baseYearEl = document.getElementById('import-base-year');
+    const baseYear = baseYearEl ? parseInt(baseYearEl.value) : new Date().getFullYear();
+    // 앞 행 날짜가 있으면 그 연도 기준으로 월 역행 시 +1년
+    if(prevDate && /^\d{4}/.test(prevDate)){
+      const prevYear = parseInt(prevDate.slice(0,4));
+      const prevMo   = parseInt(prevDate.slice(5,7));
+      // 월이 전 행보다 작으면 (역행 = 연도 넘어감)
+      const yr = (mo < prevMo) ? prevYear + 1 : prevYear;
+      return `${yr}-${String(mo).padStart(2,'0')}-${String(dy).padStart(2,'0')}`;
+    }
+    return `${baseYear}-${String(mo).padStart(2,'0')}-${String(dy).padStart(2,'0')}`;
   }
   return prevDate || '';
 }
@@ -1675,9 +1721,10 @@ function processImportText(text){
       : line.split(/  +/).map(c=>(c||'').trim()).filter(c=>c);
     if(cols.every(c => !c)) return;
 
-    // 헤더 감지
-    const joined = cols.join('').toLowerCase();
-    if(/^(날짜|차트|date|chart|내원)/.test(joined)) return;
+    // 헤더 감지 — 날짜/날파/차트/이름/분류 등 헤더 키워드 포함 행 스킵
+    const joined = cols.join('').toLowerCase().replace(/\s/g,'');
+    if(/날짜|날파|차트번호|차트|이름|분류1|결제내역|date|chart|내원경로/.test(joined) &&
+       !/\d{4}-\d{2}|\d+\/\d+/.test(cols[0])) return;
 
     let date='', chart='', name='', cat1='', cat2='', payText='', amount=0, staffRaw='';
 
@@ -1917,10 +1964,23 @@ function renderImportPreview(){
     var badgeColor = sumOk ? '#4ade80' : '#facc15';
     var treatCount = (r.treatments||[]).length;
 
-    html += '<tr style="border-bottom:1px solid #1e293b;background:#0f172a">';
-    html += '<td style="padding:8px;color:#64748b;white-space:nowrap">' + r.date + '</td>';
-    html += '<td style="padding:8px;white-space:nowrap"><div style="color:#64748b;font-size:10px">' + r.chart + '</div><div style="color:#f1f5f9;font-weight:700">' + r.name + '</div></td>';
-    html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;font-size:11px">' + r.cat1 + (r.cat2?'<br>'+r.cat2:'') + '</td>';
+    // 경고 조건 체크
+    var warnings = [];
+    if(!sumOk) warnings.push('금액불일치');
+    if(!r.date) warnings.push('날짜없음');
+    if(!r.name) warnings.push('이름없음');
+    if(treatCount === 0) warnings.push('시술없음');
+    if(!r.cat1) warnings.push('분류없음');
+    var hasWarn = warnings.length > 0;
+    var rowBg = hasWarn ? '#1a1200' : '#0f172a';
+    var warnBadge = hasWarn
+      ? '<span style="font-size:10px;color:#facc15;margin-left:6px">⚠ '+warnings.join(' ')+'</span>'
+      : '';
+
+    html += '<tr style="border-bottom:1px solid #1e293b;background:'+rowBg+'">';
+    html += '<td style="padding:8px;color:#64748b;white-space:nowrap">' + (r.date||'<span style="color:#ef4444">없음</span>') + warnBadge + '</td>';
+    html += '<td style="padding:8px;white-space:nowrap"><div style="color:#64748b;font-size:10px">' + r.chart + '</div><div style="color:#f1f5f9;font-weight:700">' + (r.name||'<span style="color:#ef4444">없음</span>') + '</div></td>';
+    html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;font-size:11px">' + (r.cat1||'<span style="color:#ef4444">없음</span>') + (r.cat2?'<br>'+r.cat2:'') + '</td>';
     html += '<td style="padding:8px;color:#94a3b8;font-size:11px;max-width:220px;word-break:break-all;line-height:1.4">' + r.payText + '</td>';
     html += '<td style="padding:8px;text-align:right;color:#38bdf8;font-weight:700;white-space:nowrap">' + r.amount + '만</td>';
     html += '<td style="padding:8px;color:#94a3b8;white-space:nowrap;font-size:11px">' + r.staff + '</td>';
@@ -2679,12 +2739,14 @@ function applyDateFilter(){
   let filtered = window._allItems;
   if(from) filtered = filtered.filter(it=>(it.date||'') >= from);
   if(to)   filtered = filtered.filter(it=>(it.date||'') <= to);
-  renderHistory(filtered);
+  window._dateFiltered = filtered;
+  applyGroupFilter();
 }
 function clearDateFilter(){
   document.getElementById('filter-from').value='';
   document.getElementById('filter-to').value='';
-  if(window._allItems) renderHistory(window._allItems);
+  window._dateFiltered = null;
+  applyGroupFilter();
 }
 function setQuickFilter(days){
   const to = new Date();
@@ -2695,8 +2757,39 @@ function setQuickFilter(days){
   document.getElementById('filter-to').value = fmt(to);
   applyDateFilter();
 }
-function filterByDate(){
-  applyDateFilter();
+function filterByDate(){ applyDateFilter(); }
+
+/* ── 그룹 필터 (상담자/의사/분류1) ── */
+function applyGroupFilter(){
+  const base = window._dateFiltered || window._allItems || [];
+  const staff  = document.getElementById('filter-staff')?.value || '';
+  const doctor = document.getElementById('filter-doctor')?.value || '';
+  const cat1   = document.getElementById('filter-cat1')?.value || '';
+  let filtered = base;
+  if(staff)  filtered = filtered.filter(it=>(it.staff||'')=== staff);
+  if(doctor) filtered = filtered.filter(it=>(it.doctor||'')=== doctor);
+  if(cat1)   filtered = filtered.filter(it=>(it.cat1||'')=== cat1);
+  renderHistory(filtered);
+}
+function resetGroupFilter(){
+  const ids = ['filter-staff','filter-doctor','filter-cat1'];
+  ids.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  applyGroupFilter();
+}
+// 필터 드롭다운 옵션 갱신 (데이터 로드 후 호출)
+function updateGroupFilterOptions(items){
+  const staffSet  = [...new Set(items.map(it=>it.staff||'').filter(Boolean))].sort();
+  const doctorSet = [...new Set(items.map(it=>it.doctor||'').filter(Boolean))].sort();
+  const cat1Set   = [...new Set(items.map(it=>it.cat1||'').filter(Boolean))].sort();
+  const fill = (id, label, values) => {
+    const el = document.getElementById(id); if(!el) return;
+    const cur = el.value;
+    el.innerHTML = `<option value="">${label} 전체</option>` +
+      values.map(v=>`<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+  };
+  fill('filter-staff',  '👤 상담자', staffSet);
+  fill('filter-doctor', '🩺 의사',   doctorSet);
+  fill('filter-cat1',   '📍 분류',   cat1Set);
 }
 
 /* ── 수납 리스트 테이블 렌더 ── */
@@ -2799,10 +2892,22 @@ function renderHistory(items){
     const rangeLabel = (filterFrom||filterTo)
       ? `📅 ${filterFrom||'~'} ~ ${filterTo||'~'}`
       : `전체 ${items.length}건`;
+    // 활성 필터 표시
+    const activeFilters = [];
+    const sf = document.getElementById('filter-staff')?.value;
+    const df = document.getElementById('filter-doctor')?.value;
+    const cf = document.getElementById('filter-cat1')?.value;
+    if(sf) activeFilters.push(`👤 ${sf}`);
+    if(df) activeFilters.push(`🩺 ${df}`);
+    if(cf) activeFilters.push(`📍 ${cf}`);
+    const filterBadge = activeFilters.length
+      ? `<span style="background:#0c2a3a;color:var(--accent);border:1px solid var(--accent);border-radius:20px;padding:2px 10px;font-size:11px">${activeFilters.join(' · ')}</span>`
+      : '';
     summary.innerHTML = `
       <span style="color:var(--muted)">${rangeLabel}</span>
+      ${filterBadge}
       <span>총 <strong style="color:var(--text)">${totalCount}건</strong></span>
-      <span>합계 <strong style="color:var(--accent)">${totalAmt.toLocaleString()}만원</strong></span>
+      <span>합계 <strong style="color:var(--accent);font-size:15px">${totalAmt.toLocaleString()}만원</strong></span>
     `;
   }
 
