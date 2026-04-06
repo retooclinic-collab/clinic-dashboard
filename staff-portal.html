@@ -932,6 +932,14 @@ function extractTextPrices(raw, treatments){
     '리쥬셀릭앰플':/리쥬셀릭앰플/i,
     '리쥬셀릭선물세트':/리쥬셀릭선물세트/i,
     'VIP회원권':/vip/i, '상담만':/상담/i,
+    '아쿠아필':/아쿠아필/i,
+    '제네시스+PTT':/제네시스\s*\+?\s*ptt/i,
+    '제네시스':/제네시스(?!\s*\+?\s*ptt)/i,
+    'PDRN':/pdrn/i, '줄기세포':/줄기세포/i,
+    '히알라제':/히알라제/i, '새살주사':/새살주사/i,
+    '인텐스울트라':/인텐스울트라/i, '위고비':/위고비/i,
+    '스킨바이브':/스킨바이브/i, '하이쿡스':/하이쿡스/i,
+    '플라즈마엑소좀':/플라즈마엑소좀/i,
   };
 
   const found={};        // item → price (확실한 가격)
@@ -1017,7 +1025,7 @@ function distributePrices(treatments, total, rawText){
       const unitStd = t.item==='온다' && window._ondaPrice ? window._ondaPrice
                     : t.item==='티타늄' && window._titaniumPrice ? window._titaniumPrice
                     : (CHARGE_PRICE[t.item]??0);
-      const isCombinedSubtotal = unitStd > 0 && found[t.item] > unitStd * t.qty * 2.0;
+      const isCombinedSubtotal = unitStd > 0 && found[t.item] > unitStd * t.qty * 3.5;
       if(!isCombinedSubtotal){
         return {...t, price: found[t.item], fromText:true};
       }
@@ -1073,9 +1081,30 @@ function distributePrices(treatments, total, rawText){
       return priced;
     }
   } else {
-    // 소폭 비율 조정
-    const scale = total / sum;
-    priced = priced.map(t=>({...t, price:Math.round(t.price*scale*10)/10}));
+    // 텍스트 명시가는 고정, 나머지만 조정
+    const fixedSum2 = priced.filter(t=>t.fromText).reduce((s,t)=>s+t.price, 0);
+    const freeItems2 = priced.filter(t=>!t.fromText);
+    const remaining2 = total - fixedSum2;
+    if(freeItems2.length > 0 && remaining2 >= 0){
+      const freeSum2 = freeItems2.reduce((s,t)=>s+t.price, 0);
+      if(freeSum2 > 0){
+        const scale2 = remaining2 / freeSum2;
+        priced = priced.map(t=>{
+          if(t.fromText) return t;
+          return {...t, price: Math.round(t.price*scale2*10)/10};
+        });
+      } else {
+        const each2 = Math.round(remaining2/freeItems2.length*10)/10;
+        priced = priced.map(t=>{
+          if(t.fromText) return t;
+          return {...t, price: each2};
+        });
+      }
+    } else {
+      // 모든 항목이 명시가이거나 remaining이 음수 → 소폭 비율 조정
+      const scale = total / sum;
+      priced = priced.map(t=>({...t, price:Math.round(t.price*scale*10)/10}));
+    }
   }
 
   // 반올림 오차 보정
