@@ -742,6 +742,14 @@ function setMode(mode){
   const hs = document.getElementById('history-section');
   if(hs) hs.style.display = mode==='list' ? 'block' : 'none';
 
+  // 관리자 전용 버튼 재확인 (list 탭 전환 시)
+  if(mode==='list' && window._isAdmin){
+    const listDel = document.getElementById('btn-list-delete-all');
+    if(listDel) listDel.style.display='inline-block';
+    const csvBtn = document.getElementById('btn-csv-download');
+    if(csvBtn) csvBtn.style.display='inline-block';
+  }
+
   // 입력폼 섹션 토글 (list/import 모드에서 숨김)
   document.querySelectorAll('.form-section').forEach(s=>{
     s.style.display = (mode==='import'||mode==='list') ? 'none' : 'block';
@@ -2864,13 +2872,13 @@ function renderStatsPanel(){
     sorted.forEach(([name, data]) => {
       html += `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;border-bottom:1px solid #1a2236">
         <span style="color:var(--text)">${name}</span>
-        <span><span style="color:var(--muted)">${data.count}건</span> <span style="color:var(--green);font-weight:700;margin-left:6px">${data.total.toLocaleString()}만원</span></span>
+        <span><span style="color:var(--muted)">${data.count}건</span> <span style="color:var(--green);font-weight:700;margin-left:6px">${Math.round(data.total).toLocaleString()}만원</span></span>
       </div>`;
     });
     const grandTotal = sorted.reduce((s,e) => s + e[1].total, 0);
     html += `<div style="display:flex;justify-content:space-between;padding:6px 0 2px;font-size:12px;font-weight:700;border-top:2px solid var(--border);margin-top:4px">
       <span style="color:var(--accent)">합계</span>
-      <span style="color:var(--accent)">${grandTotal.toLocaleString()}만원</span>
+      <span style="color:var(--accent)">${Math.round(grandTotal).toLocaleString()}만원</span>
     </div></div>`;
     return html;
   };
@@ -2951,15 +2959,15 @@ function renderHistory(items){
       <td colspan="11" style="padding:8px 10px;background:#0a0f1a;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border)">
         📅 ${date}
         <span style="color:var(--muted);font-weight:400"> ${dateCount}건</span>
-        <span style="color:var(--green);font-weight:700;margin-left:10px">${dateTotal.toLocaleString()}만원</span>
+        <span style="color:var(--green);font-weight:700;margin-left:10px">${Math.round(dateTotal).toLocaleString()}만원</span>
       </td>
     </tr>`;
 
     grouped[date].forEach(it=>{
       totalCount++;
       const amt = parseFloat(it.amount)||0;
-      totalAmt += amt;
       const isVip = it.type==='vip';
+      if(!isVip) totalAmt += amt;
       const pm = it.paymentMethods;
       let payStr = '';
       if(pm){
@@ -3034,7 +3042,7 @@ function renderHistory(items){
       filterSubtotal = `<div style="margin-top:6px;padding:8px 12px;background:#0c2a3a;border:1px solid var(--accent);border-radius:10px;font-size:12px">
         <span style="color:var(--accent);font-weight:700">${parts.join(' · ')}</span>
         <span style="margin-left:10px;color:var(--text)">${totalCount}건</span>
-        <span style="margin-left:10px;color:var(--green);font-weight:700;font-size:14px">${filteredTotal.toLocaleString()}만원</span>
+        <span style="margin-left:10px;color:var(--green);font-weight:700;font-size:14px">${Math.round(filteredTotal).toLocaleString()}만원</span>
       </div>`;
     }
 
@@ -3042,7 +3050,7 @@ function renderHistory(items){
       <span style="color:var(--muted)">${rangeLabel}</span>
       ${filterBadge}
       <span>총 <strong style="color:var(--text)">${totalCount}건</strong></span>
-      <span>합계 <strong style="color:var(--accent);font-size:15px">${totalAmt.toLocaleString()}만원</strong></span>
+      <span>합계 <strong style="color:var(--accent);font-size:15px">${Math.round(totalAmt).toLocaleString()}만원</strong></span>
       ${filterSubtotal}
     `;
   }
