@@ -253,8 +253,8 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
         <div id="admin-delete-section" style="display:none;margin-top:20px;padding:16px;background:#1a0808;border:1px solid var(--red);border-radius:12px">
           <div style="font-size:12px;color:var(--red);font-weight:700;margin-bottom:8px">⚠ 관리자 전용 — 전체 데이터 삭제</div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:12px">consultations 컬렉션의 모든 기록을 삭제합니다. 되돌릴 수 없어요.</div>
-          <button onclick="bulkDeleteAll()" style="width:100%;padding:12px;background:var(--red);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">
-            🗑 전체 삭제 (현재 ${window._allItems?.length||0}건)
+          <button id="btn-bulk-delete" onclick="bulkDeleteAll()" style="width:100%;padding:12px;background:var(--red);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer">
+            🗑 전체 삭제
           </button>
           <div id="delete-progress" style="margin-top:8px;font-size:12px;color:var(--red);display:none"></div>
         </div>
@@ -407,6 +407,15 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <option value="">📍 분류 전체</option>
         </select>
         <button onclick="resetGroupFilter()" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">필터 초기화</button>
+        <button onclick="toggleStatsPanel()" id="btn-stats-toggle" style="font-size:11px;color:var(--accent);background:none;border:1px solid var(--accent);border-radius:8px;padding:6px 10px;cursor:pointer">📊 통계</button>
+      </div>
+      <!-- 통계 패널 -->
+      <div id="stats-panel" style="display:none;margin-bottom:14px;background:#0a0f1a;border:1px solid var(--border);border-radius:12px;padding:16px;max-height:400px;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:13px;font-weight:700;color:var(--text)">📊 필터별 통계</div>
+          <button onclick="toggleStatsPanel()" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer">닫기 ✕</button>
+        </div>
+        <div id="stats-content" style="display:flex;flex-wrap:wrap;gap:16px"></div>
       </div>
       <!-- 테이블 -->
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
@@ -622,11 +631,18 @@ window.startListenHistory = (uid, email) => {
     window._allItems = items;
     updateGroupFilterOptions(items);
 
-    const dateFilter = document.getElementById('filter-from')?.value;
-    if(dateFilter){
-      renderHistory(items.filter(it=>it.date===dateFilter));
+    // 날짜 범위 필터가 있으면 범위로 적용, 그룹 필터도 함께 적용
+    const from = document.getElementById('filter-from')?.value;
+    const to   = document.getElementById('filter-to')?.value;
+    if(from || to){
+      let filtered = items;
+      if(from) filtered = filtered.filter(it=>(it.date||'') >= from);
+      if(to)   filtered = filtered.filter(it=>(it.date||'') <= to);
+      window._dateFiltered = filtered;
+      applyGroupFilter();
     } else {
-      renderHistory(items);
+      window._dateFiltered = null;
+      applyGroupFilter();
     }
   }, err => {
     console.error('history listener error:', err);
@@ -2394,6 +2410,20 @@ async function confirmImport(){
   btn.disabled=false;
   showToast(`${saved}건 저장 완료!`,'success');
   _importRows=[];
+
+  // 저장 후 수납리스트 탭으로 자동 전환 + 날짜 필터 초기화
+  if(saved > 0){
+    setTimeout(()=>{
+      // 날짜 필터 초기화하여 전체 데이터 표시
+      const fromEl = document.getElementById('filter-from');
+      const toEl = document.getElementById('filter-to');
+      if(fromEl) fromEl.value = '';
+      if(toEl) toEl.value = '';
+      window._dateFiltered = null;
+      // 수납 리스트 탭으로 전환
+      setMode('list');
+    }, 800);
+  }
 }
 
 function clearImport(){
@@ -2759,6 +2789,59 @@ function setQuickFilter(days){
 }
 function filterByDate(){ applyDateFilter(); }
 
+/* ── 통계 패널 토글 ── */
+function toggleStatsPanel(){
+  const panel = document.getElementById('stats-panel');
+  if(!panel) return;
+  const isHidden = panel.style.display === 'none';
+  panel.style.display = isHidden ? 'block' : 'none';
+  if(isHidden) renderStatsPanel();
+}
+
+function renderStatsPanel(){
+  const content = document.getElementById('stats-content');
+  if(!content) return;
+  const base = window._dateFiltered || window._allItems || [];
+  const visible = base.filter(it => !it.deleted);
+
+  // 상담자별 통계
+  const staffStats = {};
+  const cat1Stats = {};
+  const doctorStats = {};
+  visible.forEach(it => {
+    const s = it.staff || '(미지정)';
+    const c = it.cat1 || '(미지정)';
+    const d = it.doctor || '(미지정)';
+    const amt = (it.type !== 'vip') ? (parseFloat(it.amount)||0) : 0;
+    if(!staffStats[s]) staffStats[s] = {count:0, total:0};
+    staffStats[s].count++; staffStats[s].total += amt;
+    if(!cat1Stats[c]) cat1Stats[c] = {count:0, total:0};
+    cat1Stats[c].count++; cat1Stats[c].total += amt;
+    if(!doctorStats[d]) doctorStats[d] = {count:0, total:0};
+    doctorStats[d].count++; doctorStats[d].total += amt;
+  });
+
+  const renderGroup = (title, stats) => {
+    const sorted = Object.entries(stats).sort((a,b) => b[1].total - a[1].total);
+    let html = `<div style="flex:1;min-width:240px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:4px">${title}</div>`;
+    sorted.forEach(([name, data]) => {
+      html += `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;border-bottom:1px solid #1a2236">
+        <span style="color:var(--text)">${name}</span>
+        <span><span style="color:var(--muted)">${data.count}건</span> <span style="color:var(--green);font-weight:700;margin-left:6px">${data.total.toLocaleString()}만원</span></span>
+      </div>`;
+    });
+    const grandTotal = sorted.reduce((s,e) => s + e[1].total, 0);
+    html += `<div style="display:flex;justify-content:space-between;padding:6px 0 2px;font-size:12px;font-weight:700;border-top:2px solid var(--border);margin-top:4px">
+      <span style="color:var(--accent)">합계</span>
+      <span style="color:var(--accent)">${grandTotal.toLocaleString()}만원</span>
+    </div></div>`;
+    return html;
+  };
+
+  content.innerHTML = renderGroup('👤 상담자별', staffStats) + renderGroup('📍 분류별 (내원경로)', cat1Stats) + renderGroup('🩺 의사별', doctorStats);
+}
+
 /* ── 그룹 필터 (상담자/의사/분류1) ── */
 function applyGroupFilter(){
   const base = window._dateFiltered || window._allItems || [];
@@ -2903,13 +2986,34 @@ function renderHistory(items){
     const filterBadge = activeFilters.length
       ? `<span style="background:#0c2a3a;color:var(--accent);border:1px solid var(--accent);border-radius:20px;padding:2px 10px;font-size:11px">${activeFilters.join(' · ')}</span>`
       : '';
+    // 필터 활성 시 필터별 소계 표시
+    let filterSubtotal = '';
+    if(sf || df || cf){
+      const vipExcluded = visibleItems.filter(it => it.type !== 'vip');
+      const filteredTotal = vipExcluded.reduce((s,it) => s + (parseFloat(it.amount)||0), 0);
+      const parts = [];
+      if(sf) parts.push(`👤 ${sf}`);
+      if(df) parts.push(`🩺 ${df}`);
+      if(cf) parts.push(`📍 ${cf}`);
+      filterSubtotal = `<div style="margin-top:6px;padding:8px 12px;background:#0c2a3a;border:1px solid var(--accent);border-radius:10px;font-size:12px">
+        <span style="color:var(--accent);font-weight:700">${parts.join(' · ')}</span>
+        <span style="margin-left:10px;color:var(--text)">${totalCount}건</span>
+        <span style="margin-left:10px;color:var(--green);font-weight:700;font-size:14px">${filteredTotal.toLocaleString()}만원</span>
+      </div>`;
+    }
+
     summary.innerHTML = `
       <span style="color:var(--muted)">${rangeLabel}</span>
       ${filterBadge}
       <span>총 <strong style="color:var(--text)">${totalCount}건</strong></span>
       <span>합계 <strong style="color:var(--accent);font-size:15px">${totalAmt.toLocaleString()}만원</strong></span>
+      ${filterSubtotal}
     `;
   }
+
+  // 통계 패널이 열려있으면 갱신
+  const statsPanel = document.getElementById('stats-panel');
+  if(statsPanel && statsPanel.style.display !== 'none') renderStatsPanel();
 
   // 다운로드 버튼 업데이트
   window._currentItems = items;
