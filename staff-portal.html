@@ -249,23 +249,6 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <div id="import-progress" style="margin-top:10px;font-size:12px;color:var(--accent);display:none"></div>
         </div>
 
-        <!-- 관리자 전용: 직원 계정 관리 -->
-        <div id="admin-staff-section" style="display:none;margin-top:20px;padding:16px;background:#0a1628;border:1px solid var(--accent);border-radius:12px">
-          <div style="font-size:12px;color:var(--accent);font-weight:700;margin-bottom:10px">👥 직원 계정 관리</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:12px">
-            직원 권한: 수납 입력/수정/개별삭제 가능 · 열람 30일 제한 · 경영분석 접근 불가 · 전체삭제/일괄업로드 불가
-          </div>
-          <div id="staff-list-container" style="margin-bottom:12px"></div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <input id="new-staff-email" type="email" placeholder="새 직원 이메일" style="flex:1;padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;outline:none">
-            <input id="new-staff-pw" type="text" placeholder="초기 비밀번호" style="width:120px;padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;outline:none">
-            <button onclick="showToast('Firebase Console → Authentication에서 직접 추가해주세요','info')" style="padding:8px 14px;background:var(--accent);color:#0f172a;border:none;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">+ 추가 안내</button>
-          </div>
-          <div style="font-size:10px;color:var(--muted);margin-top:8px">
-            ※ 직원 계정 생성/삭제는 <a href="https://console.firebase.google.com/project/analysis-rt/authentication/users" target="_blank" style="color:var(--accent)">Firebase Console</a>에서 직접 관리합니다
-          </div>
-        </div>
-
         <!-- 관리자 전용: 전체 삭제 -->
         <div id="admin-delete-section" style="display:none;margin-top:20px;padding:16px;background:#1a0808;border:1px solid var(--red);border-radius:12px">
           <div style="font-size:12px;color:var(--red);font-weight:700;margin-bottom:8px">⚠ 관리자 전용 — 전체 데이터 삭제</div>
@@ -539,9 +522,7 @@ onAuthStateChanged(auth, user => {
     if(user.email === 'retooclinic@gmail.com'){
       const adminDel = document.getElementById('admin-delete-section');
       if(adminDel) adminDel.style.display='block';
-      const adminStaff = document.getElementById('admin-staff-section');
-      if(adminStaff) adminStaff.style.display='block';
-      renderStaffList();
+
     } else {
       // 직원: 전체삭제 섹션 완전 제거, 일괄 업로드 탭 숨김
       const adminDel = document.getElementById('admin-delete-section');
@@ -2052,29 +2033,6 @@ function renderImportPreview(){
 }
 
 /* ── 직원 계정 목록 렌더 (관리자 전용) ── */
-function renderStaffList(){
-  const container = document.getElementById('staff-list-container');
-  if(!container) return;
-  const staffAccounts = [
-    {name:'김구슬', email:'(Firebase에서 확인)', status:'활성'},
-    {name:'길연주', email:'(Firebase에서 확인)', status:'활성'},
-    {name:'김도은', email:'(Firebase에서 확인)', status:'활성'},
-    {name:'호아신', email:'(Firebase에서 확인)', status:'활성'},
-    {name:'장나은', email:'(Firebase에서 확인)', status:'활성'},
-  ];
-  let html = '<div style="display:grid;gap:6px">';
-  staffAccounts.forEach(s => {
-    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--panel);border:1px solid var(--border);border-radius:8px">
-      <div>
-        <span style="font-size:12px;font-weight:600;color:var(--text)">${s.name}</span>
-        <span style="font-size:10px;color:var(--muted);margin-left:8px">${s.email}</span>
-      </div>
-      <span style="font-size:10px;padding:2px 8px;border-radius:10px;${s.status==='활성'?'background:#0a2618;color:var(--green);border:1px solid var(--green)':'background:#1a0808;color:var(--red);border:1px solid var(--red)'}">${s.status}</span>
-    </div>`;
-  });
-  html += '</div>';
-  container.innerHTML = html;
-}
 
 /* ── 전체 삭제 (관리자 전용) ── */
 async function bulkDeleteAll(){
