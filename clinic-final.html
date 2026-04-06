@@ -302,25 +302,25 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
   <h2 style="font-size:20px;font-weight:800;margin-bottom:4px;">👑 관리자 패널</h2>
   <p style="color:#64748b;font-size:13px;margin-bottom:20px;">직원 관리 · 감사로그 · 상담데이터 집계</p>
 
-  <!-- 직원 열람기한 관리 -->
+  <!-- 직원 계정 관리 -->
   <div class="card" style="margin-bottom:16px;">
-    <div style="font-size:15px;font-weight:700;margin-bottom:12px;">👤 직원 열람기한 설정</div>
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px;">👥 직원 계정 관리</div>
     <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">
-      각 직원의 수납리스트 열람 가능 기간을 설정합니다. Firebase Console → Firestore → users 컬렉션에서 직접 관리하세요.<br>
-      <code style="background:#1e293b;padding:2px 6px;border-radius:4px;font-size:11px;">users/{uid} → readDays: 60</code>
+      직원 권한: 수납 입력/수정/개별삭제 가능 · 열람 30일 제한 · 경영분석 접근 불가 · 전체삭제/일괄업로드 불가
     </div>
-    <div style="background:#0f172a;border-radius:10px;padding:14px;margin-bottom:12px;">
-      <div style="font-size:12px;color:#64748b;margin-bottom:8px;">현재 직원 목록 (드롭다운에 등록된 직원)</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        <span style="padding:4px 12px;background:#1e293b;border-radius:20px;font-size:12px;">김구슬</span>
-        <span style="padding:4px 12px;background:#1e293b;border-radius:20px;font-size:12px;">길연주</span>
-        <span style="padding:4px 12px;background:#1e293b;border-radius:20px;font-size:12px;">김도은</span>
-        <span style="padding:4px 12px;background:#1e293b;border-radius:20px;font-size:12px;">호아신</span>
-        <span style="padding:4px 12px;background:#1e293b;border-radius:20px;font-size:12px;">장나은</span>
-      </div>
+
+    <!-- 직원 목록 -->
+    <div id="admin-staff-list" style="display:grid;gap:6px;margin-bottom:14px;">
     </div>
+
+    <!-- 열람기한 안내 -->
+    <div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">
+      열람기한: Firebase Console → Firestore → <code style="background:#1e293b;padding:2px 6px;border-radius:4px;font-size:11px;">users/{uid} → readDays: 30</code>
+    </div>
+
+    <!-- 계정 추가 안내 -->
     <div style="font-size:12px;color:#64748b;padding:10px;background:#0f172a;border-radius:8px;border-left:3px solid #7c3aed">
-      💡 계정 생성: Firebase Console → Authentication → Add User → 이메일/임시비밀번호 설정 후 직원에게 전달
+      💡 계정 생성/삭제: <a href="https://console.firebase.google.com/project/analysis-rt/authentication/users" target="_blank" style="color:#a78bfa">Firebase Console → Authentication</a> → Add User → 이메일/임시비밀번호 설정 후 직원에게 전달
     </div>
   </div>
 
@@ -2241,7 +2241,31 @@ function renderAdminTab(){
     var m = String(now.getMonth()+1).padStart(2,'0');
     monthEl.value = y+'-'+m;
   }
+  renderStaffList();
   loadAuditLog();
+}
+
+function renderStaffList(){
+  var container = document.getElementById('admin-staff-list');
+  if(!container) return;
+  var staffAccounts = [
+    {name:'김구슬', status:'활성'},
+    {name:'길연주', status:'활성'},
+    {name:'김도은', status:'활성'},
+    {name:'호아신', status:'활성'},
+    {name:'장나은', status:'활성'},
+  ];
+  var html = '';
+  staffAccounts.forEach(function(s){
+    var statusStyle = s.status==='활성'
+      ? 'background:#0a2618;color:#10b981;border:1px solid #10b981'
+      : 'background:#1a0808;color:#ef4444;border:1px solid #ef4444';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px">'
+      + '<span style="font-size:13px;font-weight:600;">' + s.name + '</span>'
+      + '<span style="font-size:10px;padding:2px 10px;border-radius:10px;' + statusStyle + '">' + s.status + '</span>'
+      + '</div>';
+  });
+  container.innerHTML = html;
 }
 
 /* ── 상담데이터 집계 ── */
