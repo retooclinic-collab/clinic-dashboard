@@ -392,6 +392,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <button onclick="clearDateFilter()" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">전체</button>
           <button onclick="setQuickFilter(7)" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">7일</button>
           <button onclick="setQuickFilter(30)" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">30일</button>
+          <button onclick="setThisMonthFilter()" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">이번달</button>
           <button id="btn-csv-download" onclick="downloadCurrentCSV()" style="font-size:11px;color:var(--sub);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">⬇ CSV</button>
           <button id="btn-list-delete-all" onclick="bulkDeleteAll()" style="display:none;font-size:11px;color:var(--red);background:none;border:1px solid var(--red);border-radius:8px;padding:6px 10px;cursor:pointer">🗑 전체삭제</button>
         </div>
@@ -2861,6 +2862,15 @@ function setQuickFilter(days){
   applyDateFilter();
 }
 function filterByDate(){ applyDateFilter(); }
+function setThisMonthFilter(){
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth()+1).padStart(2,'0');
+  document.getElementById('filter-from').value = `${y}-${m}-01`;
+  const lastDay = new Date(y, now.getMonth()+1, 0).getDate();
+  document.getElementById('filter-to').value = `${y}-${m}-${String(lastDay).padStart(2,'0')}`;
+  applyDateFilter();
+}
 
 /* ── 통계 패널 토글 ── */
 function toggleStatsPanel(){
