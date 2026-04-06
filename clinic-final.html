@@ -306,21 +306,22 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
   <div class="card" style="margin-bottom:16px;">
     <div style="font-size:15px;font-weight:700;margin-bottom:4px;">👥 직원 계정 관리</div>
     <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">
-      직원 권한: 수납 입력/수정/개별삭제 가능 · 열람 30일 제한 · 경영분석 접근 불가 · 전체삭제/일괄업로드 불가
+      직원 권한: 수납 입력/수정/개별삭제 가능 · 열람 33일 제한 · 경영분석 접근 불가 · 전체삭제/일괄업로드/CSV다운로드 불가
     </div>
 
-    <!-- 직원 목록 -->
+    <!-- 직원 목록 (이메일 + 비번 리셋) -->
     <div id="admin-staff-list" style="display:grid;gap:6px;margin-bottom:14px;">
     </div>
 
-    <!-- 열람기한 안내 -->
-    <div style="font-size:12px;color:#94a3b8;margin-bottom:10px;">
-      열람기한: Firebase Console → Firestore → <code style="background:#1e293b;padding:2px 6px;border-radius:4px;font-size:11px;">users/{uid} → readDays: 30</code>
+    <!-- 계정 추가 안내 -->
+    <div style="font-size:12px;color:#64748b;padding:10px;background:#0f172a;border-radius:8px;border-left:3px solid #7c3aed;margin-bottom:14px;">
+      💡 계정 생성/삭제: <a href="https://console.firebase.google.com/project/analysis-rt/authentication/users" target="_blank" style="color:#a78bfa">Firebase Console → Authentication</a> → Add User
     </div>
 
-    <!-- 계정 추가 안내 -->
-    <div style="font-size:12px;color:#64748b;padding:10px;background:#0f172a;border-radius:8px;border-left:3px solid #7c3aed">
-      💡 계정 생성/삭제: <a href="https://console.firebase.google.com/project/analysis-rt/authentication/users" target="_blank" style="color:#a78bfa">Firebase Console → Authentication</a> → Add User → 이메일/임시비밀번호 설정 후 직원에게 전달
+    <!-- 접속 로그 -->
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;">📋 직원 접속 로그</div>
+    <div id="admin-access-log" style="max-height:250px;overflow-y:auto;background:#0f172a;border-radius:8px;padding:10px;">
+      <div style="color:#64748b;font-size:12px;text-align:center">로딩 중...</div>
     </div>
   </div>
 
@@ -378,9 +379,10 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
 <!-- 저장 모달 -->
 <div class="mbg" id="save-mdl">
   <div class="mbox">
-    <h3 style="font-size:17px;font-weight:700;margin-bottom:4px;">이달 저장</h3>
-    <p style="font-size:12px;color:#64748b;margin-bottom:16px;">분석 결과를 아카이브에 저장해요</p>
-    <div class="mfield"><label>저장 이름</label><input type="text" id="save-lbl" placeholder="예: 2025년 3월"></div>
+    <h3 style="font-size:17px;font-weight:700;margin-bottom:4px;">월별 데이터 저장</h3>
+    <p style="font-size:12px;color:#64748b;margin-bottom:16px;">분석 결과를 아카이브에 저장해요. 해당 월을 선택해주세요.</p>
+    <div class="mfield"><label>저장 월</label><input type="month" id="save-month" style="background:#0f172a;border:1px solid #334155;border-radius:8px;color:#f1f5f9;padding:8px 12px;font-size:13px;outline:none;width:100%"></div>
+    <div class="mfield"><label>저장 이름 (자동생성)</label><input type="text" id="save-lbl" placeholder="예: 2025년 3월"></div>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-o" onclick="closeSaveMdl()">취소</button>
       <button class="btn btn-g" style="flex:1;" onclick="doSave()">저장</button>
@@ -392,7 +394,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
 import { getFirestore, collection, doc, setDoc, getDoc, deleteDoc, onSnapshot, query, where, getDocs, orderBy, limit } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
 const cfg = {
   apiKey: "AIzaSyBNxqXjGqhPghOC-Wztt0CQR_08MKzbikA",
@@ -505,6 +507,31 @@ try {
       collection(db, 'audit_log'),
       orderBy('at', 'desc'),
       limit(limitN || 50)
+    );
+    const snap = await getDocs(q);
+    const logs = [];
+    snap.forEach(function(d) { logs.push(d.data()); });
+    return logs;
+  };
+
+  // ── 비밀번호 초기화 이메일 발송 ──
+  window.fbResetPassword = async function(email) {
+    try {
+      await sendPasswordResetEmail(auth, email);
+      return true;
+    } catch(e) {
+      console.error('resetPassword:', e);
+      alert('비밀번호 초기화 실패: ' + e.message);
+      return false;
+    }
+  };
+
+  // ── 접속 로그 조회 ──
+  window.fbGetAccessLog = async function(limitN) {
+    const q = query(
+      collection(db, 'access_log'),
+      orderBy('at', 'desc'),
+      limit(limitN || 30)
     );
     const snap = await getDocs(q);
     const logs = [];
@@ -1351,9 +1378,27 @@ function delArc(i){
 function openSaveMdl(){
   if(!G.cData&&!G.aData&&!G.bData&&!G.bankData){alert('분석 데이터가 없어요');return}
   saveBankManualFromDOM();
-  var now=new Date();document.getElementById('save-lbl').value=now.getFullYear()+'년 '+(now.getMonth()+1)+'월';
+  var now=new Date();
+  var y=now.getFullYear(); var m=String(now.getMonth()+1).padStart(2,'0');
+  var monthEl=document.getElementById('save-month');
+  if(monthEl) monthEl.value=y+'-'+m;
+  updateSaveLabel();
   document.getElementById('save-mdl').classList.add('on');
-  setTimeout(function(){document.getElementById('save-lbl').select()},80);
+  // 월 변경시 라벨 자동 업데이트
+  if(monthEl && !monthEl._bound){
+    monthEl.addEventListener('change', updateSaveLabel);
+    monthEl._bound = true;
+  }
+}
+function updateSaveLabel(){
+  var monthEl=document.getElementById('save-month');
+  var lblEl=document.getElementById('save-lbl');
+  if(!monthEl||!lblEl) return;
+  var val=monthEl.value; // "2026-03"
+  if(val){
+    var parts=val.split('-');
+    lblEl.value=parts[0]+'년 '+parseInt(parts[1])+'월';
+  }
 }
 function closeSaveMdl(){document.getElementById('save-mdl').classList.remove('on')}
 async function doSave(){
@@ -2242,30 +2287,74 @@ function renderAdminTab(){
     monthEl.value = y+'-'+m;
   }
   renderStaffList();
+  loadAccessLog();
   loadAuditLog();
 }
 
 function renderStaffList(){
   var container = document.getElementById('admin-staff-list');
   if(!container) return;
+  // 직원 계정 목록 (이메일은 Firebase Console에서 생성한 것과 일치해야 함)
   var staffAccounts = [
-    {name:'김구슬', status:'활성'},
-    {name:'길연주', status:'활성'},
-    {name:'김도은', status:'활성'},
-    {name:'호아신', status:'활성'},
-    {name:'장나은', status:'활성'},
+    {name:'김구슬', email:'gs.kim@retooclinic.com', status:'활성'},
+    {name:'길연주', email:'yj.gil@retooclinic.com', status:'활성'},
+    {name:'김도은', email:'de.kim@retooclinic.com', status:'활성'},
+    {name:'호아신', email:'as.ho@retooclinic.com', status:'활성'},
+    {name:'장나은', email:'ne.jang@retooclinic.com', status:'활성'},
   ];
   var html = '';
   staffAccounts.forEach(function(s){
     var statusStyle = s.status==='활성'
       ? 'background:#0a2618;color:#10b981;border:1px solid #10b981'
       : 'background:#1a0808;color:#ef4444;border:1px solid #ef4444';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px">'
-      + '<span style="font-size:13px;font-weight:600;">' + s.name + '</span>'
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px;flex-wrap:wrap;gap:6px">'
+      + '<div style="min-width:120px">'
+      + '<div style="font-size:13px;font-weight:600;">' + s.name + '</div>'
+      + '<div style="font-size:11px;color:#64748b;">' + s.email + '</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:6px;align-items:center">'
+      + '<button onclick="resetStaffPw(\'' + s.email + '\',\'' + s.name + '\')" style="font-size:10px;padding:4px 10px;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;cursor:pointer">🔑 비번초기화</button>'
       + '<span style="font-size:10px;padding:2px 10px;border-radius:10px;' + statusStyle + '">' + s.status + '</span>'
+      + '</div>'
       + '</div>';
   });
+  html += '<div style="font-size:11px;color:#64748b;margin-top:6px">※ 이메일이 실제 Firebase Auth 계정과 다르면 위 목록을 코드에서 수정하세요</div>';
   container.innerHTML = html;
+}
+
+async function resetStaffPw(email, name){
+  if(!confirm(name + ' (' + email + ')에게 비밀번호 초기화 이메일을 보낼까요?')) return;
+  if(window.fbResetPassword){
+    var ok = await window.fbResetPassword(email);
+    if(ok) alert(email + '로 비밀번호 초기화 이메일을 보냈습니다.\n직원에게 메일 확인하라고 안내해주세요.');
+  } else {
+    alert('Firebase 연결 대기 중입니다.');
+  }
+}
+
+async function loadAccessLog(){
+  var container = document.getElementById('admin-access-log');
+  if(!container || !window.fbGetAccessLog) return;
+  try {
+    var logs = await window.fbGetAccessLog(30);
+    if(!logs.length){
+      container.innerHTML = '<div style="color:#64748b;font-size:12px;text-align:center;padding:10px">접속 기록이 없습니다</div>';
+      return;
+    }
+    var html = '';
+    logs.forEach(function(l){
+      var d = l.at ? new Date(l.at) : null;
+      var dateStr = d ? d.toLocaleDateString('ko-KR') + ' ' + d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : '';
+      var isAdmin = l.email === 'retooclinic@gmail.com';
+      html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1e293b;font-size:11px">'
+        + '<span style="color:' + (isAdmin?'#a78bfa':'#f1f5f9') + '">' + (l.email||'?') + '</span>'
+        + '<span style="color:#64748b">' + dateStr + '</span>'
+        + '</div>';
+    });
+    container.innerHTML = html;
+  } catch(e){
+    container.innerHTML = '<div style="color:#ef4444;font-size:12px;padding:10px">로그 로딩 실패: ' + e.message + '</div>';
+  }
 }
 
 /* ── 상담데이터 집계 ── */

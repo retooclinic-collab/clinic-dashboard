@@ -392,7 +392,8 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <button onclick="clearDateFilter()" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">전체</button>
           <button onclick="setQuickFilter(7)" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">7일</button>
           <button onclick="setQuickFilter(30)" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">30일</button>
-          <button onclick="downloadCurrentCSV()" style="font-size:11px;color:var(--sub);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">⬇ CSV</button>
+          <button id="btn-csv-download" onclick="downloadCurrentCSV()" style="font-size:11px;color:var(--sub);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">⬇ CSV</button>
+          <button id="btn-list-delete-all" onclick="bulkDeleteAll()" style="display:none;font-size:11px;color:var(--red);background:none;border:1px solid var(--red);border-radius:8px;padding:6px 10px;cursor:pointer">🗑 전체삭제</button>
         </div>
       </div>
       <!-- 필터 바 -->
@@ -522,14 +523,27 @@ onAuthStateChanged(auth, user => {
     if(user.email === 'retooclinic@gmail.com'){
       const adminDel = document.getElementById('admin-delete-section');
       if(adminDel) adminDel.style.display='block';
-
+      const listDel = document.getElementById('btn-list-delete-all');
+      if(listDel) listDel.style.display='inline-block';
     } else {
-      // 직원: 전체삭제 섹션 완전 제거, 일괄 업로드 탭 숨김
+      // 직원: 전체삭제 제거, 일괄업로드 숨김, CSV 다운로드 숨김
       const adminDel = document.getElementById('admin-delete-section');
       if(adminDel) adminDel.remove();
       const importTab = document.getElementById('tab-import');
       if(importTab) importTab.style.display='none';
+      const csvBtn = document.getElementById('btn-csv-download');
+      if(csvBtn) csvBtn.style.display='none';
     }
+    // 로그인 로그 기록
+    try {
+      setDoc(doc(db, 'access_log', Date.now().toString()), {
+        email: user.email,
+        uid: user.uid,
+        action: 'login',
+        at: new Date().toISOString(),
+        serverTs: serverTimestamp()
+      });
+    } catch(e){ console.warn('access log error:', e); }
     window.startListenHistory(user.uid, user.email);
   } else {
     document.getElementById('login-screen').style.display='flex';
@@ -621,7 +635,7 @@ window.startListenHistory = (uid, email) => {
     q = query(collection(db,'consultations'));
   } else {
     const since = new Date();
-    since.setDate(since.getDate() - 30); // 직원 열람제한 30일
+    since.setDate(since.getDate() - 33); // 직원 열람제한 33일
     q = query(
       collection(db,'consultations'),
       where('serverTs', '>', Timestamp.fromDate(since))
@@ -2033,7 +2047,6 @@ function renderImportPreview(){
 }
 
 /* ── 직원 계정 목록 렌더 (관리자 전용) ── */
-
 /* ── 전체 삭제 (관리자 전용) ── */
 async function bulkDeleteAll(){
   // 관리자만 전체 삭제 가능
