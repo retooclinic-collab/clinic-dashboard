@@ -2465,18 +2465,29 @@ async function confirmImport(){
   showToast(`${saved}건 저장 완료!`,'success');
   _importRows=[];
 
-  // 저장 후 수납리스트 탭으로 자동 전환 + 날짜 필터 초기화
+  // 저장 후 수납리스트 탭으로 자동 전환 + 필터 전체 초기화
   if(saved > 0){
+    // 즉시 필터 초기화 (onSnapshot이 이전 필터 기준으로 렌더하지 않도록)
+    const fromEl = document.getElementById('filter-from');
+    const toEl = document.getElementById('filter-to');
+    if(fromEl) fromEl.value = '';
+    if(toEl) toEl.value = '';
+    window._dateFiltered = null;
+    ['filter-staff','filter-doctor','filter-cat1'].forEach(id=>{
+      const el = document.getElementById(id); if(el) el.value='';
+    });
+
     setTimeout(()=>{
-      // 날짜 필터 초기화하여 전체 데이터 표시
-      const fromEl = document.getElementById('filter-from');
-      const toEl = document.getElementById('filter-to');
-      if(fromEl) fromEl.value = '';
-      if(toEl) toEl.value = '';
-      window._dateFiltered = null;
       // 수납 리스트 탭으로 전환
       setMode('list');
-    }, 800);
+      // 반드시 다시 렌더링
+      applyGroupFilter();
+    }, 1000);
+
+    // 안전장치: onSnapshot이 늦게 도착할 수 있으므로 2.5초 뒤 한번 더 렌더
+    setTimeout(()=>{
+      if(currentMode === 'list') applyGroupFilter();
+    }, 2500);
   }
 }
 
