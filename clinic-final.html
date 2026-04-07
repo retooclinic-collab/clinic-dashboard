@@ -192,15 +192,57 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
   <!-- 저장 현황 탭 -->
   <!-- 일별 분석 탭 -->
   <div id="tab-daily" style="display:none;">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
       <div>
         <h2 style="font-size:20px;font-weight:800;margin-bottom:3px;">📋 수납 내역</h2>
         <p style="color:#64748b;font-size:13px;" id="daily-summary">전체 수납 데이터를 최신순으로 표시합니다</p>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <button class="btn btn-p btn-sm" onclick="loadAllDaily()" id="daily-reload-btn">새로고침</button>
+        <button class="btn btn-p btn-sm" onclick="loadAllDaily()">새로고침</button>
       </div>
     </div>
+    <!-- 필터 바 -->
+    <div class="card" style="margin-bottom:10px;padding:14px 18px;">
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
+        <div>
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;font-weight:600;">기간 시작</div>
+          <input type="date" id="df-from" style="padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;background:#f8fafc;color:#1a2035;outline:none;">
+        </div>
+        <div>
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;font-weight:600;">기간 끝</div>
+          <input type="date" id="df-to" style="padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;background:#f8fafc;color:#1a2035;outline:none;">
+        </div>
+        <div>
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;font-weight:600;">상담실장</div>
+          <select id="df-staff" style="padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;background:#f8fafc;color:#1a2035;outline:none;min-width:100px;">
+            <option value="">전체</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;font-weight:600;">내원경로</div>
+          <select id="df-cat1" style="padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;background:#f8fafc;color:#1a2035;outline:none;min-width:100px;">
+            <option value="">전체</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;font-weight:600;">의사</div>
+          <select id="df-doctor" style="padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;background:#f8fafc;color:#1a2035;outline:none;min-width:80px;">
+            <option value="">전체</option>
+          </select>
+        </div>
+        <button class="btn btn-p btn-sm" onclick="applyDailyFilter()" style="margin-bottom:1px;">필터 적용</button>
+        <button class="btn btn-o btn-sm" onclick="resetDailyFilter()" style="margin-bottom:1px;font-size:11px;color:#94a3b8;">초기화</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+        <button class="btn btn-sm" onclick="setDailyQuick('today')" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;font-size:11px;padding:4px 10px;">오늘</button>
+        <button class="btn btn-sm" onclick="setDailyQuick('week')" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;font-size:11px;padding:4px 10px;">최근7일</button>
+        <button class="btn btn-sm" onclick="setDailyQuick('month')" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;font-size:11px;padding:4px 10px;">이번달</button>
+        <button class="btn btn-sm" onclick="setDailyQuick('prevmonth')" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;font-size:11px;padding:4px 10px;">지난달</button>
+        <button class="btn btn-sm" onclick="setDailyQuick('all')" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;font-size:11px;padding:4px 10px;">전체</button>
+      </div>
+    </div>
+    <!-- 합계 요약 -->
+    <div id="daily-totals" class="card" style="display:none;margin-bottom:10px;padding:14px 18px;"></div>
     <!-- 수납 내역 테이블 -->
     <div class="card" style="overflow-x:auto;">
       <div id="daily-table-wrap"></div>
@@ -1527,10 +1569,11 @@ function goTab(t){
   if(t==='trend')renderTrendTab();
   if(t==='cloud')renderCloudTab();
   if(t==='admin')renderAdminTab();
-  if(t==='daily'){ if(!_dailyAllItems.length) loadAllDaily(); }
+  if(t==='daily'){ if(!_dailyAllItems.length) loadAllDaily(); else if(!_dailyFiltered.length && _dailyAllItems.length) applyDailyFilter(); }
 }
 /* ═══ DAILY ANALYSIS ═══ */
 var _dailyAllItems=[];
+var _dailyFiltered=[];
 var _dailyPage=1;
 var DAILY_PAGE_SIZE=50;
 
@@ -1539,6 +1582,8 @@ function setDailyThisMonth(){ loadAllDaily(); }
 async function loadAllDaily(){
   document.getElementById('daily-table-wrap').innerHTML='<div style="text-align:center;padding:40px;color:#64748b;">전체 수납 데이터 불러오는 중...</div>';
   document.getElementById('daily-paging').innerHTML='';
+  var totalsEl=document.getElementById('daily-totals');
+  if(totalsEl) totalsEl.style.display='none';
 
   if(!window.fbGetConsultations){
     document.getElementById('daily-table-wrap').innerHTML='<div style="text-align:center;padding:40px;color:#ef4444;">Firebase 연결 필요</div>';
@@ -1547,18 +1592,176 @@ async function loadAllDaily(){
 
   try{
     var items=await window.fbGetConsultations('2020-01-01','2099-12-31');
-    // VIP 제외, 최신순 정렬
     _dailyAllItems=items.filter(function(it){return it.type!=='vip'}).sort(function(a,b){
       var dc=(b.date||'').localeCompare(a.date||'');
       if(dc!==0) return dc;
       return ((b.serverTs||b.createdAt||'')+'').localeCompare((a.serverTs||a.createdAt||'')+'');
     });
-    _dailyPage=1;
-    renderDailyPage();
+    // 필터 드롭다운 채우기
+    populateDailyFilters();
+    applyDailyFilter();
   }catch(e){
     console.error('loadAllDaily:',e);
     document.getElementById('daily-table-wrap').innerHTML='<div style="text-align:center;padding:40px;color:#ef4444;">데이터 조회 실패: '+e.message+'</div>';
   }
+}
+
+function populateDailyFilters(){
+  var staffs={}, cats={}, doctors={};
+  _dailyAllItems.forEach(function(it){
+    if(it.staff) staffs[it.staff]=1;
+    if(it.cat1) cats[it.cat1]=1;
+    if(it.doctor) doctors[it.doctor]=1;
+  });
+  var staffSel=document.getElementById('df-staff');
+  var catSel=document.getElementById('df-cat1');
+  var docSel=document.getElementById('df-doctor');
+  var prevStaff=staffSel.value, prevCat=catSel.value, prevDoc=docSel.value;
+  staffSel.innerHTML='<option value="">전체</option>';
+  catSel.innerHTML='<option value="">전체</option>';
+  docSel.innerHTML='<option value="">전체</option>';
+  Object.keys(staffs).sort().forEach(function(s){ staffSel.innerHTML+='<option value="'+s+'">'+s+'</option>'; });
+  Object.keys(cats).sort().forEach(function(c){ catSel.innerHTML+='<option value="'+c+'">'+c+'</option>'; });
+  Object.keys(doctors).sort().forEach(function(d){ docSel.innerHTML+='<option value="'+d+'">'+d+'</option>'; });
+  staffSel.value=prevStaff; catSel.value=prevCat; docSel.value=prevDoc;
+}
+
+function applyDailyFilter(){
+  var from=document.getElementById('df-from').value||'';
+  var to=document.getElementById('df-to').value||'';
+  var staff=document.getElementById('df-staff').value||'';
+  var cat1=document.getElementById('df-cat1').value||'';
+  var doctor=document.getElementById('df-doctor').value||'';
+
+  _dailyFiltered=_dailyAllItems.filter(function(it){
+    if(from && (it.date||'')<from) return false;
+    if(to && (it.date||'')>to) return false;
+    if(staff && (it.staff||'')!==staff) return false;
+    if(cat1 && (it.cat1||'')!==cat1) return false;
+    if(doctor && (it.doctor||'')!==doctor) return false;
+    return true;
+  });
+  _dailyPage=1;
+  renderDailyTotals();
+  renderDailyPage();
+}
+
+function resetDailyFilter(){
+  document.getElementById('df-from').value='';
+  document.getElementById('df-to').value='';
+  document.getElementById('df-staff').value='';
+  document.getElementById('df-cat1').value='';
+  document.getElementById('df-doctor').value='';
+  applyDailyFilter();
+}
+
+function setDailyQuick(type){
+  var now=new Date();
+  var y=now.getFullYear(), m=now.getMonth(), d=now.getDate();
+  var from='', to='';
+  if(type==='today'){
+    from=to=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+  } else if(type==='week'){
+    to=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    var w=new Date(now.getTime()-6*86400000);
+    from=w.getFullYear()+'-'+String(w.getMonth()+1).padStart(2,'0')+'-'+String(w.getDate()).padStart(2,'0');
+  } else if(type==='month'){
+    from=y+'-'+String(m+1).padStart(2,'0')+'-01';
+    to=y+'-'+String(m+1).padStart(2,'0')+'-'+String(new Date(y,m+1,0).getDate()).padStart(2,'0');
+  } else if(type==='prevmonth'){
+    var pm=m===0?11:m-1, py=m===0?y-1:y;
+    from=py+'-'+String(pm+1).padStart(2,'0')+'-01';
+    to=py+'-'+String(pm+1).padStart(2,'0')+'-'+String(new Date(py,pm+1,0).getDate()).padStart(2,'0');
+  } else { from=''; to=''; }
+  document.getElementById('df-from').value=from;
+  document.getElementById('df-to').value=to;
+  applyDailyFilter();
+}
+
+function renderDailyTotals(){
+  var el=document.getElementById('daily-totals');
+  if(!el) return;
+  var cfg2=loadCfg();
+  var tAmt=0, tComm=0, tMat=0, cnt=_dailyFiltered.length;
+  // 실장별/경로별 소계
+  var byStaff={}, byCat={};
+  _dailyFiltered.forEach(function(it){
+    var amt=(parseFloat(it.amount)||0)*10000;
+    var comm=calcCommission(it.cat1||'',amt,cfg2,true);
+    var mat=calcMaterialCost(it.treatments,cfg2);
+    tAmt+=amt; tComm+=comm; tMat+=mat;
+    var sk=it.staff||'미지정';
+    if(!byStaff[sk]) byStaff[sk]={amt:0,comm:0,mat:0,cnt:0};
+    byStaff[sk].amt+=amt; byStaff[sk].comm+=comm; byStaff[sk].mat+=mat; byStaff[sk].cnt++;
+    var ck=it.cat1||'미분류';
+    if(!byCat[ck]) byCat[ck]={amt:0,comm:0,mat:0,cnt:0};
+    byCat[ck].amt+=amt; byCat[ck].comm+=comm; byCat[ck].mat+=mat; byCat[ck].cnt++;
+  });
+  var tNet=tAmt-tComm-tMat;
+
+  // 필터 활성 여부 확인
+  var hasFilter=document.getElementById('df-from').value||document.getElementById('df-to').value||document.getElementById('df-staff').value||document.getElementById('df-cat1').value||document.getElementById('df-doctor').value;
+  var filterDesc=[];
+  if(document.getElementById('df-from').value) filterDesc.push(document.getElementById('df-from').value+'~');
+  if(document.getElementById('df-to').value) filterDesc.push('~'+document.getElementById('df-to').value);
+  if(document.getElementById('df-staff').value) filterDesc.push('실장:'+document.getElementById('df-staff').value);
+  if(document.getElementById('df-cat1').value) filterDesc.push('경로:'+document.getElementById('df-cat1').value);
+  if(document.getElementById('df-doctor').value) filterDesc.push('의사:'+document.getElementById('df-doctor').value);
+
+  var h='';
+  h+='<div style="font-size:13px;font-weight:700;margin-bottom:8px;">📊 합계 요약'+(hasFilter?' <span style="font-size:11px;color:#3b82f6;font-weight:400;">('+filterDesc.join(' · ')+')</span>':'')+'</div>';
+
+  // 전체 합계 KPI
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;">';
+  h+='<div style="background:#eff6ff;border-radius:8px;padding:10px 12px;border-left:3px solid #3b82f6;"><div style="font-size:10px;color:#64748b;">총 건수</div><div style="font-size:16px;font-weight:800;color:#3b82f6;">'+cnt+'건</div></div>';
+  h+='<div style="background:#f0fdf4;border-radius:8px;padding:10px 12px;border-left:3px solid #22c55e;"><div style="font-size:10px;color:#64748b;">총 수납액</div><div style="font-size:16px;font-weight:800;color:#22c55e;">'+formatW(tAmt)+'</div></div>';
+  h+='<div style="background:#fff7ed;border-radius:8px;padding:10px 12px;border-left:3px solid #f97316;"><div style="font-size:10px;color:#64748b;">총 수수료</div><div style="font-size:16px;font-weight:800;color:#f97316;">'+formatW(tComm)+'</div></div>';
+  h+='<div style="background:#faf5ff;border-radius:8px;padding:10px 12px;border-left:3px solid #a855f7;"><div style="font-size:10px;color:#64748b;">총 재료비</div><div style="font-size:16px;font-weight:800;color:#a855f7;">'+formatW(tMat)+'</div></div>';
+  h+='<div style="background:'+(tNet>=0?'#f0fdf4':'#fef2f2')+';border-radius:8px;padding:10px 12px;border-left:3px solid '+(tNet>=0?'#16a34a':'#ef4444')+';"><div style="font-size:10px;color:#64748b;">순이익</div><div style="font-size:16px;font-weight:800;color:'+(tNet>=0?'#16a34a':'#ef4444')+';">'+formatW(tNet)+'</div></div>';
+  h+='</div>';
+
+  // 실장별 소계 테이블
+  var staffKeys=Object.keys(byStaff).sort(function(a,b){return byStaff[b].amt-byStaff[a].amt;});
+  if(staffKeys.length>1 || (staffKeys.length===1 && staffKeys[0]!=='미지정')){
+    h+='<details style="margin-bottom:8px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">👤 상담실장별 소계 ('+staffKeys.length+'명)</summary>';
+    h+='<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+    h+='<thead><tr style="background:#f1f5f9;"><th style="padding:5px 8px;text-align:left;color:#64748b;">실장</th><th style="padding:5px 8px;text-align:right;color:#64748b;">건수</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수납액</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수수료</th><th style="padding:5px 8px;text-align:right;color:#64748b;">재료비</th><th style="padding:5px 8px;text-align:right;color:#64748b;">순이익</th></tr></thead><tbody>';
+    staffKeys.forEach(function(sk){
+      var s=byStaff[sk]; var net=s.amt-s.comm-s.mat;
+      h+='<tr style="border-bottom:1px solid #e2e8f0;">';
+      h+='<td style="padding:5px 8px;font-weight:600;color:#1e293b;">'+sk+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+s.cnt+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#2563eb;font-weight:600;">'+formatW(s.amt)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#f97316;">'+formatW(s.comm)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(s.mat)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:'+(net>=0?'#16a34a':'#ef4444')+';font-weight:600;">'+formatW(net)+'</td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table></details>';
+  }
+
+  // 내원경로별 소계 테이블
+  var catKeys=Object.keys(byCat).sort(function(a,b){return byCat[b].amt-byCat[a].amt;});
+  if(catKeys.length>1 || (catKeys.length===1 && catKeys[0]!=='미분류')){
+    h+='<details><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">🔀 내원경로별 소계 ('+catKeys.length+'개)</summary>';
+    h+='<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+    h+='<thead><tr style="background:#f1f5f9;"><th style="padding:5px 8px;text-align:left;color:#64748b;">경로</th><th style="padding:5px 8px;text-align:right;color:#64748b;">건수</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수납액</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수수료</th><th style="padding:5px 8px;text-align:right;color:#64748b;">재료비</th><th style="padding:5px 8px;text-align:right;color:#64748b;">순이익</th></tr></thead><tbody>';
+    catKeys.forEach(function(ck){
+      var c=byCat[ck]; var net=c.amt-c.comm-c.mat;
+      h+='<tr style="border-bottom:1px solid #e2e8f0;">';
+      h+='<td style="padding:5px 8px;font-weight:600;color:#1e293b;">'+ck+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+c.cnt+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#2563eb;font-weight:600;">'+formatW(c.amt)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#f97316;">'+formatW(c.comm)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(c.mat)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:'+(net>=0?'#16a34a':'#ef4444')+';font-weight:600;">'+formatW(net)+'</td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table></details>';
+  }
+
+  el.innerHTML=h;
+  el.style.display=cnt>0?'block':'none';
 }
 
 function calcMaterialCost(treatments, cfg2){
@@ -1611,15 +1814,17 @@ function calcCommission(cat1, amount, cfg2, percentOnly){
 
 function renderDailyPage(){
   var cfg2=loadCfg();
-  var total=_dailyAllItems.length;
+  var total=_dailyFiltered.length;
   var totalPages=Math.max(1,Math.ceil(total/DAILY_PAGE_SIZE));
   if(_dailyPage>totalPages) _dailyPage=totalPages;
   var start=(_dailyPage-1)*DAILY_PAGE_SIZE;
   var end=Math.min(start+DAILY_PAGE_SIZE, total);
-  var pageItems=_dailyAllItems.slice(start,end);
+  var pageItems=_dailyFiltered.slice(start,end);
 
   // 요약
-  document.getElementById('daily-summary').textContent='전체 '+total+'건 | '+start+1+'~'+end+'번째 표시 ('+totalPages+'페이지 중 '+_dailyPage+'페이지)';
+  var allCnt=_dailyAllItems.length;
+  var sumText=total===allCnt ? '전체 '+total+'건' : '필터 '+total+'건 / 전체 '+allCnt+'건';
+  document.getElementById('daily-summary').textContent=sumText+' | '+(start+1)+'~'+end+'번째 ('+totalPages+'p 중 '+_dailyPage+'p)';
 
   if(!total){
     document.getElementById('daily-table-wrap').innerHTML='<div style="text-align:center;padding:40px;color:#64748b;">수납 데이터가 없습니다</div>';
@@ -1629,10 +1834,10 @@ function renderDailyPage(){
 
   // 테이블
   var html='<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-  html+='<thead><tr style="border-bottom:2px solid #334155;">';
-  ['날짜','이름','분류','수납액','수수료','재료비','순이익','시술항목','의사','결제'].forEach(function(h){
+  html+='<thead><tr style="border-bottom:2px solid #cbd5e1;">';
+  ['날짜','이름','분류','수납액','수수료','재료비','순이익','시술항목','실장','의사','결제'].forEach(function(h){
     var align=(['수납액','수수료','재료비','순이익'].indexOf(h)>=0)?'right':'left';
-    html+='<th style="padding:8px 6px;text-align:'+align+';color:#94a3b8;font-weight:600;white-space:nowrap;font-size:11px;">'+h+'</th>';
+    html+='<th style="padding:8px 6px;text-align:'+align+';color:#64748b;font-weight:600;white-space:nowrap;font-size:11px;">'+h+'</th>';
   });
   html+='</tr></thead><tbody>';
 
@@ -1641,13 +1846,13 @@ function renderDailyPage(){
   function flushDaySummary(){
     if(!dayCount) return '';
     var dayNet=dayAmt-dayComm-dayMat;
-    var r='<tr style="background:#0c1222;border-bottom:2px solid #334155;">';
-    r+='<td style="padding:6px;font-size:11px;color:#64748b;font-weight:700;" colspan="3">소계 '+dayCount+'건</td>';
-    r+='<td style="padding:6px;text-align:right;color:#38bdf8;font-weight:700;font-size:12px;">'+formatW(dayAmt)+'</td>';
-    r+='<td style="padding:6px;text-align:right;color:#f97316;font-weight:600;font-size:11px;">'+(dayComm>0?formatW(dayComm):'-')+'</td>';
-    r+='<td style="padding:6px;text-align:right;color:#a78bfa;font-weight:600;font-size:11px;">'+(dayMat>0?formatW(dayMat):'-')+'</td>';
-    r+='<td style="padding:6px;text-align:right;color:'+(dayNet>=0?'#22c55e':'#ef4444')+';font-weight:700;font-size:12px;">'+formatW(dayNet)+'</td>';
-    r+='<td colspan="3"></td></tr>';
+    var r='<tr style="background:#f1f5f9;border-bottom:2px solid #cbd5e1;">';
+    r+='<td style="padding:6px;font-size:11px;color:#475569;font-weight:700;" colspan="3">소계 '+dayCount+'건</td>';
+    r+='<td style="padding:6px;text-align:right;color:#2563eb;font-weight:700;font-size:12px;">'+formatW(dayAmt)+'</td>';
+    r+='<td style="padding:6px;text-align:right;color:#ea580c;font-weight:600;font-size:11px;">'+(dayComm>0?formatW(dayComm):'-')+'</td>';
+    r+='<td style="padding:6px;text-align:right;color:#7c3aed;font-weight:600;font-size:11px;">'+(dayMat>0?formatW(dayMat):'-')+'</td>';
+    r+='<td style="padding:6px;text-align:right;color:'+(dayNet>=0?'#16a34a':'#ef4444')+';font-weight:700;font-size:12px;">'+formatW(dayNet)+'</td>';
+    r+='<td colspan="4"></td></tr>';
     dayAmt=0;dayComm=0;dayMat=0;dayCount=0;
     return r;
   }
@@ -1672,18 +1877,19 @@ function renderDailyPage(){
     if(Array.isArray(pm)) pay=pm.map(function(p){return typeof p==='string'?p:(p.method||'')}).join('/')||'-';
     else if(typeof pm==='string') pay=pm||'-';
 
-    var borderStyle=showDate?'border-top:2px solid #475569;':'border-bottom:1px solid #1e293b;';
+    var borderStyle=showDate?'border-top:2px solid #cbd5e1;':'border-bottom:1px solid #e2e8f0;';
     html+='<tr style="'+borderStyle+'">';
-    html+='<td style="padding:7px 6px;color:'+(showDate?'#e2e8f0':'#475569')+';font-weight:'+(showDate?'700':'400')+';white-space:nowrap;font-size:12px;">'+(showDate?d:'')+'</td>';
-    html+='<td style="padding:7px 6px;color:#e2e8f0;white-space:nowrap;">'+((it.name||'-'))+'</td>';
-    html+='<td style="padding:7px 6px;color:'+(comm>0?'#f97316':'#64748b')+';white-space:nowrap;font-size:11px;">'+(it.cat1||'-')+'</td>';
-    html+='<td style="padding:7px 6px;text-align:right;color:#38bdf8;font-weight:600;white-space:nowrap;">'+formatW(amt)+'</td>';
-    html+='<td style="padding:7px 6px;text-align:right;color:#f97316;white-space:nowrap;">'+(comm>0?formatW(comm):'-')+'</td>';
-    html+='<td style="padding:7px 6px;text-align:right;color:#a78bfa;white-space:nowrap;">'+(mat>0?formatW(mat):'-')+'</td>';
-    html+='<td style="padding:7px 6px;text-align:right;color:'+(net>=0?'#22c55e':'#ef4444')+';font-weight:600;white-space:nowrap;">'+formatW(net)+'</td>';
-    html+='<td style="padding:7px 6px;color:#94a3b8;max-width:220px;word-break:break-all;font-size:11px;">'+treats+'</td>';
-    html+='<td style="padding:7px 6px;color:#94a3b8;white-space:nowrap;font-size:11px;">'+(it.doctor||'-')+'</td>';
-    html+='<td style="padding:7px 6px;color:#94a3b8;white-space:nowrap;font-size:11px;">'+pay+'</td>';
+    html+='<td style="padding:7px 6px;color:'+(showDate?'#1e293b':'#94a3b8')+';font-weight:'+(showDate?'700':'400')+';white-space:nowrap;font-size:12px;">'+(showDate?d:'')+'</td>';
+    html+='<td style="padding:7px 6px;color:#1e293b;white-space:nowrap;">'+((it.name||'-'))+'</td>';
+    html+='<td style="padding:7px 6px;color:'+(comm>0?'#ea580c':'#64748b')+';white-space:nowrap;font-size:11px;">'+(it.cat1||'-')+'</td>';
+    html+='<td style="padding:7px 6px;text-align:right;color:#2563eb;font-weight:600;white-space:nowrap;">'+formatW(amt)+'</td>';
+    html+='<td style="padding:7px 6px;text-align:right;color:#ea580c;white-space:nowrap;">'+(comm>0?formatW(comm):'-')+'</td>';
+    html+='<td style="padding:7px 6px;text-align:right;color:#7c3aed;white-space:nowrap;">'+(mat>0?formatW(mat):'-')+'</td>';
+    html+='<td style="padding:7px 6px;text-align:right;color:'+(net>=0?'#16a34a':'#ef4444')+';font-weight:600;white-space:nowrap;">'+formatW(net)+'</td>';
+    html+='<td style="padding:7px 6px;color:#64748b;max-width:220px;word-break:break-all;font-size:11px;">'+treats+'</td>';
+    html+='<td style="padding:7px 6px;color:#64748b;white-space:nowrap;font-size:11px;">'+(it.staff||'-')+'</td>';
+    html+='<td style="padding:7px 6px;color:#64748b;white-space:nowrap;font-size:11px;">'+(it.doctor||'-')+'</td>';
+    html+='<td style="padding:7px 6px;color:#64748b;white-space:nowrap;font-size:11px;">'+pay+'</td>';
     html+='</tr>';
   });
   // 마지막 날짜 소계
