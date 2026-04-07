@@ -525,6 +525,7 @@ onAuthStateChanged(auth, user => {
     // 이메일 기반 상담직원 기본 선택
     const emailToStaff = {
       'retooclinic@gmail.com':'김구슬', // 원장님은 기본 김구슬
+      'progressio333@gmail.com':'테스트', // 테스트 직원 계정
     };
     const emailPrefix = user.email.split('@')[0];
     const mappedStaff = emailToStaff[user.email] || Object.values(STAFF_MAP||{}).find(v=>v===emailPrefix) || null;

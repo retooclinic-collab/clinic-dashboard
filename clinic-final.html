@@ -334,13 +334,13 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
     </div>
 
     <!-- 계정 추가 안내 -->
-    <div style="font-size:12px;color:#64748b;padding:10px;background:#0f172a;border-radius:8px;border-left:3px solid #7c3aed;margin-bottom:14px;">
-      💡 계정 생성/삭제: <a href="https://console.firebase.google.com/project/analysis-rt/authentication/users" target="_blank" style="color:#a78bfa">Firebase Console → Authentication</a> → Add User
+    <div style="font-size:12px;color:#6b21a8;padding:10px;background:#f5f3ff;border-radius:8px;border-left:3px solid #7c3aed;margin-bottom:14px;">
+      💡 계정 생성/삭제: <a href="https://console.firebase.google.com/project/analysis-rt/authentication/users" target="_blank" style="color:#6d28d9">Firebase Console → Authentication</a> → Add User
     </div>
 
     <!-- 접속 로그 -->
     <div style="font-size:13px;font-weight:700;margin-bottom:8px;">📋 직원 접속 로그</div>
-    <div id="admin-access-log" style="max-height:250px;overflow-y:auto;background:#0f172a;border-radius:8px;padding:10px;">
+    <div id="admin-access-log" style="max-height:250px;overflow-y:auto;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;">
       <div style="color:#64748b;font-size:12px;text-align:center">로딩 중...</div>
     </div>
   </div>
@@ -353,7 +353,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap;">
       <div>
         <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">집계 월</div>
-        <input type="month" id="admin-month" style="background:#0f172a;border:1px solid #334155;border-radius:8px;color:#f1f5f9;padding:8px 12px;font-size:13px;outline:none;">
+        <input type="month" id="admin-month" style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;color:#1a2035;padding:8px 12px;font-size:13px;outline:none;">
       </div>
       <button onclick="runAdminAggregation()" style="margin-top:18px;padding:10px 20px;background:#7c3aed;color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;">
         ⚡ 집계 실행
@@ -369,7 +369,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
   <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
       <div style="font-size:15px;font-weight:700;">🔍 감사로그</div>
-      <button onclick="loadAuditLog()" style="padding:6px 14px;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:8px;font-size:12px;cursor:pointer;">새로고침</button>
+      <button onclick="loadAuditLog()" style="padding:6px 14px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;cursor:pointer;">새로고침</button>
     </div>
     <div style="font-size:12px;color:#94a3b8;margin-bottom:12px;">수정·삭제 기록이 자동으로 남습니다</div>
     <div id="audit-log-list" style="max-height:400px;overflow-y:auto;">
@@ -1693,9 +1693,9 @@ function renderDailyPage(){
 
   // 페이지네이션
   var pgHtml='';
-  var btnStyle='padding:6px 12px;border:1px solid #334155;border-radius:6px;background:#0f172a;color:#e2e8f0;cursor:pointer;font-size:12px;';
-  var btnDisabled='padding:6px 12px;border:1px solid #1e293b;border-radius:6px;background:#0f172a;color:#475569;font-size:12px;cursor:default;';
-  var btnActive='padding:6px 12px;border:1px solid #38bdf8;border-radius:6px;background:#0c4a6e;color:#38bdf8;font-weight:700;font-size:12px;cursor:default;';
+  var btnStyle='padding:6px 12px;border:1px solid #cbd5e1;border-radius:6px;background:#f1f5f9;color:#1e293b;cursor:pointer;font-size:12px;';
+  var btnDisabled='padding:6px 12px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;color:#94a3b8;font-size:12px;cursor:default;';
+  var btnActive='padding:6px 12px;border:1px solid #3b82f6;border-radius:6px;background:#eff6ff;color:#2563eb;font-weight:700;font-size:12px;cursor:default;';
 
   pgHtml+='<button style="'+(_dailyPage>1?btnStyle:btnDisabled)+'" onclick="dailyGoPage(1)"'+(_dailyPage<=1?' disabled':'')+'>«</button>';
   pgHtml+='<button style="'+(_dailyPage>1?btnStyle:btnDisabled)+'" onclick="dailyGoPage('+(_dailyPage-1)+')"'+(_dailyPage<=1?' disabled':'')+'>‹ 이전</button>';
@@ -2543,24 +2543,25 @@ function renderStaffList(){
   if(!container) return;
   // 직원 계정 목록 (이메일은 Firebase Console에서 생성한 것과 일치해야 함)
   var staffAccounts = [
-    {name:'김구슬', email:'gs.kim@retooclinic.com', status:'활성'},
-    {name:'길연주', email:'yj.gil@retooclinic.com', status:'활성'},
-    {name:'김도은', email:'de.kim@retooclinic.com', status:'활성'},
-    {name:'호아신', email:'as.ho@retooclinic.com', status:'활성'},
-    {name:'장나은', email:'ne.jang@retooclinic.com', status:'활성'},
+    {name:'테스트직원', email:'progressio333@gmail.com', status:'활성'},
+    {name:'김구슬', email:'gs.kim@retooclinic.com', status:'대기'},
+    {name:'길연주', email:'yj.gil@retooclinic.com', status:'대기'},
+    {name:'김도은', email:'de.kim@retooclinic.com', status:'대기'},
+    {name:'호아신', email:'as.ho@retooclinic.com', status:'대기'},
+    {name:'장나은', email:'ne.jang@retooclinic.com', status:'대기'},
   ];
   var html = '';
   staffAccounts.forEach(function(s){
     var statusStyle = s.status==='활성'
-      ? 'background:#0a2618;color:#10b981;border:1px solid #10b981'
-      : 'background:#1a0808;color:#ef4444;border:1px solid #ef4444';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px;flex-wrap:wrap;gap:6px">'
+      ? 'background:#ecfdf5;color:#059669;border:1px solid #a7f3d0'
+      : 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;flex-wrap:wrap;gap:6px">'
       + '<div style="min-width:120px">'
-      + '<div style="font-size:13px;font-weight:600;">' + s.name + '</div>'
+      + '<div style="font-size:13px;font-weight:600;color:#1e293b;">' + s.name + '</div>'
       + '<div style="font-size:11px;color:#64748b;">' + s.email + '</div>'
       + '</div>'
       + '<div style="display:flex;gap:6px;align-items:center">'
-      + '<button onclick="resetStaffPw(\'' + s.email + '\',\'' + s.name + '\')" style="font-size:10px;padding:4px 10px;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;cursor:pointer">🔑 비번초기화</button>'
+      + '<button onclick="resetStaffPw(\'' + s.email + '\',\'' + s.name + '\')" style="font-size:10px;padding:4px 10px;background:#e2e8f0;color:#475569;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer">🔑 비번초기화</button>'
       + '<span style="font-size:10px;padding:2px 10px;border-radius:10px;' + statusStyle + '">' + s.status + '</span>'
       + '</div>'
       + '</div>';
@@ -2593,8 +2594,8 @@ async function loadAccessLog(){
       var d = l.at ? new Date(l.at) : null;
       var dateStr = d ? d.toLocaleDateString('ko-KR') + ' ' + d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}) : '';
       var isAdmin = l.email === 'retooclinic@gmail.com';
-      html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #1e293b;font-size:11px">'
-        + '<span style="color:' + (isAdmin?'#a78bfa':'#f1f5f9') + '">' + (l.email||'?') + '</span>'
+      html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #e2e8f0;font-size:11px">'
+        + '<span style="color:' + (isAdmin?'#7c3aed':'#1e293b') + '">' + (l.email||'?') + '</span>'
         + '<span style="color:#64748b">' + dateStr + '</span>'
         + '</div>';
     });
@@ -2697,7 +2698,7 @@ async function runAdminAggregation(){
 }
 
 function kpiCard(label, value, color){
-  return '<div style="background:#0f172a;border-radius:10px;padding:14px;border-left:3px solid '+color+'">'+
+  return '<div style="background:#f8fafc;border-radius:10px;padding:14px;border-left:3px solid '+color+';border:1px solid #e2e8f0;">'+
     '<div style="font-size:11px;color:#64748b;margin-bottom:4px;">'+label+'</div>'+
     '<div style="font-size:18px;font-weight:800;color:'+color+'">'+value+'</div>'+
     '</div>';
@@ -2708,12 +2709,12 @@ function aggTable(title, data, total){
   if(!sorted.length) return '';
   var html = '<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">'+title+'</div>';
   html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-  html += '<thead><tr style="background:#0f172a;color:#64748b;"><th style="padding:7px 8px;text-align:left;">항목</th><th style="padding:7px 8px;text-align:right;">금액</th><th style="padding:7px 8px;text-align:right;">비중</th></tr></thead><tbody>';
+  html += '<thead><tr style="background:#f1f5f9;color:#475569;"><th style="padding:7px 8px;text-align:left;">항목</th><th style="padding:7px 8px;text-align:right;">금액</th><th style="padding:7px 8px;text-align:right;">비중</th></tr></thead><tbody>';
   sorted.forEach(function(e){
     var pct = total>0 ? Math.round(e[1]/total*1000)/10 : 0;
-    html += '<tr style="border-bottom:1px solid #1e293b;">';
-    html += '<td style="padding:7px 8px;color:#f1f5f9;">'+e[0]+'</td>';
-    html += '<td style="padding:7px 8px;text-align:right;color:#38bdf8;font-weight:700;">'+Math.round(e[1]*10)/10+'만</td>';
+    html += '<tr style="border-bottom:1px solid #e2e8f0;">';
+    html += '<td style="padding:7px 8px;color:#1e293b;">'+e[0]+'</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#2563eb;font-weight:700;">'+Math.round(e[1]*10)/10+'만</td>';
     html += '<td style="padding:7px 8px;text-align:right;color:#64748b;">'+pct+'%</td>';
     html += '</tr>';
   });
@@ -2726,12 +2727,12 @@ function treatTable(data){
   if(!sorted.length) return '';
   var html = '<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">🧪 시술별 집계</div>';
   html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-  html += '<thead><tr style="background:#0f172a;color:#64748b;"><th style="padding:7px 8px;text-align:left;">시술</th><th style="padding:7px 8px;text-align:right;">건수</th><th style="padding:7px 8px;text-align:right;">매출(만)</th></tr></thead><tbody>';
+  html += '<thead><tr style="background:#f1f5f9;color:#475569;"><th style="padding:7px 8px;text-align:left;">시술</th><th style="padding:7px 8px;text-align:right;">건수</th><th style="padding:7px 8px;text-align:right;">매출(만)</th></tr></thead><tbody>';
   sorted.forEach(function(e){
-    html += '<tr style="border-bottom:1px solid #1e293b;">';
-    html += '<td style="padding:7px 8px;color:#f1f5f9;">'+e[0]+'</td>';
-    html += '<td style="padding:7px 8px;text-align:right;color:#a78bfa;">'+e[1].qty+'</td>';
-    html += '<td style="padding:7px 8px;text-align:right;color:#38bdf8;">'+Math.round(e[1].amt*10)/10+'</td>';
+    html += '<tr style="border-bottom:1px solid #e2e8f0;">';
+    html += '<td style="padding:7px 8px;color:#1e293b;">'+e[0]+'</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#7c3aed;">'+e[1].qty+'</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#2563eb;">'+Math.round(e[1].amt*10)/10+'</td>';
     html += '</tr>';
   });
   html += '</tbody></table></div>';
@@ -2759,10 +2760,10 @@ async function loadAuditLog(){
       var date = (log.before && log.before.date) || (log.after && log.after.date) || '';
       var timeStr = log.at ? log.at.slice(0,16).replace('T',' ') : '';
 
-      html += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #1e293b;">';
+      html += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #e2e8f0;">';
       html += '<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:'+actionColor+'22;color:'+actionColor+';white-space:nowrap;margin-top:2px;">'+actionLabel+'</span>';
       html += '<div style="flex:1;">';
-      html += '<div style="font-size:12px;color:#f1f5f9;font-weight:600;">'+name+' <span style="color:#64748b;font-weight:400;">'+date+'</span></div>';
+      html += '<div style="font-size:12px;color:#1e293b;font-weight:600;">'+name+' <span style="color:#64748b;font-weight:400;">'+date+'</span></div>';
       html += '<div style="font-size:11px;color:#64748b;">'+log.by+' · '+timeStr+'</div>';
       html += '</div></div>';
     });
