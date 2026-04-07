@@ -854,6 +854,7 @@ const TREATMENT_ITEMS = [
   '티타튠','티타튠max',
   '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트',
   'NAD','미라젯쥬베룩','알라딘필','문신제거',
+  '진정관리','진정팩',
   '적립금차감','선납금차감','상품권차감','할인차감',
   '예약금','환불','위약금','제품','점,편사제거'
 ];
@@ -888,6 +889,7 @@ const CHARGE_PRICE = {
   '리쥬셀릭선물세트':12.5, 'VIP회원권':0, '상담만':2.2,
   '예약금':0, '하이쿡스':5.5, '플라즈마엑소좀':55,
   '새살주사':27.5, '인텐스울트라':27.5, '히알라제':16.5,
+  '진정관리':11, '진정팩':5.5,
   '적립금차감':0, '선납금차감':0, '상품권차감':0, '할인차감':0,
   '예약금':0, '환불':0, '위약금':0, '제품':0, '점,편사제거':0,
 };
@@ -988,6 +990,8 @@ function extractTextPrices(raw, treatments){
     '인텐스울트라':/인텐스울트라/i, '위고비':/위고비/i,
     '스킨바이브':/스킨바이브/i, '하이쿡스':/하이쿡스/i,
     '플라즈마엑소좀':/플라즈마엑소좀/i,
+    '진정관리':/진정관리/i,
+    '진정팩':/진정팩/i,
   };
 
   const found={};        // item → price (확실한 가격)
@@ -1249,7 +1253,7 @@ function localParse(raw){
     const titanKjM = raw.match(/티타늄\s*(\d+)\s*kj/i);
     if(titanKjM){
       const kj = parseInt(titanKjM[1]);
-      const kjPrice = kj>=80?132 : kj>=60?99 : kj>=40?66 : 99;
+      const kjPrice = kj>=100?165 : kj>=80?132 : kj>=60?99 : kj>=40?66 : 99;
       window._titaniumPrice = kjPrice;
     } else { window._titaniumPrice = null; }
 
@@ -1378,6 +1382,17 @@ function localParse(raw){
   if(jbeyeM) results.push({item:'쥬베룩아이', qty: parseInt(jbeyeM[1])});
   else if(/쥬베룩아이/i.test(raw)) results.push({item:'쥬베룩아이', qty:1});
 
+  // ── 쥬베룩 (단독, 볼륨/아이가 아닌 일반 쥬베룩) ──
+  if(!(/쥬베룩볼륨/i.test(raw)) && !(/쥬베룩아이/i.test(raw))){
+    const jbCc = raw.match(/쥬베룩\s*(\d+)\s*cc/i);
+    const jbBottle = raw.match(/쥬베룩\s*(\d+)\s*병/i);
+    const jbQtyM = raw.match(/쥬베룩\s*(\d+)\s*회/i);
+    if(jbCc) results.push({item:'쥬베룩볼륨', qty:1});
+    else if(jbBottle) results.push({item:'쥬베룩볼륨', qty: parseInt(jbBottle[1])});
+    else if(jbQtyM) results.push({item:'쥬베룩볼륨', qty: parseInt(jbQtyM[1])});
+    else if(/쥬베룩/i.test(raw) && !(/미라젯\s*쥬베룩/i.test(raw))) results.push({item:'쥬베룩볼륨', qty:1});
+  }
+
   // ── 쥬브아셀 (쥬브아셀N병 안에 미라젯 포함되면 미라젯도 N개) ──
   const jbaM = raw.match(/(?:커스텀)?쥬브아셀\s*(?:\d+%?)?\s*(\d+)\s*[병회]/i);
   if(jbaM){
@@ -1464,6 +1479,10 @@ function localParse(raw){
 
   // ── 알라딘필 ──
   if(/알라딘필/i.test(raw)) results.push({item:'알라딘필', qty:1});
+
+  // ── 진정관리 / 진정팩 ──
+  if(/진정관리/i.test(raw)) results.push({item:'진정관리', qty:1});
+  if(/진정팩/i.test(raw)) results.push({item:'진정팩', qty:1});
 
   // ── 제품 (마스크팩 등) ──
   if(/마스크팩|마스크\s*팩/i.test(raw)){
