@@ -2787,8 +2787,10 @@ async function renderStaffList(){
       + '<div style="font-size:13px;font-weight:600;color:#1e293b;">' + s.name + '</div>'
       + '<div style="font-size:11px;color:#64748b;">' + s.email + '</div>'
       + '</div>'
-      + '<div style="display:flex;gap:6px;align-items:center">'
-      + '<button onclick="resetStaffPw(\'' + s.email + '\',\'' + s.name + '\')" style="font-size:10px;padding:4px 10px;background:#e2e8f0;color:#475569;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer">🔑 비번초기화</button>'
+      + '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">'
+      + '<button onclick="editStaffInfo('+idx+')" style="font-size:10px;padding:4px 8px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer">✏ 수정</button>'
+      + '<button onclick="resetStaffPw(\'' + s.email + '\',\'' + s.name + '\')" style="font-size:10px;padding:4px 8px;background:#e2e8f0;color:#475569;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer">🔑 비번</button>'
+      + '<button onclick="removeStaffAccount('+idx+')" style="font-size:10px;padding:4px 8px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:6px;cursor:pointer">✕</button>'
       + '<button onclick="toggleStaffStatus('+idx+')" style="font-size:10px;padding:2px 10px;border-radius:10px;' + statusStyle + '">' + s.status + '</button>'
       + '</div>'
       + '</div>';
@@ -2813,6 +2815,28 @@ async function addStaffAccount(){
   var email = prompt('Firebase Auth 등록 이메일:');
   if(!email) return;
   _staffAccounts.push({name:name.trim(), email:email.trim(), status:'대기'});
+  if(window.fbSaveStaffList) await window.fbSaveStaffList(_staffAccounts);
+  renderStaffList();
+}
+
+async function editStaffInfo(idx){
+  if(idx<0||idx>=_staffAccounts.length) return;
+  var s=_staffAccounts[idx];
+  var newName=prompt('이름 수정 (현재: '+s.name+')', s.name);
+  if(newName===null) return;
+  var newEmail=prompt('이메일 수정 (현재: '+s.email+')\n※ Firebase Auth에 등록된 이메일과 동일해야 합니다', s.email);
+  if(newEmail===null) return;
+  _staffAccounts[idx].name=newName.trim()||s.name;
+  _staffAccounts[idx].email=newEmail.trim()||s.email;
+  if(window.fbSaveStaffList) await window.fbSaveStaffList(_staffAccounts);
+  renderStaffList();
+}
+
+async function removeStaffAccount(idx){
+  if(idx<0||idx>=_staffAccounts.length) return;
+  var s=_staffAccounts[idx];
+  if(!confirm(s.name+' ('+s.email+')을 목록에서 삭제할까요?\n※ Firebase Auth 계정은 별도로 삭제해야 합니다')) return;
+  _staffAccounts.splice(idx,1);
   if(window.fbSaveStaffList) await window.fbSaveStaffList(_staffAccounts);
   renderStaffList();
 }

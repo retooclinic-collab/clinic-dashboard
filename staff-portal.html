@@ -494,7 +494,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
 ══════════════════════════════════════════════ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, query, where, onSnapshot, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, onSnapshot, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
 const cfg = {
@@ -524,8 +524,28 @@ window.fbLogin = async (email, pw) => {
 
 window.fbLogout = async () => { await signOut(auth); location.reload(); };
 
-onAuthStateChanged(auth, user => {
+onAuthStateChanged(auth, async user => {
   if(user) {
+    // 관리자가 아닌 경우, staff_list에서 상태 확인
+    if(user.email !== 'retooclinic@gmail.com'){
+      try {
+        const staffDoc = await getDoc(doc(db, 'clinic_settings', 'staff_list'));
+        if(staffDoc.exists()){
+          const staffs = staffDoc.data().staffs || [];
+          const me = staffs.find(s => s.email === user.email);
+          if(me && me.status === '대기'){
+            await signOut(auth);
+            const errEl = document.getElementById('login-err');
+            if(errEl){
+              errEl.textContent = '계정이 비활성 상태입니다. 관리자에게 문의하세요.';
+              errEl.style.display = 'block';
+            }
+            return;
+          }
+        }
+      } catch(e){ console.warn('staff status check:', e.message); }
+    }
+
     window._fbUser = user;
     document.getElementById('login-screen').style.display='none';
     document.getElementById('shell').style.display='flex';

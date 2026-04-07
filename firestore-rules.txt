@@ -50,8 +50,10 @@ service cloud.firestore {
 
     // clinic_settings 컬렉션 (경영분석 설정: 재료비단가, 수수료율, 고정비)
     match /clinic_settings/{docId} {
-      // 읽기/쓰기: 관리자만
-      allow read, write: if isAdmin();
+      // 읽기: 관리자 전체, 직원은 staff_list만 (로그인 차단 확인용)
+      allow read: if isAdmin() || (isAuthenticated() && docId == 'staff_list');
+      // 쓰기: 관리자만
+      allow write: if isAdmin();
     }
 
     // access_log 컬렉션 (접속 로그)
