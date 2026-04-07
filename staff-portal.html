@@ -842,12 +842,13 @@ function setMode(mode){
   document.getElementById('vip-notice').style.display=mode==='vip'?'block':'none';
   document.getElementById('import-section').style.display=mode==='import'?'block':'none';
 
-  // 수납 리스트 탭 토글
+  // 수납 리스트: list 탭 + import 탭에서 모두 표시
+  const showList = mode==='list' || mode==='import';
   const hs = document.getElementById('history-section');
-  if(hs) hs.style.display = mode==='list' ? 'block' : 'none';
+  if(hs) hs.style.display = showList ? 'block' : 'none';
 
-  // 관리자 전용 버튼 재확인 (list 탭 전환 시)
-  if(mode==='list' && window._isAdmin){
+  // 관리자 전용 버튼 (list/import 모드)
+  if(showList && window._isAdmin){
     const listDel = document.getElementById('btn-list-delete-all');
     if(listDel) listDel.style.display='inline-block';
     const csvBtn = document.getElementById('btn-csv-download');
