@@ -1164,6 +1164,10 @@ function distributePrices(treatments, total, rawText){
     if(t._fixedAmt !== undefined){
       return {...t, price: t._fixedAmt, fromText:true};
     }
+    // 예약금제외: 나중에 잔액으로 계산 (일단 0)
+    if(t._balanceDeduct){
+      return {...t, price: 0, fromText:true};
+    }
     if(found[t.item]!==undefined){
       // 복합소계 감지: 명시가가 해당 항목 KJ/표준가의 3배 이상이면 복합소계로 간주 → 무시
       const unitStd = t.item==='온다' && window._ondaPrice ? window._ondaPrice
@@ -1215,9 +1219,9 @@ function distributePrices(treatments, total, rawText){
       }
     } else if(allFromText){
       // 모두 명시가인데 합계가 total과 다를 때
-      const hasYeyakDeduct = rawText && /예약금\s*제외|예약금\s*없/i.test(rawText);
-      if(hasYeyakDeduct && sum > total + 0.5){
-        // 예약금제외 있으면 명시가 유지 (예약금 차감에서 처리됨)
+      const hasBalDeduct = priced.some(t=>t._balanceDeduct);
+      if(hasBalDeduct){
+        // _balanceDeduct 항목이 있으면 명시가 유지 (잔액계산에서 처리됨)
       } else if(Math.abs(sum - total) > 0.05){
         const scale = total / sum;
         priced = priced.map(t=>({...t, price:Math.round(t.price*scale*100)/100}));
@@ -1244,11 +1248,16 @@ function distributePrices(treatments, total, rawText){
         });
       }
     } else if(freeItems2.length > 0 && remaining2 < 0){
-      // 명시가 합 > total, free항목 있음 → free항목을 0으로 (예약금 차감에서 처리)
-      priced = priced.map(t=>{
-        if(t.fromText) return t;
-        return {...t, price: 0};
-      });
+      // 명시가 합 > total → _balanceDeduct 있으면 free항목 표준가 유지 (잔액에서 처리)
+      const hasBalDeduct2 = priced.some(t=>t._balanceDeduct);
+      if(!hasBalDeduct2){
+        // _balanceDeduct 없으면 free항목 0으로
+        priced = priced.map(t=>{
+          if(t.fromText) return t;
+          return {...t, price: 0};
+        });
+      }
+      // _balanceDeduct 있으면 free항목 표준가 그대로 유지
     } else {
       // 모든 항목이 명시가 → 비율 조정으로 합계 맞춤
       const scale = total / sum;
@@ -1282,13 +1291,12 @@ function distributePrices(treatments, total, rawText){
     return t;
   });
 
-  // 예약금제외 처리: 클램핑 후 합 > total 이면 차감항목 추가
-  if(rawText && /예약금\s*제외|예약금\s*없/i.test(rawText)){
-    const curSum = priced.reduce((s,t)=>s+t.price, 0);
-    if(curSum > total + 0.5){
-      const deductAmt = Math.round((total - curSum)*100)/100;
-      priced.push({item:'예약금', qty:1, price: deductAmt, fromText:true});
-    }
+  // 예약금제외(_balanceDeduct) 잔액 계산: 다른 항목 합 - total = 차감액
+  const balIdx = priced.findIndex(t=>t._balanceDeduct);
+  if(balIdx >= 0){
+    const othersSum = priced.reduce((s,t,i)=>i===balIdx?s:s+t.price, 0);
+    const deductAmt = Math.round((total - othersSum)*100)/100;
+    priced[balIdx] = {...priced[balIdx], price: deductAmt < 0 ? deductAmt : 0};
   }
 
   // 반올림 오차 보정
@@ -1747,9 +1755,12 @@ function localParse(raw){
     }
   }
   if(/상담비|상담만/i.test(raw)) results.push({item:'상담만', qty:1});
-  // 예약금: "예약금=110m" 또는 단독 "예약금" 결제
-  // "-예약금제외", "-예약금" 등은 무시
-  if(/예약금/i.test(raw) && !/예약금\s*제외|예약금\s*없|-\s*예약금/i.test(raw)){
+  // 예약금제외: "-예약금제외" → 차감항목 (금액은 distributePrices에서 잔액으로 계산)
+  if(/예약금\s*제외|예약금\s*없|-\s*예약금/i.test(raw)){
+    results.push({item:'예약금', qty:1, _balanceDeduct:true});
+  }
+  // 예약금: "예약금=110m" 또는 단독 "예약금" 결제 (제외 아닌 경우)
+  else if(/예약금/i.test(raw)){
     const ybTotal = extractAmount(raw) || 0;
     results.push({item:'예약금', qty:1, _fixedAmt: ybTotal||0});
   }
