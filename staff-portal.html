@@ -1329,10 +1329,10 @@ function localParse(raw){
   // 미라젯리쥬란 콤보가 있을 경우 단독 리쥬란 파서는 스킵 (콤보에서 처리)
   const hasMjRjCombo = /미라젯\s*리쥬란/i.test(raw) || /미라젯\s*\([^)]*리쥬란/i.test(raw);
   const rjNorm = raw.match(/리쥬란\s*(\d+)\s*cc/i);
-  if(rjNorm && !rjHB && !hasMjRjCombo) {
+  if(rjNorm && !rjHB && !rjEye && !hasMjRjCombo) {
     const cc = parseInt(rjNorm[1]);
     results.push({item:'리쥬란', qty: Math.round(cc/2)});
-  } else if(!hasMjRjCombo && /리쥬란\s*\d+개/i.test(raw)){
+  } else if(!hasMjRjCombo && !rjEye && /리쥬란\s*\d+개/i.test(raw)){
     const m2 = raw.match(/리쥬란\s*(\d+)개/i);
     if(m2) results.push({item:'리쥬란', qty: parseInt(m2[1])});
   }
@@ -1417,16 +1417,19 @@ function localParse(raw){
   }
 
   // ── 쥬브아셀 (쥬브아셀N병 안에 미라젯 포함되면 미라젯도 N개) ──
-  const jbaM = raw.match(/(?:커스텀)?쥬브아셀\s*(?:\d+%?)?\s*(\d+)\s*[병회]/i);
-  if(jbaM){
-    const jbaQty = parseInt(jbaM[1]);
-    results.push({item:'쥬브아셀', qty: jbaQty});
-    // 쥬브아셀N병(...미라젯...) 패턴 → 미라젯 N개
-    const jbaBundleMj = raw.match(/쥬브아셀.*?\(.*?미라젯.*?\)/i);
-    if(jbaBundleMj && !hasMjJba && !hasMjLto && !hasMjRj && !hasMjRjHB && !hasMjJbv){
-      results.push({item:'미라젯', qty: jbaQty});
-    }
-  } else if(/쥬브아셀/i.test(raw)) results.push({item:'쥬브아셀', qty:1});
+  // 미라젯 콤보에서 이미 처리된 경우 스킵
+  if(!hasMjJba){
+    const jbaM = raw.match(/(?:커스텀)?쥬브아셀\s*(?:\d+%?)?\s*(\d+)\s*[병회]/i);
+    if(jbaM){
+      const jbaQty = parseInt(jbaM[1]);
+      results.push({item:'쥬브아셀', qty: jbaQty});
+      // 쥬브아셀N병(...미라젯...) 패턴 → 미라젯 N개
+      const jbaBundleMj = raw.match(/쥬브아셀.*?\(.*?미라젯.*?\)/i);
+      if(jbaBundleMj && !hasMjLto && !hasMjRj && !hasMjRjHB && !hasMjJbv){
+        results.push({item:'미라젯', qty: jbaQty});
+      }
+    } else if(/쥬브아셀/i.test(raw)) results.push({item:'쥬브아셀', qty:1});
+  }
 
   // ── 리투오 ──
   const ltoM = raw.match(/리투오\s*(\d+)\s*병/i);
