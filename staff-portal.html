@@ -2093,32 +2093,80 @@ function parseImportData(){
   }
 }
 
+/* ── TSV 파서: 따옴표 멀티라인 셀 + 비따옴표 멀티라인 셀 모두 처리 ── */
+function parseTSVRows(text){
+  // 1) 따옴표 처리 포함 TSV 파싱 (CSV 파서와 동일 로직, 구분자만 탭)
+  const rawRows = [];
+  let row = [], cur = '', inQ = false;
+  for(let i=0; i<text.length; i++){
+    const c = text[i];
+    if(c==='"'){
+      if(inQ && text[i+1]==='"'){ cur+='"'; i++; }
+      else inQ = !inQ;
+    } else if(c==='\t' && !inQ){
+      row.push(cur); cur='';
+    } else if((c==='\r'||c==='\n') && !inQ){
+      if(c==='\r' && text[i+1]==='\n') i++;
+      row.push(cur); cur='';
+      if(row.some(c=>c.trim())) rawRows.push(row);
+      row = [];
+    } else {
+      cur += c;
+    }
+  }
+  row.push(cur);
+  if(row.some(c=>c.trim())) rawRows.push(row);
+
+  // 2) 기대 컬럼 수 결정 (4개 이상 컬럼 행 중 최빈값)
+  const counts = {};
+  rawRows.forEach(r=>{ if(r.length>=4) counts[r.length]=(counts[r.length]||0)+1; });
+  let expectedCols=0, maxCnt=0;
+  for(const [k,v] of Object.entries(counts)){
+    if(v>maxCnt){ maxCnt=v; expectedCols=parseInt(k); }
+  }
+  if(!expectedCols) expectedCols = rawRows.reduce((m,r)=>Math.max(m,r.length),0);
+
+  // 3) 멀티라인 셀 병합: 컬럼 수 부족 + 차트번호 패턴 없으면 이전 행에 연결
+  const merged = [];
+  for(const r of rawRows){
+    if(r.length >= expectedCols || merged.length===0){
+      merged.push([...r]);
+      continue;
+    }
+    // 새 행인지 연장인지: 첫 3필드에 차트번호(4~5자리 숫자)가 있으면 새 행
+    let isNewRow = false;
+    for(let j=0; j<Math.min(3,r.length); j++){
+      if(/^\d{4,5}$/.test((r[j]||'').trim())){ isNewRow=true; break; }
+    }
+    if(isNewRow){
+      merged.push([...r]);
+    } else {
+      const prev = merged[merged.length-1];
+      // 이전 행 마지막 필드에 줄바꿈으로 연결
+      prev[prev.length-1] += '\n' + r[0];
+      // 나머지 필드(금액, 상담자 등) 추가
+      for(let j=1; j<r.length; j++) prev.push(r[j]);
+    }
+  }
+  return merged;
+}
+
 function processImportText(text){
   _importRows = [];
-  let lines = text.split(/\r?\n/).filter(l => l.trim());
   let prevDate = '';
 
-  // 구분자 자동 감지: 탭 우선, 없으면 공백 2개 이상으로 시도
   const hasTabs = text.includes('\t');
+  let allRows;
 
-  // 멀티라인 셀 병합: 탭 데이터에서 탭이 없는 줄은 이전 줄의 결제내역 연장
-  // (스프레드시트에서 셀 안 줄바꿈이 탭 없이 붙여넣기 됨)
   if(hasTabs){
-    const merged = [];
-    for(let i=0; i<lines.length; i++){
-      if(lines[i].includes('\t') || merged.length===0){
-        merged.push(lines[i]);
-      } else {
-        merged[merged.length-1] += '\n' + lines[i];
-      }
-    }
-    lines = merged;
+    allRows = parseTSVRows(text);
+  } else {
+    allRows = text.split(/\r?\n/).filter(l => l.trim())
+      .map(line => line.split(/  +/).map(c=>(c||'').trim()).filter(c=>c));
   }
 
-  lines.forEach((line, lineIdx) => {
-    const cols = hasTabs
-      ? line.split('\t').map(c=>(c||'').trim())
-      : line.split(/  +/).map(c=>(c||'').trim()).filter(c=>c);
+  allRows.forEach((rawCols, lineIdx) => {
+    const cols = rawCols.map(c=>(c||'').trim());
     if(cols.every(c => !c)) return;
 
     // 헤더 감지 — 날짜/날파/차트/이름/분류 등 헤더 키워드 포함 행 스킵
