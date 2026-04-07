@@ -1583,12 +1583,13 @@ function calcMaterialCost(treatments, cfg2){
   return total;
 }
 
-function calcCommission(cat1, amount, cfg2){
+function calcCommission(cat1, amount, cfg2, percentOnly){
   var route=cfg2.routes[cat1];
   if(!route) return 0;
   var v=parseFloat(route.value)||0;
   if(route.type==='percent') return amount*(v/100);
-  return v; // fixed
+  if(percentOnly) return 0; // 일별: 고정 수수료 제외
+  return v; // fixed (월별만 적용)
 }
 
 function renderDailyAnalysis(items, cfg2, ym){
@@ -1616,8 +1617,8 @@ function renderDailyAnalysis(items, cfg2, ym){
       dayRevenue+=amt;
       dayCount++;
 
-      // 수수료 (에이전시 경로)
-      var comm=calcCommission(it.cat1||'', amt, cfg2);
+      // 수수료 (에이전시 경로) — 일별은 비율만 적용, 고정값 제외
+      var comm=calcCommission(it.cat1||'', amt, cfg2, true);
       dayCommission+=comm;
 
       // 재료비
@@ -1719,7 +1720,7 @@ function showDailyDetail(date){
 
   dayItems.forEach(function(it){
     var amt=(parseFloat(it.amount)||0)*10000;
-    var comm=calcCommission(it.cat1||'',amt,cfg2);
+    var comm=calcCommission(it.cat1||'',amt,cfg2,true);
     var mat=calcMaterialCost(it.treatments,cfg2);
     var net=amt-comm-mat;
     var treats=(it.treatments||[]).map(function(t){return t.item+'x'+t.qty}).join(', ')||'-';
