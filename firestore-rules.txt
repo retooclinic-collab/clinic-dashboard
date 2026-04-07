@@ -1,0 +1,70 @@
+// ===== Firestore Security Rules for clinic-dashboard =====
+// Firebase Console > Firestore > Rules 에 붙여넣기
+// 2026-04-06 업데이트
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 관리자 이메일
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'retooclinic@gmail.com';
+    }
+
+    // 인증된 사용자
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // consultations 컬렉션
+    match /consultations/{docId} {
+      // 읽기: 관리자는 전체, 직원은 최근 30일만
+      allow read: if isAdmin()
+        || (isAuthenticated() && resource.data.serverTs > request.time - duration.value(30, 'd'));
+
+      // 쓰기(생성): 인증된 사용자 모두 가능
+      allow create: if isAuthenticated();
+
+      // 수정: 인증된 사용자 (개별 수정/소프트삭제)
+      allow update: if isAuthenticated();
+
+      // 하드삭제: 관리자만
+      allow delete: if isAdmin();
+    }
+
+    // audit_log 컬렉션 (감사 로그)
+    match /audit_log/{docId} {
+      // 읽기: 관리자만
+      allow read: if isAdmin();
+      // 쓰기: 인증된 사용자 (로그 기록용)
+      allow create: if isAuthenticated();
+      // 수정/삭제: 불가
+      allow update, delete: if false;
+    }
+
+    // clinic_archive 컬렉션 (월별 아카이브)
+    match /clinic_archive/{docId} {
+      // 읽기/쓰기: 관리자만
+      allow read, write: if isAdmin();
+    }
+
+    // clinic_settings 컬렉션 (경영분석 설정: 재료비단가, 수수료율, 고정비)
+    match /clinic_settings/{docId} {
+      // 읽기/쓰기: 관리자만
+      allow read, write: if isAdmin();
+    }
+
+    // access_log 컬렉션 (접속 로그)
+    match /access_log/{docId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    // users 컬렉션 (직원 설정용, 향후 확장)
+    match /users/{uid} {
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
+    }
+  }
+}
