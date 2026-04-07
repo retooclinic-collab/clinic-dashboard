@@ -499,16 +499,25 @@ try {
     try { await deleteDoc(doc(col, label)); return true; }
     catch(e) { console.error('fbDelete:', e); return false; }
   };
-  window.fbListen = function(cb) {
+  window.fbListen = function(cb, _retries) {
+    var retries = _retries || 0;
     return onSnapshot(col, function(snap) {
       var arr = [];
       snap.forEach(function(d) { arr.push(d.data()); });
       arr.sort(function(a,b) { return (b.savedAt||'').localeCompare(a.savedAt||''); });
+      var st=document.getElementById('fb-status');
+      if(st && st.style.color==='rgb(239, 68, 68)'){st.textContent='☁ 연결됨';st.style.color='#38bdf8';}
       cb(arr);
     }, function(err) {
-      console.error('fbListen error:', err);
-      var st=document.getElementById('fb-status');
-      if(st){st.textContent='⚠ 연결 오류';st.style.color='#ef4444';}
+      console.error('fbListen error (attempt '+(retries+1)+'):', err);
+      if(retries < 3){
+        var delay = (retries+1)*1500;
+        console.log('fbListen retry in '+delay+'ms...');
+        setTimeout(function(){ window.fbListen(cb, retries+1); }, delay);
+      } else {
+        var st=document.getElementById('fb-status');
+        if(st){st.textContent='⚠ 연결 오류';st.style.color='#ef4444';}
+      }
     });
   };
 
@@ -2505,16 +2514,18 @@ renderArcList();renderCfgUI();render();renderBankSection();renderCardSection();r
 
 // Firebase 연결 후 실행될 함수 (onAuthStateChanged가 호출)
 window.onFbReady = function(){
-  // 아카이브 실시간 리스너
-  if(window.fbListen){
-    window.fbListen(function(arr){
-      G.arc=arr;
-      renderArcList();
-      renderCloudTab();
-    });
-  }
-  // Firebase에서 설정값 불러오기
-  if(window.fbLoadSettings){
+  // auth 토큰이 Firestore에 전파될 시간 확보 후 리스너 시작
+  setTimeout(function(){
+    // 아카이브 실시간 리스너
+    if(window.fbListen){
+      window.fbListen(function(arr){
+        G.arc=arr;
+        renderArcList();
+        renderCloudTab();
+      });
+    }
+    // Firebase에서 설정값 불러오기
+    if(window.fbLoadSettings){
     window.fbLoadSettings().then(function(cfg){
       if(!cfg) cfg={};
       if(!cfg.procedures||!Object.keys(cfg.procedures).length)cfg.procedures=Object.assign({},DEFAULT_PROCEDURES);
@@ -2531,6 +2542,7 @@ window.onFbReady = function(){
       renderCfgUI();renderFixedDisplay();renderSummary();
     });
   }
+  }, 500); // auth 토큰 전파 대기
 };
 
 window.addEventListener('fb-error', function(e){
