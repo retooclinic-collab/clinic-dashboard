@@ -1637,6 +1637,21 @@ function renderDailyPage(){
   html+='</tr></thead><tbody>';
 
   var prevDate='';
+  var dayAmt=0,dayComm=0,dayMat=0,dayCount=0;
+  function flushDaySummary(){
+    if(!dayCount) return '';
+    var dayNet=dayAmt-dayComm-dayMat;
+    var r='<tr style="background:#0c1222;border-bottom:2px solid #334155;">';
+    r+='<td style="padding:6px;font-size:11px;color:#64748b;font-weight:700;" colspan="3">소계 '+dayCount+'건</td>';
+    r+='<td style="padding:6px;text-align:right;color:#38bdf8;font-weight:700;font-size:12px;">'+formatW(dayAmt)+'</td>';
+    r+='<td style="padding:6px;text-align:right;color:#f97316;font-weight:600;font-size:11px;">'+(dayComm>0?formatW(dayComm):'-')+'</td>';
+    r+='<td style="padding:6px;text-align:right;color:#a78bfa;font-weight:600;font-size:11px;">'+(dayMat>0?formatW(dayMat):'-')+'</td>';
+    r+='<td style="padding:6px;text-align:right;color:'+(dayNet>=0?'#22c55e':'#ef4444')+';font-weight:700;font-size:12px;">'+formatW(dayNet)+'</td>';
+    r+='<td colspan="3"></td></tr>';
+    dayAmt=0;dayComm=0;dayMat=0;dayCount=0;
+    return r;
+  }
+
   pageItems.forEach(function(it,idx){
     var amt=(parseFloat(it.amount)||0)*10000;
     var comm=calcCommission(it.cat1||'',amt,cfg2,true);
@@ -1645,13 +1660,19 @@ function renderDailyPage(){
     var treats=(it.treatments||[]).map(function(t){return t.item+'x'+t.qty}).join(', ')||'-';
     var d=it.date||'-';
     var showDate=(d!==prevDate);
+
+    // 날짜 변경 시 이전 날짜 소계 삽입
+    if(showDate && prevDate) html+=flushDaySummary();
     prevDate=d;
+
+    dayAmt+=amt; dayComm+=comm; dayMat+=mat; dayCount++;
+
     var pm=it.paymentMethods;
     var pay='-';
     if(Array.isArray(pm)) pay=pm.map(function(p){return typeof p==='string'?p:(p.method||'')}).join('/')||'-';
     else if(typeof pm==='string') pay=pm||'-';
 
-    var borderStyle=showDate&&idx>0?'border-top:2px solid #334155;':'border-bottom:1px solid #1e293b;';
+    var borderStyle=showDate?'border-top:2px solid #475569;':'border-bottom:1px solid #1e293b;';
     html+='<tr style="'+borderStyle+'">';
     html+='<td style="padding:7px 6px;color:'+(showDate?'#e2e8f0':'#475569')+';font-weight:'+(showDate?'700':'400')+';white-space:nowrap;font-size:12px;">'+(showDate?d:'')+'</td>';
     html+='<td style="padding:7px 6px;color:#e2e8f0;white-space:nowrap;">'+((it.name||'-'))+'</td>';
@@ -1665,6 +1686,8 @@ function renderDailyPage(){
     html+='<td style="padding:7px 6px;color:#94a3b8;white-space:nowrap;font-size:11px;">'+pay+'</td>';
     html+='</tr>';
   });
+  // 마지막 날짜 소계
+  html+=flushDaySummary();
   html+='</tbody></table>';
   document.getElementById('daily-table-wrap').innerHTML=html;
 

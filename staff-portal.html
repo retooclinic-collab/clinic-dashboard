@@ -1773,11 +1773,11 @@ function removeTreatment(idx){
 
 /* ── 결제금액 추출 (m/M/만원/만 모두 처리) ── */
 function extractAmount(text){
-  // =숫자m/M/만원/만 패턴
-  const m = text.match(/[=＝]\s*([\d,]+\.?\d*)\s*(?:[mM만](?:원)?)/);
+  // =숫자m/M/만원/만 패턴 (마이너스 허용)
+  const m = text.match(/[=＝]\s*(-?[\d,]+\.?\d*)\s*(?:[mM만](?:원)?)/);
   if(m) return parseFloat(m[1].replace(/,/g,''));
   // (가격)/결제방식 패턴: 제네시스PTT(38.5)/카
-  const m2 = text.match(/\(([\d.]+)\)\s*\/\s*(?:카|현|알|위|이체)/i);
+  const m2 = text.match(/\((-?[\d.]+)\)\s*\/\s*(?:카|현|알|위|이체)/i);
   if(m2) return parseFloat(m2[1]);
   return null;
 }
