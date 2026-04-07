@@ -1646,7 +1646,10 @@ function renderDailyPage(){
     var d=it.date||'-';
     var showDate=(d!==prevDate);
     prevDate=d;
-    var pay=(it.paymentMethods||[]).map(function(p){return p.method}).join('/')||'-';
+    var pm=it.paymentMethods;
+    var pay='-';
+    if(Array.isArray(pm)) pay=pm.map(function(p){return typeof p==='string'?p:(p.method||'')}).join('/')||'-';
+    else if(typeof pm==='string') pay=pm||'-';
 
     var borderStyle=showDate&&idx>0?'border-top:2px solid #334155;':'border-bottom:1px solid #1e293b;';
     html+='<tr style="'+borderStyle+'">';
