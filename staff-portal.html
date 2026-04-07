@@ -355,8 +355,9 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           </div>
           <div class="treatment-list" id="treatment-list"></div>
           <div class="parse-raw" id="parse-raw-text" style="display:none"></div>
-          <button onclick="addManualTreatment()" style="margin-top:10px;background:none;border:1.5px dashed var(--border);border-radius:10px;width:100%;padding:10px;color:var(--muted);cursor:pointer;font-size:13px">+ 시술 직접 추가</button>
         </div>
+        <!-- 시술 직접 추가 버튼 (파싱 전에도 항상 보임) -->
+        <button onclick="addManualTreatment()" style="margin-top:10px;background:none;border:1.5px dashed var(--border);border-radius:10px;width:100%;padding:10px;color:var(--muted);cursor:pointer;font-size:13px">+ 시술 직접 추가</button>
 
         <!-- 결제금액 -->
         <div class="form-group" id="amount-wrap">
@@ -694,7 +695,6 @@ function renderRecentEntries(items){
   const el = document.getElementById('recent-entries-list');
   if(!el) return;
   const visible = (items||[]).filter(it => !it.deleted);
-  // 최근 3일 계산
   const dates = [...new Set(visible.map(it=>it.date||''))].filter(Boolean).sort((a,b)=>b.localeCompare(a));
   const recent3 = dates.slice(0, 3);
   if(!recent3.length){ el.innerHTML='<div style="color:var(--muted);padding:8px 0">저장된 내역이 없어요</div>'; return; }
@@ -703,23 +703,46 @@ function renderRecentEntries(items){
   recent3.forEach(date=>{
     const dayItems = filtered.filter(it=>it.date===date);
     const dayTotal = dayItems.filter(it=>it.type!=='vip').reduce((s,it)=>s+(parseFloat(it.amount)||0), 0);
-    html += `<div style="margin-bottom:10px">
+    html += `<div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--accent);padding:4px 0;border-bottom:1px solid var(--border);margin-bottom:4px">
         📅 ${date} <span style="color:var(--muted);font-weight:400">${dayItems.length}건</span>
         <span style="color:var(--green);font-weight:700;margin-left:8px">${Math.round(dayTotal).toLocaleString()}만원</span>
-      </div>`;
+      </div>
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table style="width:100%;min-width:600px;border-collapse:collapse;font-size:11px">
+          <thead><tr style="border-bottom:1px solid var(--border)">
+            <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">이름</th>
+            <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">분류</th>
+            <th style="text-align:right;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">금액</th>
+            <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">시술항목</th>
+            <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">의사</th>
+            <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">결제방식</th>
+            <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">상담자</th>
+          </tr></thead><tbody>`;
     dayItems.forEach(it=>{
       const isVip = it.type==='vip';
       const amt = parseFloat(it.amount)||0;
-      html += `<div style="display:flex;justify-content:space-between;padding:3px 4px;font-size:11px;border-bottom:1px solid #1a2236">
-        <span style="color:var(--text)">${it.name||'-'}
-          ${isVip?'<span style="font-size:9px;background:#2a1f00;color:var(--yellow);border-radius:10px;padding:1px 5px;margin-left:3px">VIP</span>':''}
-          <span style="color:var(--muted);margin-left:6px">${it.cat1||''}</span>
-        </span>
-        <span style="color:${isVip?'var(--muted)':'var(--accent)'};font-weight:${isVip?'400':'600'}">${isVip?'-':amt.toLocaleString()+'만'}</span>
-      </div>`;
+      // 시술항목
+      const treats = (it.treatments||[]).map(t=>`${t.item}×${t.qty}`).join(', ') || '-';
+      // 결제방식
+      let payStr = '-';
+      const pm = it.payMethods || it.payMethod || {};
+      if(typeof pm === 'string'){ payStr = pm; }
+      else if(pm.items?.length > 0){ payStr = pm.items.map(i=>{ const m=(i.method||'').replace('알리페이','알리'); return i.amt?`${m} ${i.amt}`:m; }).join('+'); }
+      else if(pm.splitDetails?.length > 0){ payStr = pm.splitDetails.map(d=>`${(d.method||'').replace('알리페이','알리')} ${d.amt||''}`).join('+'); }
+      else if(pm.methods?.length > 0){ payStr = pm.methods.map(m=>(m||'').replace('알리페이','알리')).join('/'); }
+      else if(pm.method){ payStr = pm.method; }
+      html += `<tr style="border-bottom:1px solid #1a2236">
+        <td style="padding:4px 6px;white-space:nowrap;color:var(--text)">${it.name||'-'}${isVip?'<span style="font-size:9px;background:#2a1f00;color:var(--yellow);border-radius:10px;padding:1px 5px;margin-left:3px">VIP</span>':''}</td>
+        <td style="padding:4px 6px;white-space:nowrap;color:var(--muted)">${it.cat1||''}</td>
+        <td style="padding:4px 6px;text-align:right;white-space:nowrap;color:${isVip?'var(--muted)':'var(--accent)'};font-weight:${isVip?'400':'600'}">${isVip?'-':amt.toLocaleString()+'만'}</td>
+        <td style="padding:4px 6px;color:var(--sub);max-width:180px;word-break:break-all">${treats}</td>
+        <td style="padding:4px 6px;white-space:nowrap;color:var(--muted)">${it.doctor||'-'}</td>
+        <td style="padding:4px 6px;white-space:nowrap;color:var(--sub)">${payStr}</td>
+        <td style="padding:4px 6px;white-space:nowrap;color:var(--muted)">${it.staff||'-'}</td>
+      </tr>`;
     });
-    html += '</div>';
+    html += '</tbody></table></div></div>';
   });
   el.innerHTML = html;
 }
@@ -1304,7 +1327,7 @@ function localParse(raw){
   const rjEye = raw.match(/(?:아이리쥬란|리쥬란아이|리쥬란\s*e\s*아이)\s*(\d+)\s*cc/i);
   if(rjEye) results.push({item:'리쥬란아이', qty: parseInt(rjEye[1])});
   // 미라젯리쥬란 콤보가 있을 경우 단독 리쥬란 파서는 스킵 (콤보에서 처리)
-  const hasMjRjCombo = /미라젯\s*리쥬란/i.test(raw);
+  const hasMjRjCombo = /미라젯\s*리쥬란/i.test(raw) || /미라젯\s*\([^)]*리쥬란/i.test(raw);
   const rjNorm = raw.match(/리쥬란\s*(\d+)\s*cc/i);
   if(rjNorm && !rjHB && !hasMjRjCombo) {
     const cc = parseInt(rjNorm[1]);
@@ -1323,24 +1346,24 @@ function localParse(raw){
   } else if(/힐로웨이브/i.test(raw)) results.push({item:'힐로웨이브', qty:1});
 
   // ── 미라젯 조합 시술 (순서 중요: 조합 먼저 체크) ──
-  const hasMjRjHB = /미라젯\s*리쥬란\s*hb/i.test(raw);
-  const hasMjRj = /미라젯\s*리쥬란(?!\s*hb)/i.test(raw);
-  const hasMjJbv = /미라젯\s*쥬베룩/i.test(raw);
-  const hasMjJba = /미라젯\s*쥬브아셀/i.test(raw);
-  const hasMjLto = /미라젯\s*리투오/i.test(raw);
+  const hasMjRjHB = /미라젯\s*리쥬란\s*hb/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*hb/i.test(raw);
+  const hasMjRj = (/미라젯\s*리쥬란(?!\s*hb)/i.test(raw) || /미라젯\s*\([^)]*리쥬란(?!\s*hb)/i.test(raw)) && !hasMjRjHB;
+  const hasMjJbv = /미라젯\s*쥬베룩/i.test(raw) || /미라젯\s*\([^)]*쥬베룩/i.test(raw);
+  const hasMjJba = /미라젯\s*쥬브아셀/i.test(raw) || /미라젯\s*\([^)]*쥬브아셀/i.test(raw);
+  const hasMjLto = /미라젯\s*리투오/i.test(raw) || /미라젯\s*\([^)]*리투오/i.test(raw);
 
   if(hasMjRjHB){
     results.push({item:'미라젯', qty:1});
-    const cc = raw.match(/미라젯\s*리쥬란\s*hb\s*(\d+)\s*cc/i);
+    const cc = raw.match(/미라젯\s*리쥬란\s*hb\s*(\d+)\s*cc/i) || raw.match(/미라젯\s*\([^)]*리쥬란\s*hb\s*(\d+)\s*cc/i);
     results.push({item:'리쥬란HB', qty: cc?parseInt(cc[1]):1});
   }
   if(hasMjRj){
     results.push({item:'미라젯', qty:1});
-    const cc = raw.match(/미라젯\s*리쥬란\s*(\d+)\s*cc/i);
+    const cc = raw.match(/미라젯\s*리쥬란\s*(\d+)\s*cc/i) || raw.match(/미라젯\s*\([^)]*리쥬란\s*(\d+)\s*cc/i);
     results.push({item:'리쥬란', qty: cc?Math.round(parseInt(cc[1])/2):1});
   }
   if(hasMjJbv){
-    const m = raw.match(/미라젯\s*쥬베룩\s*(\d+)\s*회/i);
+    const m = raw.match(/미라젯\s*쥬베룩\s*(\d+)\s*회/i) || raw.match(/미라젯\s*\([^)]*쥬베룩\s*(\d+)\s*회/i);
     results.push({item:'미라젯쥬베룩', qty: m?parseInt(m[1]):1});
   }
   if(hasMjJba){
@@ -1383,7 +1406,7 @@ function localParse(raw){
   else if(/쥬베룩아이/i.test(raw)) results.push({item:'쥬베룩아이', qty:1});
 
   // ── 쥬베룩 (단독, 볼륨/아이가 아닌 일반 쥬베룩) ──
-  if(!(/쥬베룩볼륨/i.test(raw)) && !(/쥬베룩아이/i.test(raw))){
+  if(!(/쥬베룩볼륨/i.test(raw)) && !(/쥬베룩아이/i.test(raw)) && !hasMjJbv){
     const jbCc = raw.match(/쥬베룩\s*(\d+)\s*cc/i);
     const jbBottle = raw.match(/쥬베룩\s*(\d+)\s*병/i);
     const jbQtyM = raw.match(/쥬베룩\s*(\d+)\s*회/i);
