@@ -443,7 +443,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
   <div class="mbox">
     <h3 style="font-size:17px;font-weight:700;margin-bottom:4px;">월별 데이터 저장</h3>
     <p style="font-size:12px;color:#64748b;margin-bottom:16px;">분석 결과를 아카이브에 저장해요. 해당 월을 선택해주세요.</p>
-    <div class="mfield"><label>저장 월</label><input type="month" id="save-month" style="background:#0f172a;border:1px solid #334155;border-radius:8px;color:#f1f5f9;padding:8px 12px;font-size:13px;outline:none;width:100%"></div>
+    <div class="mfield"><label>저장 월</label><input type="month" id="save-month" style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;color:#1a2035;padding:8px 12px;font-size:13px;outline:none;width:100%"></div>
     <div class="mfield"><label>저장 이름 (자동생성)</label><input type="text" id="save-lbl" placeholder="예: 2025년 3월"></div>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-o" onclick="closeSaveMdl()">취소</button>
@@ -606,6 +606,21 @@ try {
       alert('비밀번호 초기화 실패: ' + e.message);
       return false;
     }
+  };
+
+  // ── 직원 목록 Firestore 관리 ──
+  window.fbLoadStaffList = async function() {
+    try {
+      const d = await getDoc(doc(db, 'clinic_settings', 'staff_list'));
+      if(d.exists()) return d.data().staffs || [];
+      return null; // 아직 Firestore에 없음 → 기본값 사용
+    } catch(e) { console.error('loadStaffList:', e); return null; }
+  };
+  window.fbSaveStaffList = async function(staffs) {
+    try {
+      await setDoc(doc(db, 'clinic_settings', 'staff_list'), { staffs: staffs, updatedAt: new Date().toISOString() });
+      return true;
+    } catch(e) { console.error('saveStaffList:', e); alert('저장 실패: '+e.message); return false; }
   };
 
   // ── 접속 로그 조회 ──
@@ -2744,23 +2759,29 @@ function renderAdminTab(){
   loadAuditLog();
 }
 
-function renderStaffList(){
+var _staffAccounts = [
+  {name:'테스트직원', email:'progressio333@gmail.com', status:'활성'},
+  {name:'김구슬', email:'gs.kim@retooclinic.com', status:'대기'},
+  {name:'길연주', email:'yj.gil@retooclinic.com', status:'대기'},
+  {name:'김도은', email:'de.kim@retooclinic.com', status:'대기'},
+  {name:'호아신', email:'as.ho@retooclinic.com', status:'대기'},
+  {name:'장나은', email:'ne.jang@retooclinic.com', status:'대기'},
+];
+
+async function renderStaffList(){
   var container = document.getElementById('admin-staff-list');
   if(!container) return;
-  // 직원 계정 목록 (이메일은 Firebase Console에서 생성한 것과 일치해야 함)
-  var staffAccounts = [
-    {name:'테스트직원', email:'progressio333@gmail.com', status:'활성'},
-    {name:'김구슬', email:'gs.kim@retooclinic.com', status:'대기'},
-    {name:'길연주', email:'yj.gil@retooclinic.com', status:'대기'},
-    {name:'김도은', email:'de.kim@retooclinic.com', status:'대기'},
-    {name:'호아신', email:'as.ho@retooclinic.com', status:'대기'},
-    {name:'장나은', email:'ne.jang@retooclinic.com', status:'대기'},
-  ];
+  // Firestore에서 직원 목록 로드 시도
+  if(window.fbLoadStaffList){
+    var saved = await window.fbLoadStaffList();
+    if(saved && saved.length) _staffAccounts = saved;
+  }
   var html = '';
-  staffAccounts.forEach(function(s){
-    var statusStyle = s.status==='활성'
-      ? 'background:#ecfdf5;color:#059669;border:1px solid #a7f3d0'
-      : 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+  _staffAccounts.forEach(function(s, idx){
+    var isActive = s.status==='활성';
+    var statusStyle = isActive
+      ? 'background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;cursor:pointer'
+      : 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca;cursor:pointer';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;flex-wrap:wrap;gap:6px">'
       + '<div style="min-width:120px">'
       + '<div style="font-size:13px;font-weight:600;color:#1e293b;">' + s.name + '</div>'
@@ -2768,12 +2789,32 @@ function renderStaffList(){
       + '</div>'
       + '<div style="display:flex;gap:6px;align-items:center">'
       + '<button onclick="resetStaffPw(\'' + s.email + '\',\'' + s.name + '\')" style="font-size:10px;padding:4px 10px;background:#e2e8f0;color:#475569;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer">🔑 비번초기화</button>'
-      + '<span style="font-size:10px;padding:2px 10px;border-radius:10px;' + statusStyle + '">' + s.status + '</span>'
+      + '<button onclick="toggleStaffStatus('+idx+')" style="font-size:10px;padding:2px 10px;border-radius:10px;' + statusStyle + '">' + s.status + '</button>'
       + '</div>'
       + '</div>';
   });
-  html += '<div style="font-size:11px;color:#64748b;margin-top:6px">※ 이메일이 실제 Firebase Auth 계정과 다르면 위 목록을 코드에서 수정하세요</div>';
+  html += '<div style="display:flex;gap:6px;margin-top:8px;align-items:center;">'
+    + '<button onclick="addStaffAccount()" style="font-size:11px;padding:5px 12px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:6px;cursor:pointer">+ 직원 추가</button>'
+    + '<span style="font-size:11px;color:#94a3b8;">상태를 클릭하면 활성↔대기 전환됩니다</span>'
+    + '</div>';
   container.innerHTML = html;
+}
+
+async function toggleStaffStatus(idx){
+  if(idx<0||idx>=_staffAccounts.length) return;
+  _staffAccounts[idx].status = _staffAccounts[idx].status==='활성' ? '대기' : '활성';
+  if(window.fbSaveStaffList) await window.fbSaveStaffList(_staffAccounts);
+  renderStaffList();
+}
+
+async function addStaffAccount(){
+  var name = prompt('직원 이름:');
+  if(!name) return;
+  var email = prompt('Firebase Auth 등록 이메일:');
+  if(!email) return;
+  _staffAccounts.push({name:name.trim(), email:email.trim(), status:'대기'});
+  if(window.fbSaveStaffList) await window.fbSaveStaffList(_staffAccounts);
+  renderStaffList();
 }
 
 async function resetStaffPw(email, name){
