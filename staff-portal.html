@@ -572,11 +572,9 @@ onAuthStateChanged(auth, async user => {
       const listDel = document.getElementById('btn-list-delete-all');
       if(listDel) listDel.style.display='inline-block';
     } else {
-      // 직원: 전체삭제 제거, 일괄업로드 숨김, CSV 다운로드 숨김, 수납리스트 숨김
+      // 직원: 전체삭제 제거, CSV 다운로드 숨김, 수납리스트 숨김 (일괄업로드는 허용)
       const adminDel = document.getElementById('admin-delete-section');
       if(adminDel) adminDel.remove();
-      const importTab = document.getElementById('tab-import');
-      if(importTab) importTab.style.display='none';
       const csvBtn = document.getElementById('btn-csv-download');
       if(csvBtn) csvBtn.style.display='none';
       const listTab = document.getElementById('tab-list');
