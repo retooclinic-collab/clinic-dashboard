@@ -1117,6 +1117,41 @@ function extractTextPrices(raw, treatments){
     });
   });
 
+  // 콤마 그룹 기반 복합소계 감지:
+  // "소프150샷+티타늄40KJ(하관만)209" → +로 연결된 그룹에서 하나만 가격이 있으면 복합소계
+  // 콤마(괄호 밖)로 먼저 분리
+  const commaGroups = [];
+  { let depth=0, cur='';
+    for(let i=0;i<text.length;i++){
+      const c=text[i];
+      if(c==='(') depth++;
+      else if(c===')') depth--;
+      else if(c===','&&depth===0){ commaGroups.push(cur.trim()); cur=''; continue; }
+      cur+=c;
+    }
+    if(cur.trim()) commaGroups.push(cur.trim());
+  }
+  commaGroups.forEach(group=>{
+    if(!/\+/.test(group.replace(/\([^)]*\)/g,''))) return; // +가 없으면 스킵
+    // 이 그룹에 속한 시술 항목(fixedAmt 제외)
+    const groupItems = treatments.filter(t=>{
+      const kw = KEYWORDS[t.item];
+      return kw && t._fixedAmt===undefined && !t._balanceDeduct && kw.test(group);
+    });
+    if(groupItems.length < 2) return;
+    const withPrice = groupItems.filter(t=>found[t.item]!==undefined);
+    const withoutPrice = groupItems.filter(t=>found[t.item]===undefined);
+    if(withPrice.length===1 && withoutPrice.length>=1){
+      const p = found[withPrice[0].item];
+      const stdSum = groupItems.reduce((s,t)=>s+(CHARGE_PRICE[t.item]??0)*t.qty, 0);
+      // 가격이 해당 항목 표준가의 2배 이상이고 그룹 표준가합 범위 내면 복합소계
+      const itemStd = (CHARGE_PRICE[withPrice[0].item]??0)*withPrice[0].qty;
+      if(itemStd>0 && p > itemStd*2 && p <= stdSum*2){
+        delete found[withPrice[0].item]; // 복합소계 → 비율분배로 처리
+      }
+    }
+  });
+
   return {found, foundParen};
 }
 
@@ -1259,9 +1294,12 @@ function distributePrices(treatments, total, rawText){
       }
       // _balanceDeduct 있으면 free항목 표준가 그대로 유지
     } else {
-      // 모든 항목이 명시가 → 비율 조정으로 합계 맞춤
-      const scale = total / sum;
-      priced = priced.map(t=>({...t, price:Math.round(t.price*scale*100)/100}));
+      // 모든 항목이 명시가 → _balanceDeduct 있으면 스킵 (잔액계산에서 처리)
+      const hasBalDeduct3 = priced.some(t=>t._balanceDeduct);
+      if(!hasBalDeduct3){
+        const scale = total / sum;
+        priced = priced.map(t=>({...t, price:Math.round(t.price*scale*100)/100}));
+      }
     }
   }
 
@@ -2179,30 +2217,36 @@ function processBackupCSV(text){
   // BOM 제거
   text = text.replace(/^\uFEFF/, '');
 
-  // CSV 파싱 (따옴표 안의 콤마 처리)
-  function parseCSVLine(line){
-    const result = [];
-    let cur = '', inQ = false;
-    for(let i=0; i<line.length; i++){
-      const ch = line[i];
+  // CSV 파싱 — 멀티라인 따옴표 필드 지원
+  function parseCSVFull(text){
+    const rows = [];
+    let row = [], cur = '', inQ = false;
+    for(let i=0; i<text.length; i++){
+      const ch = text[i];
       if(ch==='"'){
-        if(inQ && line[i+1]==='"'){ cur+='"'; i++; }
+        if(inQ && text[i+1]==='"'){ cur+='"'; i++; }
         else inQ = !inQ;
       } else if(ch===',' && !inQ){
-        result.push(cur.trim()); cur='';
+        row.push(cur.trim()); cur='';
+      } else if((ch==='\r'||ch==='\n') && !inQ){
+        if(ch==='\r' && text[i+1]==='\n') i++;
+        row.push(cur.trim()); cur='';
+        if(row.some(c=>c)) rows.push(row);
+        row = [];
       } else {
         cur += ch;
       }
     }
-    result.push(cur.trim());
-    return result;
+    row.push(cur.trim());
+    if(row.some(c=>c)) rows.push(row);
+    return rows;
   }
 
-  const lines = text.split(/\r?\n/).filter(l=>l.trim());
-  if(!lines.length){ showToast('데이터가 없어요','error'); return; }
+  const rows = parseCSVFull(text);
+  if(!rows.length){ showToast('데이터가 없어요','error'); return; }
 
   // 헤더 파싱
-  const headers = parseCSVLine(lines[0]).map(h=>h.toLowerCase().trim());
+  const headers = rows[0].map(h=>h.toLowerCase().trim());
   const idx = {
     date:     headers.indexOf('날짜'),
     chart:    headers.indexOf('차트번호'),
@@ -2215,8 +2259,8 @@ function processBackupCSV(text){
     doctor:   headers.indexOf('진료의사'),
   };
 
-  for(let i=1; i<lines.length; i++){
-    const cols = parseCSVLine(lines[i]);
+  for(let i=1; i<rows.length; i++){
+    const cols = rows[i];
     if(!cols.length || cols.every(c=>!c)) continue;
 
     const get = (key) => (idx[key]>=0 ? (cols[idx[key]]||'').trim() : '');
