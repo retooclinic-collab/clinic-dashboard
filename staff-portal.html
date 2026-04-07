@@ -1609,12 +1609,18 @@ function localParse(raw){
   if(rtpM) results.push({item:'리투핏주사', qty: parseInt(rtpM[1])});
   else if(/리투핏주사/i.test(raw)) results.push({item:'리투핏주사', qty:1});
   if(/vip/i.test(raw) && !/vip재료/i.test(raw)){
-    // Nvip 패턴: 3000vip=3000m
-    const vipPriceM = raw.match(/([\d,]+(?:\.\d+)?)\s*vip/i);
-    // vip 선납금=Nm 패턴: vip가 먼저 오고 금액은 =뒤에
-    const vipTotal = extractAmount(raw) || 0;
-    const vipPrice = vipPriceM ? parseFloat(vipPriceM[1].replace(/,/g,'')) : vipTotal;
-    results.push({item:'VIP회원권', qty:1, _fixedAmt: vipPrice||0});
+    // VIP + 상세 시술 키워드가 함께 있는지 체크
+    const hasDetailTreatments = /울쎄라|소프|써마지|티타늄|리쥬란|미라젯|보톡스|쥬베룩|쥬브아셀|필러|포텐자|BBL|리투오/i.test(raw);
+    if(hasDetailTreatments){
+      // VIP회원권은 0원으로 카운팅만, 상세 시술은 이미 위에서 파싱됨
+      results.push({item:'VIP회원권', qty:1, _fixedAmt: 0});
+    } else {
+      // 단순 VIP: Nvip 패턴 또는 vip선납금=Nm
+      const vipPriceM = raw.match(/([\d,]+(?:\.\d+)?)\s*vip/i);
+      const vipTotal = extractAmount(raw) || 0;
+      const vipPrice = vipPriceM ? parseFloat(vipPriceM[1].replace(/,/g,'')) : vipTotal;
+      results.push({item:'VIP회원권', qty:1, _fixedAmt: vipPrice||0});
+    }
   }
   if(/상담비|상담만/i.test(raw)) results.push({item:'상담만', qty:1});
   // 예약금: "예약금=110m" 또는 단독 "예약금" 결제
@@ -2657,14 +2663,15 @@ function addManualTreatment(mode){
 
 function filterManualList(q){
   const list = document.getElementById('manual-list');
-  const filtered = q ? TREATMENT_ITEMS.filter(i=>i.includes(q)) : TREATMENT_ITEMS;
+  const ql = q.toLowerCase();
+  const filtered = q ? TREATMENT_ITEMS.filter(i=>i.toLowerCase().includes(ql)) : TREATMENT_ITEMS;
   let html = filtered.slice(0,30).map(item=>`
     <div onclick="selectManualItem('${item}')"
       style="padding:10px 12px;border-radius:8px;cursor:pointer;font-size:13px;background:${window._manualSelected===item?'#0c2a3a':'#0f172a'};border:1px solid ${window._manualSelected===item?'var(--accent)':'var(--border)'}">
       ${item}${item.includes('차감')||item==='환불'?'<span style="font-size:10px;color:var(--yellow);margin-left:6px">마이너스 가능</span>':''}
     </div>
   `).join('');
-  if(q && !TREATMENT_ITEMS.includes(q)){
+  if(q && !TREATMENT_ITEMS.some(i=>i.toLowerCase()===ql)){
     const isCustom = window._manualSelected === '__custom__:'+q;
     html += `
       <div onclick="selectManualItem('__custom__:${q}')"
