@@ -506,17 +506,28 @@ try {
       snap.forEach(function(d) { arr.push(d.data()); });
       arr.sort(function(a,b) { return (b.savedAt||'').localeCompare(a.savedAt||''); });
       var st=document.getElementById('fb-status');
-      if(st && st.style.color==='rgb(239, 68, 68)'){st.textContent='☁ 연결됨';st.style.color='#38bdf8';}
+      if(st){st.textContent='☁ 연결됨';st.style.color='#38bdf8';}
       cb(arr);
     }, function(err) {
-      console.error('fbListen error (attempt '+(retries+1)+'):', err);
+      console.error('fbListen error (attempt '+(retries+1)+'):', err.code, err.message);
       if(retries < 3){
-        var delay = (retries+1)*1500;
-        console.log('fbListen retry in '+delay+'ms...');
+        var delay = (retries+1)*2000;
         setTimeout(function(){ window.fbListen(cb, retries+1); }, delay);
       } else {
-        var st=document.getElementById('fb-status');
-        if(st){st.textContent='⚠ 연결 오류';st.style.color='#ef4444';}
+        // onSnapshot 실패 시 getDocs 1회성 로드로 대체
+        console.log('fbListen: falling back to getDocs...');
+        getDocs(col).then(function(snap){
+          var arr=[];
+          snap.forEach(function(d){arr.push(d.data());});
+          arr.sort(function(a,b){return (b.savedAt||'').localeCompare(a.savedAt||'');});
+          var st=document.getElementById('fb-status');
+          if(st){st.textContent='☁ 연결됨 (단방향)';st.style.color='#f59e0b';}
+          cb(arr);
+        }).catch(function(e2){
+          console.error('getDocs fallback also failed:', e2.code, e2.message);
+          var st=document.getElementById('fb-status');
+          if(st){st.textContent='⚠ 연결 오류: '+e2.code;st.style.color='#ef4444';}
+        });
       }
     });
   };
@@ -581,7 +592,12 @@ try {
     try {
       const snap = await getDoc(settingsDoc);
       return snap.exists() ? snap.data() : null;
-    } catch(e) { console.error('fbLoadSettings:', e); return null; }
+    } catch(e) {
+      console.error('fbLoadSettings error:', e.code, e.message);
+      var st=document.getElementById('fb-status');
+      if(st){st.textContent='⚠ 설정 로드 실패: '+e.code;st.style.color='#ef4444';}
+      return null;
+    }
   };
 
   window.dispatchEvent(new CustomEvent('fb-ready'));
