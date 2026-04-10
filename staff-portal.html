@@ -814,7 +814,7 @@ function handleDoctorChange(){
 
 /* ── 상담자 매핑 ── */
 const STAFF_MAP = {
-  '김':'김구슬', '길':'길연주', '명':'명재은', '도은':'김도은',
+  '김':'김구슬', '길':'길연주', '명':'명재은', '도':'김도은', '도은':'김도은',
   '장':'퇴사-장', '황':'퇴사-황', '나은':'장나은',
   '이':'퇴사-이', '공':'퇴사-공', '데스크':'데스크',
   '한빛':'퇴사-한빛', '유엄진':'퇴사-유엄진',
@@ -955,7 +955,7 @@ const CHARGE_PRICE = {
 function extractTextPrices(raw, treatments){
   // 최종 결제금액 + 이벤트 접두어 + 예약금제외 제거
   const text = raw
-    .replace(/^.*?vip\d+.*$/gim, '')                  // VIP 헤더줄 제거
+    .replace(/^\s*vip\s*\d+\s*[+=＝].*$/gim, '')       // VIP 헤더줄 제거 (VIP700=... 형태만)
     .replace(/^.*?(?:남은\s*금액|지인분|남음\s*$).*$/gim, '')  // 메모줄 제거
     .replace(/[=＝]\s*[\d.,]+\s*[mM만].*$/gim, '')    // =결제금액 제거 (각 줄별)
     .replace(/\d+월?[eE]\)?\s*/g, '')                 // 4월e) 3e) 등 제거
@@ -1024,7 +1024,7 @@ function extractTextPrices(raw, treatments){
     if(slashPrice){ const v=parseFloat(slashPrice[1]); if(v>=1&&v<3000) return v; }
     // 마지막 유효 숫자 (cc/샷/회/개/kj 뒤 제외, 영역번호 N-N,N 제외)
     const clean = seg2
-      .replace(/\d+\s*(?:cc|샷|회|개|kj|병|ml|분|m)/gi, '?')
+      .replace(/\d+\s*(?:cc|샷|회|개|kj|병|ml|분)/gi, '?')
       .replace(/\d+[-－]\d+[,\d]*/g, '?');  // 2-1,2 같은 영역번호 제거
     const nums = [...clean.matchAll(/([\d]+\.?\d*)/g)].map(m=>parseFloat(m[1]));
     const prices = nums.filter(n=>n>=1 && n<2000);
@@ -1860,6 +1860,12 @@ function localParse(raw){
     if(hasDetailTreatments){
       // VIP회원권은 0원으로 카운팅만, 상세 시술은 이미 위에서 파싱됨
       results.push({item:'VIP회원권', qty:1, _fixedAmt: 0});
+      // VIP N 할인 → 할인차감 항목 생성 (예: VIP300할인 → -300)
+      const vipDiscM = _origRaw.match(/vip\s*([\d.]+)\s*할인/i);
+      if(vipDiscM){
+        const vipDisc = parseFloat(vipDiscM[1]);
+        if(vipDisc > 0) results.push({item:'할인차감', qty:1, _deductAmt: -vipDisc});
+      }
     } else {
       // 단순 VIP: Nvip 패턴 또는 vip선납금=Nm
       const vipPriceM = _origRaw.match(/([\d,]+(?:\.\d+)?)\s*vip/i);
