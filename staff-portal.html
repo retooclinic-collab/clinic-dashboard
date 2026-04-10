@@ -2093,6 +2093,9 @@ function removeTreatment(idx){
 
 /* ── 결제금액 추출 (m/M/만원/만 모두 처리) ── */
 function extractAmount(text){
+  // → 숫자m 패턴 우선 (최종 결제금액): "= 264m(...) → 258.8m(알리)" → 258.8
+  const arrow = text.match(/→\s*(-?[\d,]+\.?\d*)\s*(?:[mM만](?:원)?)/);
+  if(arrow) return parseFloat(arrow[1].replace(/,/g,''));
   // =숫자m/M/만원/만 패턴 (마이너스 허용)
   const m = text.match(/[=＝]\s*(-?[\d,]+\.?\d*)\s*(?:[mM만](?:원)?)/);
   if(m) return parseFloat(m[1].replace(/,/g,''));
