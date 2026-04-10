@@ -1162,7 +1162,7 @@ function extractTextPrices(raw, treatments){
       const stdSum = groupItems.reduce((s,t)=>s+(CHARGE_PRICE[t.item]??0)*t.qty, 0);
       // 가격이 해당 항목 표준가의 2배 이상이고 그룹 표준가합 범위 내면 복합소계
       const itemStd = (CHARGE_PRICE[withPrice[0].item]??0)*withPrice[0].qty;
-      if(itemStd>0 && p > itemStd*2 && p <= stdSum*2){
+      if(itemStd>0 && p > itemStd*2 && p <= stdSum*2 && p >= stdSum*0.5){
         // 복합소계 → 표준가 비율로 그룹 내 분배
         groupItems.forEach(t=>{
           const std = (CHARGE_PRICE[t.item]??0)*t.qty;
