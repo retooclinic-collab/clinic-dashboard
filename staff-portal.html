@@ -1979,7 +1979,8 @@ async function parsePayment(){
     }
     const total = extracted || parseFloat(amountInput?.value) || 0;
     showParseResult(parsed, total);
-    // ── 결제방식 자동 추출 ──
+    // ── 결제방식 자동 추출 (재분석 시 초기화) ──
+    window._paymentMethods = null;
     const payInfo = extractPayment(text);
     showPaymentMethod(payInfo);
   } catch(e) {
@@ -3270,6 +3271,15 @@ async function submitConsultation(){
 
   if(!window._parsedTreatments || window._parsedTreatments.length===0){
     if(!confirm('시술 항목이 없습니다. 그래도 저장할까요?')) return;
+  }
+
+  // 결제방식 합계 검증
+  if(currentMode==='normal' && window._paymentMethods?.items?.length){
+    const pmSum = window._paymentMethods.items.reduce((s,i)=>s+(parseFloat(i.amt)||0), 0);
+    const pmDiff = Math.abs(Math.round((amount - pmSum)*100)/100);
+    if(pmDiff >= 0.1){
+      if(!confirm(`결제방식 합계(${pmSum}만)와 결제금액(${amount}만)이 ${pmDiff}만 차이납니다. 그래도 저장할까요?`)) return;
+    }
   }
 
   const btn = document.getElementById('submit-btn');
