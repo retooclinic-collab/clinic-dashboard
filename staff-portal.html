@@ -2114,33 +2114,64 @@ function extractPayment(text){
     const amt = refM ? -parseFloat(refM[1].replace(/,/g,'')) : 0;
     return { methods: ['이체(자진)'], splitDetails: [{method:'이체(자진)', amt}] };
   }
-  // 분할결제: (50현금+50카드+100위챗+129알리) 형태
-  const splitPattern = /\(([^)]+(?:현금|카드|위챗|알리|이체|자진)[^)]*)\)/gi;
-  const splitMatches = [...text.matchAll(splitPattern)];
+  // 금액m(결제방식) 패턴: =855.2m(위챗), →258.8m(알리), =170.5m(120현금자진+50.5카)
+  const amtPayPattern = /(?:→|[=＝])\s*([\d,.]+)\s*[mM만]?\s*\(([^)]+)\)/g;
+  const amtPayMatches = [...text.matchAll(amtPayPattern)];
 
   let methods = [];
   let splitDetails = [];
 
-  if(splitMatches.length > 0){
-    splitMatches.forEach(match => {
-      const inner = match[1];
-      // 숫자+방식 조합 찾기
-      const parts = inner.split(/[+,]/);
-      parts.forEach(part => {
-        const pm = part.match(/([\d.]+)\s*([^\d\s]+)/);
-        if(pm){
-          const amt = parseFloat(pm[1]);
-          const method = normalizePayMethod(pm[2]);
-          if(method && amt > 0){
-            splitDetails.push({method, amt});
-            if(!methods.includes(method)) methods.push(method);
-          }
-        } else {
-          const method = normalizePayMethod(part.trim());
-          if(method && !methods.includes(method)) methods.push(method);
+  // 마지막 금액(결제방식) 패턴 사용 (→ 우선, 없으면 마지막 =)
+  const lastAmtPay = amtPayMatches.length > 0 ? amtPayMatches[amtPayMatches.length - 1] : null;
+  if(lastAmtPay){
+    const totalAmt = parseFloat(lastAmtPay[1].replace(/,/g,''));
+    const inner = lastAmtPay[2];
+    // 분할결제: (120현금자진+50.5카) 형태
+    const parts = inner.split(/[+,\/]/);
+    parts.forEach(part => {
+      const pm = part.match(/([\d.]+)\s*([^\d\s]+)/);
+      if(pm){
+        const amt = parseFloat(pm[1]);
+        const method = normalizePayMethod(pm[2]);
+        if(method && amt > 0){
+          splitDetails.push({method, amt});
+          if(!methods.includes(method)) methods.push(method);
         }
-      });
+      } else {
+        const method = normalizePayMethod(part.trim());
+        if(method && !methods.includes(method)) methods.push(method);
+      }
     });
+    // 단일 결제방식이면 전체 금액 자동 채우기
+    if(methods.length === 1 && splitDetails.length === 0 && totalAmt > 0){
+      splitDetails.push({method: methods[0], amt: totalAmt});
+    }
+  }
+
+  // 분할결제 폴백: (50현금+50카드+100위챗+129알리) 형태 (금액 없는 괄호)
+  if(methods.length === 0){
+    const splitPattern = /\(([^)]+(?:현금|카드|위챗|알리|이체|자진)[^)]*)\)/gi;
+    const splitMatches = [...text.matchAll(splitPattern)];
+    if(splitMatches.length > 0){
+      splitMatches.forEach(match => {
+        const inner = match[1];
+        const parts = inner.split(/[+,]/);
+        parts.forEach(part => {
+          const pm = part.match(/([\d.]+)\s*([^\d\s]+)/);
+          if(pm){
+            const amt = parseFloat(pm[1]);
+            const method = normalizePayMethod(pm[2]);
+            if(method && amt > 0){
+              splitDetails.push({method, amt});
+              if(!methods.includes(method)) methods.push(method);
+            }
+          } else {
+            const method = normalizePayMethod(part.trim());
+            if(method && !methods.includes(method)) methods.push(method);
+          }
+        });
+      });
+    }
   }
 
   // 단순 패턴: (카) (위챗) (알리) 등
