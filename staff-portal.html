@@ -2142,11 +2142,13 @@ function extractPayment(text){
   if(lastAmtPay){
     const totalAmt = parseFloat(lastAmtPay[1].replace(/,/g,''));
     const inner = lastAmtPay[2];
-    // 분할결제: (120현금자진+50.5카) 형태
+    // 분할결제: (120현금자진+50.5카), (400카+나머지알리) 형태
     const parts = inner.split(/[+,\/]/);
+    let remainderMethod = null; // "나머지" 키워드용
     parts.forEach(part => {
+      const isRemainder = /나머지/.test(part);
       const pm = part.match(/([\d.]+)\s*([^\d\s]+)/);
-      if(pm){
+      if(pm && !isRemainder){
         const amt = parseFloat(pm[1]);
         const method = normalizePayMethod(pm[2]);
         if(method && amt > 0){
@@ -2154,10 +2156,21 @@ function extractPayment(text){
           if(!methods.includes(method)) methods.push(method);
         }
       } else {
-        const method = normalizePayMethod(part.trim());
-        if(method && !methods.includes(method)) methods.push(method);
+        const cleaned = part.replace(/나머지\s*/g, '').trim();
+        const method = normalizePayMethod(cleaned);
+        if(method){
+          if(isRemainder) remainderMethod = method;
+          else splitDetails.push({method, amt: 0});
+          if(!methods.includes(method)) methods.push(method);
+        }
       }
     });
+    // "나머지" 자동 계산: totalAmt - 명시금액합
+    if(remainderMethod && totalAmt > 0){
+      const knownSum = splitDetails.reduce((s,d)=>s+(d.amt||0), 0);
+      const remainAmt = Math.round((totalAmt - knownSum)*100)/100;
+      if(remainAmt > 0) splitDetails.push({method: remainderMethod, amt: remainAmt});
+    }
     // 단일 결제방식이면 전체 금액 자동 채우기
     if(methods.length === 1 && splitDetails.length === 0 && totalAmt > 0){
       splitDetails.push({method: methods[0], amt: totalAmt});
@@ -3182,6 +3195,10 @@ function showPaymentMethod(payInfo){
   if(!pm.items){
     if(pm.splitDetails && pm.splitDetails.length > 0){
       pm.items = pm.splitDetails.map(d=>({method:d.method, amt:d.amt||0}));
+      // splitDetails에 없지만 methods에 있는 결제방식도 추가
+      (pm.methods||[]).forEach(m=>{
+        if(!pm.items.some(i=>i.method===m)) pm.items.push({method:m, amt:0});
+      });
     } else {
       pm.items = (pm.methods||[]).map(m=>({method:m, amt:0}));
       // 결제방식 1개면 총 결제금액 자동 채우기
