@@ -1172,6 +1172,54 @@ function extractTextPrices(raw, treatments){
     }
   });
 
+  // 인접 세그먼트 쌍 복합소계 감지:
+  // "소프150샷+티타늄40kj 209m+소프50샷 60.5m" → 티타늄 209가 소프+티타 묶음가
+  // 세그먼트 순서대로 검사: 가격없는 세그먼트 바로 뒤에 가격>2x인 세그먼트가 오면 묶음
+  for(let i=1; i<segments.length; i++){
+    const prevSeg = segments[i-1];
+    const curSeg = segments[i];
+    // 현재 세그먼트에서 가격이 있는 항목 찾기
+    const curOuter = curSeg.replace(/\([^)]*\)/g,' ').trim();
+    let curItem = null;
+    treatments.forEach(t=>{
+      const kw = KEYWORDS[t.item];
+      if(kw && found[t.item]!==undefined && kw.test(curOuter)) curItem = t;
+    });
+    if(!curItem) continue;
+    const p = found[curItem.item];
+    const curStd = (CHARGE_PRICE[curItem.item]??0)*curItem.qty;
+    if(curStd<=0 || p <= curStd*2) continue; // 2배 이하면 개별가격으로 판단
+    // 이전 세그먼트에서 해당 세그먼트 내에 가격이 없는 항목 찾기
+    const prevOuter = prevSeg.replace(/\([^)]*\)/g,' ').trim();
+    const prevSegPrice = getPrice(prevOuter);
+    let prevItem = null;
+    treatments.forEach(t=>{
+      const kw = KEYWORDS[t.item];
+      if(kw && kw.test(prevOuter) && prevSegPrice===null) prevItem = t;
+    });
+    if(!prevItem) continue;
+    // 이전 세그먼트에서 해당 부분의 수량 추출 (소프150샷 → 3, 울쎄라200샷 → 2 등)
+    const prevShotM = prevOuter.match(/(\d+)\s*샷/i);
+    const prevSegQty = prevShotM ? Math.round(parseInt(prevShotM[1])/50) : prevItem.qty;
+    // 소프/울쎄라는 50/100샷 단위
+    const unitSize = /울쎄라/i.test(prevItem.item) ? 100 : 50;
+    const adjPrevQty = prevShotM ? Math.round(parseInt(prevShotM[1])/unitSize) : prevItem.qty;
+    const prevStd = (CHARGE_PRICE[prevItem.item]??0)*adjPrevQty;
+    const pairStdSum = curStd + prevStd;
+    if(pairStdSum>0 && p >= pairStdSum*0.4 && p <= pairStdSum*2){
+      // 묶음가 → 비율 분배
+      const curShare = Math.round(p * curStd / pairStdSum * 100)/100;
+      const prevShare = Math.round(p * prevStd / pairStdSum * 100)/100;
+      found[curItem.item] = curShare;
+      // prevItem에 이미 다른 세그먼트 가격이 있으면 합산, 없으면 새로 설정
+      if(found[prevItem.item]!==undefined){
+        found[prevItem.item] = Math.round((found[prevItem.item] + prevShare)*100)/100;
+      } else {
+        found[prevItem.item] = prevShare;
+      }
+    }
+  }
+
   return {found, foundParen};
 }
 
