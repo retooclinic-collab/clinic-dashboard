@@ -1017,8 +1017,9 @@ function extractTextPrices(raw, treatments){
       .replace(/[-－]\s*[가-힣]{1,6}[\d.]+\s*(?:차감|제외|공제)?/g, '')
       // -남은/잔여/예약금제외
       .replace(/[-－]\s*(?:남은|잔여|예약금제외)\S*/g, '')
-      // -25할인 등 할인 패턴 제거
-      .replace(/[-－]\s*[\d.]+\s*할인/gi, '');
+      // -25할인, 추가1.9m할인 등 할인 패턴 제거
+      .replace(/[-－]\s*[\d.]+\s*[mM만]?\s*할인/gi, '')
+      .replace(/추가\s*[\d.]+\s*[mM만]?\s*할인/gi, '');
     // /숫자 형식 (예: 울쎄라300/191.4)
     const slashPrice = seg2.match(/\/\s*([\d]+\.?\d*)/);
     if(slashPrice){ const v=parseFloat(slashPrice[1]); if(v>=1&&v<3000) return v; }
@@ -1484,7 +1485,8 @@ function localParse(raw){
   }
 
   // ── -N할인 패턴 (예: -25할인) ──
-  const discountMatches = [...raw.matchAll(/[-－]\s*([\d.]+)\s*할인/gi)];
+  // -N할인, -Nm할인, 추가Nm할인 모두 매칭
+  const discountMatches = [...raw.matchAll(/(?:[-－]|추가)\s*([\d.]+)\s*[mM만]?\s*할인/gi)];
   let totalDiscount = 0;
   discountMatches.forEach(m=>{
     // 기존 차감패턴과 겹치지 않는 경우만
@@ -1930,8 +1932,9 @@ function localParse(raw){
   }
   if(/상담비|상담만/i.test(raw)) results.push({item:'상담만', qty:1});
   // 예약금제외: 금액 명시 시 해당 금액, 미명시 시 -3.3 기본값
-  if(/예약금\s*(?:[\d.]+\s*[mM만]?\s*)?제외|예약금\s*없|-\s*예약금/i.test(raw)){
-    const ybM = raw.match(/예약금\s*([\d.]+)\s*[mM만]?\s*(?:제외|없)/i);
+  // "예약금 3.3m" (금액+m/만 있으면 제외 없어도 예약금제외로 인식)
+  if(/예약금\s*(?:[\d.]+\s*[mM만]?\s*)?제외|예약금\s*없|-\s*예약금|예약금\s*[\d.]+\s*[mM만]/i.test(raw)){
+    const ybM = raw.match(/예약금\s*([\d.]+)\s*[mM만]?\s*(?:제외|없)?/i);
     const ybAmt = ybM ? parseFloat(ybM[1]) : 3.3;
     results.push({item:'예약금제외', qty:1, _fixedAmt: -ybAmt});
   }
