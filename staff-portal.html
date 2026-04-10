@@ -735,7 +735,15 @@ function renderRecentEntries(items){
   let html = '';
   recent3.forEach(date=>{
     const dayItems = filtered.filter(it=>it.date===date);
-    const dayTotal = dayItems.filter(it=>it.type!=='vip').reduce((s,it)=>s+(parseFloat(it.amount)||0), 0);
+    const dayTotal = dayItems.filter(it=>it.type!=='vip').reduce((s,it)=>{
+      let amt = parseFloat(it.amount)||0;
+      // 환불: amount=0이면 treatments에서 환불 금액 가져오기 (기존 데이터 호환)
+      if(amt===0 && it.treatments?.length){
+        const refund = it.treatments.find(t=>t.item==='환불');
+        if(refund) amt = refund.price||0;
+      }
+      return s + amt;
+    }, 0);
     html += `<div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--accent);padding:4px 0;border-bottom:1px solid var(--border);margin-bottom:4px">
         📅 ${date} <span style="color:var(--muted);font-weight:400">${dayItems.length}건</span>
@@ -754,7 +762,12 @@ function renderRecentEntries(items){
           </tr></thead><tbody>`;
     dayItems.forEach(it=>{
       const isVip = it.type==='vip';
-      const amt = parseFloat(it.amount)||0;
+      let amt = parseFloat(it.amount)||0;
+      // 환불: amount=0이면 treatments에서 환불 금액 가져오기
+      if(amt===0 && it.treatments?.length){
+        const refund = it.treatments.find(t=>t.item==='환불');
+        if(refund) amt = refund.price||0;
+      }
       // 시술항목
       const treats = (it.treatments||[]).map(t=>`${t.item}×${t.qty}`).join(', ') || '-';
       // 결제방식
@@ -2103,6 +2116,9 @@ function extractAmount(text){
   // (가격)/결제방식 패턴: 제네시스PTT(38.5)/카
   const m2 = text.match(/\((-?[\d.]+)\)\s*\/\s*(?:카|현|알|위|이체)/i);
   if(m2) return parseFloat(m2[1]);
+  // N만원 폴백 (환불 등 = 없는 케이스): -19.8만원
+  const m3 = text.match(/(-?[\d,]+\.?\d*)\s*만\s*원/);
+  if(m3) return parseFloat(m3[1].replace(/,/g,''));
   return null;
 }
 
