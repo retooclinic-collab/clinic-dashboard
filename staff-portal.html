@@ -747,7 +747,7 @@ function renderRecentEntries(items){
     html += `<div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--accent);padding:4px 0;border-bottom:1px solid var(--border);margin-bottom:4px">
         📅 ${date} <span style="color:var(--muted);font-weight:400">${dayItems.length}건</span>
-        <span style="color:var(--green);font-weight:700;margin-left:8px">${Math.round(dayTotal).toLocaleString()}만원</span>
+        <span style="color:var(--green);font-weight:700;margin-left:8px">${(Math.round(dayTotal*100)/100).toLocaleString()}만원</span>
       </div>
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
         <table style="width:100%;min-width:600px;border-collapse:collapse;font-size:11px">
@@ -3488,13 +3488,13 @@ function renderStatsPanel(){
     sorted.forEach(([name, data]) => {
       html += `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;border-bottom:1px solid #1a2236">
         <span style="color:var(--text)">${name}</span>
-        <span><span style="color:var(--muted)">${data.count}건</span> <span style="color:var(--green);font-weight:700;margin-left:6px">${Math.round(data.total).toLocaleString()}만원</span></span>
+        <span><span style="color:var(--muted)">${data.count}건</span> <span style="color:var(--green);font-weight:700;margin-left:6px">${(Math.round(data.total*100)/100).toLocaleString()}만원</span></span>
       </div>`;
     });
     const grandTotal = sorted.reduce((s,e) => s + e[1].total, 0);
     html += `<div style="display:flex;justify-content:space-between;padding:6px 0 2px;font-size:12px;font-weight:700;border-top:2px solid var(--border);margin-top:4px">
       <span style="color:var(--accent)">합계</span>
-      <span style="color:var(--accent)">${Math.round(grandTotal).toLocaleString()}만원</span>
+      <span style="color:var(--accent)">${(Math.round(grandTotal*100)/100).toLocaleString()}만원</span>
     </div></div>`;
     return html;
   };
@@ -3579,7 +3579,7 @@ function renderHistory(items){
       <td colspan="11" style="padding:8px 10px;background:#0a0f1a;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border)">
         📅 ${date}
         <span style="color:var(--muted);font-weight:400"> ${dateCount}건</span>
-        <span style="color:var(--green);font-weight:700;margin-left:10px">${Math.round(dateTotal).toLocaleString()}만원</span>
+        <span style="color:var(--green);font-weight:700;margin-left:10px">${(Math.round(dateTotal*100)/100).toLocaleString()}만원</span>
       </td>
     </tr>`;
 
@@ -3664,7 +3664,7 @@ function renderHistory(items){
       filterSubtotal = `<div style="margin-top:6px;padding:8px 12px;background:#0c2a3a;border:1px solid var(--accent);border-radius:10px;font-size:12px">
         <span style="color:var(--accent);font-weight:700">${parts.join(' · ')}</span>
         <span style="margin-left:10px;color:var(--text)">${totalCount}건</span>
-        <span style="margin-left:10px;color:var(--green);font-weight:700;font-size:14px">${Math.round(filteredTotal).toLocaleString()}만원</span>
+        <span style="margin-left:10px;color:var(--green);font-weight:700;font-size:14px">${(Math.round(filteredTotal*100)/100).toLocaleString()}만원</span>
       </div>`;
     }
 
@@ -3672,7 +3672,7 @@ function renderHistory(items){
       <span style="color:var(--muted)">${rangeLabel}</span>
       ${filterBadge}
       <span>총 <strong style="color:var(--text)">${totalCount}건</strong></span>
-      <span>합계 <strong style="color:var(--accent);font-size:15px">${Math.round(totalAmt).toLocaleString()}만원</strong></span>
+      <span>합계 <strong style="color:var(--accent);font-size:15px">${(Math.round(totalAmt*100)/100).toLocaleString()}만원</strong></span>
       ${filterSubtotal}
     `;
   }
