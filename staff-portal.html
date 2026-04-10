@@ -3568,8 +3568,12 @@ function renderHistory(items){
   let totalCount = 0;
 
   Object.keys(grouped).sort((a,b)=>b.localeCompare(a)).forEach(date=>{
-    // 날짜별 합산
-    const dateTotal = grouped[date].filter(it=>it.type!=='vip').reduce((s,it)=>s+(parseFloat(it.amount)||0), 0);
+    // 날짜별 합산 (환불: amount=0이면 treatments에서 환불 금액 폴백)
+    const dateTotal = grouped[date].filter(it=>it.type!=='vip').reduce((s,it)=>{
+      let a = parseFloat(it.amount)||0;
+      if(a===0 && it.treatments?.length){ const r=it.treatments.find(t=>t.item==='환불'); if(r) a=r.price||0; }
+      return s+a;
+    }, 0);
     const dateCount = grouped[date].length;
     html += `<tr>
       <td colspan="11" style="padding:8px 10px;background:#0a0f1a;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border)">
@@ -3581,7 +3585,9 @@ function renderHistory(items){
 
     grouped[date].forEach(it=>{
       totalCount++;
-      const amt = parseFloat(it.amount)||0;
+      let amt = parseFloat(it.amount)||0;
+      // 환불: amount=0이면 treatments에서 환불 금액 폴백
+      if(amt===0 && it.treatments?.length){ const r=it.treatments.find(t=>t.item==='환불'); if(r) amt=r.price||0; }
       const isVip = it.type==='vip';
       if(!isVip) totalAmt += amt;
       const pm = it.paymentMethods;
