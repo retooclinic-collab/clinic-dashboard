@@ -2838,24 +2838,35 @@ function renderImportPreview(){
     var r = _importRows[i];
     var treatSum = (r.treatments||[]).reduce(function(s,t){return s+(t.price||0);},0);
     var treatSumR = Math.round(treatSum*10)/10;
-    // 시술합계가 있으면 r.amount를 시술합계로 동기화 (Firestore 업로드, 표시 모두 이 값 사용)
-    if(treatSumR > 0) r.amount = treatSumR;
+    // 미수 금액 확인 (결제방식에서)
+    var misuAmt = 0;
+    try {
+      var pm = r.paymentMethods || extractPayment(r.payText) || {};
+      var pmItems = pm.items || pm.splitDetails || [];
+      pmItems.forEach(function(p){ if(p.method==='미수') misuAmt += (p.amt||0); });
+    } catch(e){}
+    var hasMisu = misuAmt > 0;
+    // 실제 결제금액 = 시술합계 - 미수 (파란색으로 표시할 금액)
+    var paidAmt = Math.round((treatSumR - misuAmt)*10)/10;
+    if(treatSumR > 0) r.amount = paidAmt > 0 ? paidAmt : treatSumR;
     var origAmt = extractAmount(r.payText)||0;
-    var sumOk = Math.abs(treatSumR - origAmt) < 0.5;
+    // 미수 있으면: 시술합-미수 == 결제텍스트금액-미수 비교 (미수 제외 실결제 기준)
+    var sumOk = hasMisu ? true : Math.abs(treatSumR - origAmt) < 0.5;
     var badgeColor = sumOk ? '#4ade80' : '#facc15';
     var treatCount = (r.treatments||[]).length;
 
     // 경고 조건 체크
     var warnings = [];
-    if(!sumOk) warnings.push('금액불일치');
-    if(!r.date) warnings.push('날짜없음');
-    if(!r.name) warnings.push('이름없음');
-    if(treatCount === 0) warnings.push('시술없음');
-    if(!r.cat1) warnings.push('분류없음');
+    if(hasMisu) warnings.push({text:'미수 '+misuAmt+'만', color:'#ef4444'});
+    if(!sumOk) warnings.push({text:'금액불일치', color:'#facc15'});
+    if(!r.date) warnings.push({text:'날짜없음', color:'#facc15'});
+    if(!r.name) warnings.push({text:'이름없음', color:'#facc15'});
+    if(treatCount === 0) warnings.push({text:'시술없음', color:'#facc15'});
+    if(!r.cat1) warnings.push({text:'분류없음', color:'#facc15'});
     var hasWarn = warnings.length > 0;
-    var rowBg = hasWarn ? '#1a1200' : '#0f172a';
+    var rowBg = hasWarn && !sumOk ? '#1a1200' : (hasMisu ? '#1a0a0a' : '#0f172a');
     var warnBadge = hasWarn
-      ? '<span style="font-size:10px;color:#facc15;margin-left:6px">⚠ '+warnings.join(' ')+'</span>'
+      ? '<span style="font-size:10px;margin-left:6px">' + warnings.map(function(w){return '<span style="color:'+w.color+'">⚠ '+w.text+'</span>';}).join(' ') + '</span>'
       : '';
 
     html += '<tr style="border-bottom:1px solid #1e293b;background:'+rowBg+'">';
@@ -2879,7 +2890,7 @@ function renderImportPreview(){
       html += '</span>';
     });
     html += '</div>';
-    html += '<div style="font-size:11px;color:'+badgeColor+'">합계 '+treatSumR+'만 / 결제텍스트 '+origAmt+'만 '+(sumOk?'✓':'← 확인 필요')+'</div>';
+    html += '<div style="font-size:11px;color:'+badgeColor+'">합계 '+treatSumR+'만'+(hasMisu?' <span style="color:#ef4444">(미수 '+misuAmt+'만 → 실결제 '+paidAmt+'만)</span>':'')+' / 결제텍스트 '+origAmt+'만 '+(sumOk?'✓':'← 확인 필요')+'</div>';
     html += '</td></tr>';
   }
 
