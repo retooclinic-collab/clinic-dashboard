@@ -2793,31 +2793,91 @@ function handleImportFile(input){
     try {
       const data = new Uint8Array(e.target.result);
       const workbook = XLSX.read(data, {type:'array', cellDates:true});
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      // @dropdown 등 불필요 칼럼 제거 (구글시트 xlsx 저장 시 포함됨)
-      const range = XLSX.utils.decode_range(sheet['!ref']||'A1');
-      for(let c=range.e.c; c>=0; c--){
-        const addr = XLSX.utils.encode_cell({r:0, c:c});
-        const cell = sheet[addr];
-        const hdr = cell ? String(cell.v||'').trim().toLowerCase() : '';
-        if(hdr.startsWith('@') || hdr==='dropdown' || hdr===''){
-          // 마지막 빈 칼럼이나 @로 시작하는 칼럼 제거
-          for(let r=range.s.r; r<=range.e.r; r++){
-            delete sheet[XLSX.utils.encode_cell({r:r, c:c})];
-          }
-          if(c===range.e.c) range.e.c--;
-        } else break; // 유효 칼럼 만나면 중단
+      const names = workbook.SheetNames;
+
+      if(names.length > 1){
+        // 시트 여러 개 → 선택 UI 표시
+        window._xlsxWorkbook = workbook;
+        showXlsxSheetPicker(names);
+      } else {
+        processXlsxSheet(workbook, names[0]);
       }
-      sheet['!ref'] = XLSX.utils.encode_range(range);
-      const tsv = XLSX.utils.sheet_to_csv(sheet, {FS:'\t', RS:'\n'});
-      document.getElementById('import-text').value = tsv;
-      processImportText(tsv);
     } catch(err) {
       showToast('파일 읽기 오류: '+err.message, 'error');
       console.error(err);
     }
   };
   reader.readAsArrayBuffer(file);
+}
+
+function showXlsxSheetPicker(names){
+  // 기존 피커 제거
+  let old = document.getElementById('xlsx-sheet-picker');
+  if(old) old.remove();
+
+  let h = '<div id="xlsx-sheet-picker" style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:14px 16px;margin-bottom:12px;">';
+  h += '<div style="font-size:13px;font-weight:700;color:#1d4ed8;margin-bottom:8px;">📋 시트 선택 — '+names.length+'개 시트 발견</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
+  names.forEach(function(nm){
+    h += '<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;" onclick="pickXlsxSheet(\''+nm.replace(/'/g,"\\'")+'\')">'+nm+'</button>';
+  });
+  h += '</div>';
+  h += '<button class="btn btn-sm btn-p" onclick="pickXlsxSheetAll()">전체 시트 한번에 등록</button>';
+  h += ' <button class="btn btn-sm btn-o" onclick="document.getElementById(\'xlsx-sheet-picker\').remove()">취소</button>';
+  h += '</div>';
+
+  const ta = document.getElementById('import-text');
+  ta.parentElement.insertBefore(
+    Object.assign(document.createElement('div'), {innerHTML:h}).firstChild,
+    ta
+  );
+}
+
+function pickXlsxSheet(name){
+  const wb = window._xlsxWorkbook;
+  if(!wb) return;
+  document.getElementById('xlsx-sheet-picker')?.remove();
+  processXlsxSheet(wb, name);
+}
+
+function pickXlsxSheetAll(){
+  const wb = window._xlsxWorkbook;
+  if(!wb) return;
+  document.getElementById('xlsx-sheet-picker')?.remove();
+  // 전체 시트를 하나의 TSV로 합침
+  let allTsv = '';
+  wb.SheetNames.forEach(function(name){
+    const sheet = wb.Sheets[name];
+    cleanXlsxSheet(sheet);
+    allTsv += XLSX.utils.sheet_to_csv(sheet, {FS:'\t', RS:'\n'}) + '\n';
+  });
+  document.getElementById('import-text').value = allTsv;
+  processImportText(allTsv);
+}
+
+function cleanXlsxSheet(sheet){
+  // @dropdown 등 불필요 칼럼 제거 (구글시트 xlsx 저장 시 포함됨)
+  const range = XLSX.utils.decode_range(sheet['!ref']||'A1');
+  for(let c=range.e.c; c>=0; c--){
+    const addr = XLSX.utils.encode_cell({r:0, c:c});
+    const cell = sheet[addr];
+    const hdr = cell ? String(cell.v||'').trim().toLowerCase() : '';
+    if(hdr.startsWith('@') || hdr==='dropdown' || hdr===''){
+      for(let r=range.s.r; r<=range.e.r; r++){
+        delete sheet[XLSX.utils.encode_cell({r:r, c:c})];
+      }
+      if(c===range.e.c) range.e.c--;
+    } else break;
+  }
+  sheet['!ref'] = XLSX.utils.encode_range(range);
+}
+
+function processXlsxSheet(workbook, sheetName){
+  const sheet = workbook.Sheets[sheetName];
+  cleanXlsxSheet(sheet);
+  const tsv = XLSX.utils.sheet_to_csv(sheet, {FS:'\t', RS:'\n'});
+  document.getElementById('import-text').value = tsv;
+  processImportText(tsv);
 }
 
 // CSV 백업 파일 파서 (헤더 기반 자동 매핑)
