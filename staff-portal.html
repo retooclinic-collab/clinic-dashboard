@@ -1952,27 +1952,31 @@ function localParse(raw){
   }
 
   // ── 리쥬셀릭 (가격이 뒤에 붙어도 수량은 항상 별도 계산) ──
-  if(/리쥬셀릭.*?선물세트/i.test(raw)){
+  // raw + _origRaw 모두 체크 (**메모줄은 VIP필터로 raw에서 제거되므로 _origRaw 필요)
+  const rjcRaw = /리쥬셀릭/i.test(raw) ? raw : _origRaw;
+  // "sv" 표기된 항목은 서비스(무료) → 가격 0
+  const rjcIsSv = /sv/i.test(_origRaw.match(/리쥬셀릭[^\n]*/i)?.[0]||'');
+  if(/리쥬셀릭.*?선물세트/i.test(rjcRaw)){
     // 선물세트: 개수 명시 or 가격으로 유추 (12.5=1, 25=2, 37.5=3)
-    const cntM = raw.match(/리쥬셀릭.*?선물세트\s*(\d+)\s*개/i);
-    const priceM = raw.match(/리쥬셀릭.*?선물세트\s*([\d.]+)/i);
+    const cntM = rjcRaw.match(/리쥬셀릭.*?선물세트\s*(\d+)\s*개/i);
+    const priceM = rjcRaw.match(/리쥬셀릭.*?선물세트\s*([\d.]+)/i);
     let qty = 1;
     if(cntM) qty = parseInt(cntM[1]);
-    else if(priceM){
+    else if(priceM && !rjcIsSv){
       const p = parseFloat(priceM[1]);
       qty = Math.round(p / 12.5) || 1;
     }
-    results.push({item:'리쥬셀릭선물세트', qty});
+    results.push({item:'리쥬셀릭선물세트', qty, ...(rjcIsSv?{_fixedAmt:0}:{})});
   }
-  if(/리쥬셀릭.*?앰플/i.test(raw)){
+  if(/리쥬셀릭.*?앰플/i.test(rjcRaw)){
     // 앰플: 개수 명시 시만, 없으면 1 (4.8은 가격)
-    const cntM = raw.match(/리쥬셀릭.*?앰플\s*(\d+)\s*개/i);
-    results.push({item:'리쥬셀릭앰플', qty: cntM?parseInt(cntM[1]):1});
+    const cntM = rjcRaw.match(/리쥬셀릭.*?앰플\s*(\d+)\s*개/i);
+    results.push({item:'리쥬셀릭앰플', qty: cntM?parseInt(cntM[1]):1, ...(rjcIsSv?{_fixedAmt:0}:{})});
   }
-  if(/리쥬셀릭(?!.*?선물세트)(?!.*?앰플)/i.test(raw)){
+  if(/리쥬셀릭(?!.*?선물세트)(?!.*?앰플)/i.test(rjcRaw)){
     // 크림: 개수 명시 시만, 없으면 1 (4.2는 가격)
-    const cntM = raw.match(/리쥬셀릭(?:크림|재생크림)?\s*(\d+)\s*개/i);
-    results.push({item:'리쥬셀릭크림', qty: cntM?parseInt(cntM[1]):1});
+    const cntM = rjcRaw.match(/리쥬셀릭(?:크림|재생크림)?\s*(\d+)\s*개/i);
+    results.push({item:'리쥬셀릭크림', qty: cntM?parseInt(cntM[1]):1, ...(rjcIsSv?{_fixedAmt:0}:{})});
   }
 
   // ── 알라딘필 ──
