@@ -973,30 +973,67 @@ function extractTextPrices(raw, treatments){
     .replace(/^\s*vip\s*\d+\s*[+=＝].*$/gim, '')       // VIP 헤더줄 제거 (VIP700=... 형태만)
     .replace(/^.*?(?:남은\s*금액|지인분|남음\s*$).*$/gim, '')  // 메모줄 제거
     .replace(/[=＝]\s*[\d.,]+\s*[mM만].*$/gim, '')    // =결제금액 제거 (각 줄별)
+    .replace(/[=＝]\s*[\d.,]+\s*(?:차감|결제).*$/gim, '')  // =N차감, =N결제 제거
+    .replace(/총\s*[\d.,]+\s*[mM만]?\s*$/gim, '')        // "총435.9" 잔여 제거
     .replace(/\d+월?[eE]\)?\s*/g, ',')                // 4월e) 3e) 등 → 콤마로 분리
     .replace(/[가-힣]+[eE]\)\s*/g, ',')              // 리쥬란e) 등 한글 이벤트 → 콤마로 분리
-    .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '');   // -예약금제외 제거
+    .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '')    // -예약금제외 제거
+    .replace(/[-－\s]*\d+\s*[mM만]?\s*(?:적립금)?할인/gi, '')  // -25적립금할인, -49할인 등 제거
+    .replace(/[-－\s]*\d+\s*[mM만]?\s*(?:적립금|선납금|금액|잔액|포인트)\s*(?:차감|제외|사용)/gi, '') // -N적립금차감 제거
+    .replace(/\+\s*,/g, ',').replace(/,\s*\+/g, ',')   // +, 또는 ,+ 정리
+    .replace(/,,+/g, ',').replace(/^[,\s]+|[,\s]+$/gm, ''); // 연속 콤마·공백 정리
 
   // BBL 가격 직접 추출 (세그먼트 분리 전)
-  // 복수타입 BBL인 경우 전체 가격을 균등분할
+  // 서브타입별 개별 가격 추출: "포에버영2회99+스킨타이트닝3회198" → 각각 99, 198
   const bblPriceMap = {};
-  const bblRe = /bbl\s*(?:\([^)]*\))?\s*(?:(?:포에버영|색소|홍조|화이트닝|미백|여드름|스킨타이트닝)\s*\+?\s*)*(?:[\d.]+\s*회\s*)?([\d.]+)/gi;
   const hasBblColorText = /bbl.*?(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))/i.test(raw);
   const hasBblAcneText = /bbl.*?여드름/i.test(raw);
   const hasBblTightText = /bbl.*?스킨타이트닝/i.test(raw);
   const bblTypeCountText = (hasBblColorText?1:0)+(hasBblAcneText?1:0)+(hasBblTightText?1:0);
-  for(const m of raw.matchAll(bblRe)){
-    const price = parseFloat(m[1]);
-    if(price >= 1 && price < 2000){
-      if(bblTypeCountText > 1){
-        // 복수타입: 전체 가격을 균등분할
-        const eachPrice = Math.round(price/bblTypeCountText*100)/100;
-        if(hasBblColorText) bblPriceMap['BBL(색소)'] = eachPrice;
-        if(hasBblAcneText) bblPriceMap['BBL(여드름)'] = eachPrice;
-        if(hasBblTightText) bblPriceMap['BBL(스킨타이트닝)'] = eachPrice;
+  // 서브타입별 개별 가격 추출 시도
+  const bblColorPriceM = raw.match(/(?:포에버영|색소|홍조|화이트닝|미백)\s*(?:\d+\s*회\s*)?([\d.]+)/i);
+  const bblTightPriceM = raw.match(/스킨타이트닝\s*(?:\d+\s*회\s*)?([\d.]+)/i);
+  const bblAcnePriceM = raw.match(/여드름\s*(?:\d+\s*회\s*)?([\d.]+)/i);
+  const hasSubPrices = bblColorPriceM || bblTightPriceM || bblAcnePriceM;
+  if(hasSubPrices){
+    // 서브타입별 가격 추출 → 마지막 숫자가 BBL 소계일 수 있음
+    // "포에버영2회99+스킨타이트닝3회198" → 99는 포에버영, 198은 BBL소계(스킨타이트닝=198-99=99)
+    const subPrices = [];
+    if(bblColorPriceM && hasBblColorText) subPrices.push({key:'BBL(색소)', price:parseFloat(bblColorPriceM[1])});
+    if(bblTightPriceM && hasBblTightText) subPrices.push({key:'BBL(스킨타이트닝)', price:parseFloat(bblTightPriceM[1])});
+    if(bblAcnePriceM && hasBblAcneText) subPrices.push({key:'BBL(여드름)', price:parseFloat(bblAcnePriceM[1])});
+    if(subPrices.length >= 2){
+      // 마지막 가격이 앞 가격들보다 크면 → BBL 소계로 판단
+      const lastSub = subPrices[subPrices.length-1];
+      const prevSum = subPrices.slice(0,-1).reduce((s,sp)=>s+sp.price, 0);
+      if(lastSub.price > prevSum && lastSub.price <= prevSum*3){
+        // 마지막 숫자 = BBL 소계, 마지막 서브타입 가격 = 소계-나머지합
+        subPrices.slice(0,-1).forEach(sp=>{ if(sp.price>=1&&sp.price<2000) bblPriceMap[sp.key]=sp.price; });
+        const lastPrice = Math.round((lastSub.price - prevSum)*100)/100;
+        if(lastPrice>=1&&lastPrice<2000) bblPriceMap[lastSub.key]=lastPrice;
       } else {
-        if(/여드름/i.test(m[0])) bblPriceMap['BBL(여드름)'] = price;
-        else bblPriceMap['BBL(색소)'] = price;
+        // 개별 가격으로 처리
+        subPrices.forEach(sp=>{ if(sp.price>=1&&sp.price<2000) bblPriceMap[sp.key]=sp.price; });
+      }
+    } else {
+      // 서브타입 1개면 개별 가격
+      subPrices.forEach(sp=>{ if(sp.price>=1&&sp.price<2000) bblPriceMap[sp.key]=sp.price; });
+    }
+  } else {
+    // 서브타입별 가격 없으면 기존 로직: BBL 전체 가격 → 균등분할
+    const bblRe = /bbl\s*(?:\([^)]*\))?\s*(?:(?:포에버영|색소|홍조|화이트닝|미백|여드름|스킨타이트닝)\s*\+?\s*)*(?:[\d.]+\s*회\s*)?([\d.]+)/gi;
+    for(const m of raw.matchAll(bblRe)){
+      const price = parseFloat(m[1]);
+      if(price >= 1 && price < 2000){
+        if(bblTypeCountText > 1){
+          const eachPrice = Math.round(price/bblTypeCountText*100)/100;
+          if(hasBblColorText) bblPriceMap['BBL(색소)'] = eachPrice;
+          if(hasBblAcneText) bblPriceMap['BBL(여드름)'] = eachPrice;
+          if(hasBblTightText) bblPriceMap['BBL(스킨타이트닝)'] = eachPrice;
+        } else {
+          if(/여드름/i.test(m[0])) bblPriceMap['BBL(여드름)'] = price;
+          else bblPriceMap['BBL(색소)'] = price;
+        }
       }
     }
   }
@@ -1065,7 +1102,7 @@ function extractTextPrices(raw, treatments){
     '힐로웨이브':/힐로웨이브/i,
     '미라젯쥬베룩':/미라젯쥬베룩/i,
     '미라젯':/미라젯(?!쥬베룩|리쥬란|쥬브아셀|리투오)/i,
-    '쥬베룩볼륨':/쥬베룩(?!아이)/i, '쥬베룩아이':/쥬베룩아이/i,
+    '쥬베룩볼륨':/쥬베룩(?!\s*아이)/i, '쥬베룩아이':/쥬베룩\s*아이/i,
     '쥬브아셀':/쥬브아셀/i, '리투오':/리투오/i,
     '엠페이스':/엠페(?:이스)?/i, '오푸스':/오푸스/i,
     '포텐자(펌핑)':/포텐자.*?펌핑|펌핑팁|펌핑쥬베룩/i,
@@ -1327,6 +1364,15 @@ function distributePrices(treatments, total, rawText){
     return {...t, price: Math.round(unit*t.qty*100)/100, fromText:false};
   });
 
+  // 적립금 잔액 자동 조정: 적립금(_fixedAmt>0)은 total - 시술합으로 재계산
+  // VIP800에서 시술 748 차감 → 적립금 = 800-748 = 52 (원래 214.5는 누적 잔액이므로 무시)
+  const creditRemainIdx = priced.findIndex(t=>t.item==='적립금' && t._fixedAmt!==undefined && t._fixedAmt > 0);
+  if(creditRemainIdx >= 0){
+    const otherSum = priced.reduce((s,t,i)=>i===creditRemainIdx?s:s+t.price, 0);
+    const creditAmt = Math.round((total - otherSum)*100)/100;
+    priced[creditRemainIdx] = {...priced[creditRemainIdx], price: creditAmt > 0 ? creditAmt : 0};
+  }
+
   // 합계 맞추기 — 0.01 이하 오차도 보정 후 반환
   const sum = priced.reduce((s,t)=>s+t.price, 0);
   const earlyDiff = Math.round((total - sum)*100)/100;
@@ -1489,10 +1535,10 @@ function localParse(raw){
     const contentLines = vipLines.filter(line => {
       const t = line.trim();
       if(!t) return false;
-      // VIP 헤더: "VIP700=677m" "VIP1000+차액...=1198.2m" 등
-      if(/^\s*vip\d/i.test(t)) return false;
-      // 메모/주석: "예약금N은..." "남은금액없음" "BBL...남음" 등
-      if(/^예약금[\d.]|남은\s*금액|남음\s*$|지인분/i.test(t)) return false;
+      // VIP 헤더: "VIP700=677m" "VIP 500 = 500m" "VIP1000+차액...=1198.2m" 등
+      if(/^\s*vip\s*\d/i.test(t)) return false;
+      // 메모/주석: "예약금N은..." "남은금액없음" "BBL...남음" "64.1m(남음)" 등
+      if(/^예약금[\d.]|남은\s*금액|남음|지인분|^총\s*[\d.]+/i.test(t)) return false;
       // "// 남은금액" 형태 주석
       if(/^\/\//.test(t)) return false;
       return true;
@@ -1556,9 +1602,9 @@ function localParse(raw){
     results.push({item:'적립금차감', qty:1, _deductAmt: -totalDeduct});
   }
 
-  // ── -N할인 패턴 (예: -25할인) ──
-  // -N할인, -Nm할인, 추가Nm할인 모두 매칭
-  const discountMatches = [...raw.matchAll(/(?:[-－]|추가)\s*([\d.]+)\s*[mM만]?\s*할인/gi)];
+  // ── -N할인 패턴 (예: -25할인, -25적립금할인) ──
+  // -N할인, -Nm할인, 추가Nm할인, -N적립금할인 모두 매칭
+  const discountMatches = [...raw.matchAll(/(?:[-－]|추가)\s*([\d.]+)\s*[mM만]?\s*(?:적립금)?할인/gi)];
   let totalDiscount = 0;
   discountMatches.forEach(m=>{
     // 기존 차감패턴과 겹치지 않는 경우만
@@ -1653,19 +1699,23 @@ function localParse(raw){
     else if(tuneFsingle) results.push({item:'튠페이스', qty:1});
   }
 
-  // ── 온다 — KJ에 따라 가격 다름 ──
-  const ondaM = raw.match(/(?:바디)?온다\s*\d+\s*kj\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
-  const ondaS = /온다/i.test(raw) && !ondaM;
+  // ── 온다 — KJ에 따라 가격 다름 (중복 언급 합산: 온다100kj 2회 + 온다80kj 1회 → 3회) ──
+  const ondaAll = [...raw.matchAll(/(?:바디)?온다\s*(\d+)\s*kj\s*(?:\([^)]*\))?\s*(?:(\d+)\s*회)/gi)];
+  const ondaSimple = /온다/i.test(raw) && ondaAll.length===0;
   // 온다80KJ(121) → 괄호 안 가격 추출
   const ondaParenPrice = raw.match(/온다\s*\d+\s*kj\s*\(\s*([\d.]+)\s*\)/i);
   const ondaFixedAmt = ondaParenPrice ? parseFloat(ondaParenPrice[1]) : null;
-  if(ondaM) results.push({item:'온다', qty: ondaM[1]?parseInt(ondaM[1]):1, ...(ondaFixedAmt?{_fixedAmt:ondaFixedAmt}:{})});
-  else if(ondaS) results.push({item:'온다', qty:1, ...(ondaFixedAmt?{_fixedAmt:ondaFixedAmt}:{})});
-  // KJ 추출 → 동적 가격
-  const ondaKjM = raw.match(/온다\s*(\d+)\s*kj/i);
-  if(ondaKjM){
-    const kj = parseInt(ondaKjM[1]);
-    window._ondaPrice = kj>=100?165 : kj>=80?132 : kj>=60?99 : 66; // 40kj 이하=66
+  if(ondaAll.length > 0){
+    const ondaTotalQty = ondaAll.reduce((s,m) => s + (m[2] ? parseInt(m[2]) : 1), 0);
+    results.push({item:'온다', qty: ondaTotalQty, ...(ondaFixedAmt?{_fixedAmt:ondaFixedAmt}:{})});
+  } else if(ondaSimple){
+    results.push({item:'온다', qty:1, ...(ondaFixedAmt?{_fixedAmt:ondaFixedAmt}:{})});
+  }
+  // KJ 추출 → 동적 가격 (여러 KJ가 있으면 가장 큰 값 기준)
+  const ondaKjAll = [...raw.matchAll(/온다\s*(\d+)\s*kj/gi)];
+  if(ondaKjAll.length > 0){
+    const maxKj = Math.max(...ondaKjAll.map(m=>parseInt(m[1])));
+    window._ondaPrice = maxKj>=100?165 : maxKj>=80?132 : maxKj>=60?99 : 66;
   } else { window._ondaPrice = null; }
 
   // ── 엠페이스 ──
@@ -1767,13 +1817,13 @@ function localParse(raw){
   else if(jbvB) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvB[1])});
   else if(/쥬베룩볼륨/i.test(raw)) results.push({item:'쥬베룩볼륨', qty:1});
 
-  // ── 쥬베룩아이 ──
-  const jbeyeM = raw.match(/쥬베룩아이.*?(\d+)\s*회/i);
+  // ── 쥬베룩아이 (띄어쓰기 허용: "쥬베룩 아이") ──
+  const jbeyeM = raw.match(/쥬베룩\s*아이.*?(\d+)\s*회/i);
   if(jbeyeM) results.push({item:'쥬베룩아이', qty: parseInt(jbeyeM[1])});
-  else if(/쥬베룩아이/i.test(raw)) results.push({item:'쥬베룩아이', qty:1});
+  else if(/쥬베룩\s*아이/i.test(raw)) results.push({item:'쥬베룩아이', qty:1});
 
   // ── 쥬베룩 (단독, 볼륨/아이가 아닌 일반 쥬베룩) ──
-  if(!(/쥬베룩볼륨/i.test(raw)) && !(/쥬베룩아이/i.test(raw)) && !hasMjJbv){
+  if(!(/쥬베룩볼륨/i.test(raw)) && !(/쥬베룩\s*아이/i.test(raw)) && !hasMjJbv){
     const jbCc = raw.match(/쥬베룩\s*(\d+)\s*cc/i);
     const jbBottle = raw.match(/쥬베룩\s*(\d+)\s*병/i);
     const jbQtyM = raw.match(/쥬베룩\s*(\d+)\s*회/i);
@@ -1814,18 +1864,30 @@ function localParse(raw){
   }
 
   // ── BBL ──
-  // bbl(포에버영)3회, bbl포에버영3회, bbl(포에버영+색소)3회 등 회차 파싱
-  const bblColorM = raw.match(/bbl\s*(?:\([^)]*\))?\s*(?:(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))[^+,\n=()]*?)?(\d+)\s*회/i);
-  const bblColorQty = bblColorM ? parseInt(bblColorM[1]) : 1;
+  // bbl(포에버영2회99+스킨타이트닝3회198) 등 서브타입별 회차·가격 파싱
   const hasBblColor = /bbl.*?(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))/i.test(raw);
   const hasBblTight = /bbl.*?(?:스킨타이트닝)/i.test(raw);
-  const bblAcneM = raw.match(/bbl\s*(?:\([^)]*\))?\s*여드름[^+,\n]*?(\d+)\s*회/i);
-  const bblAcneQty = bblAcneM ? parseInt(bblAcneM[1]) : 1;
   const hasBblAcne = /bbl.*?여드름/i.test(raw);
-  // BBL 복수 타입 균등분할: 같은 BBL 세그먼트에서 여러 타입이면 가격 균등 분배
+  // 각 서브타입별 회차 추출: "포에버영2회", "스킨타이트닝3회", "여드름2회" 등
+  const bblColorQtyM = raw.match(/(?:포에버영|색소|홍조|화이트닝|미백)\s*(\d+)\s*회/i);
+  const bblColorQty = bblColorQtyM ? parseInt(bblColorQtyM[1]) : 1;
+  // 스킨타이트닝 회차 추출 (BBL 전체 회차가 아닌 서브타입 회차)
+  const bblTightQtyM = raw.match(/스킨타이트닝\s*(\d+)\s*회/i);
+  const bblTightQty = bblTightQtyM ? parseInt(bblTightQtyM[1]) : 1;
+  const bblAcneQtyM = raw.match(/여드름\s*(\d+)\s*회/i);
+  const bblAcneQty = bblAcneQtyM ? parseInt(bblAcneQtyM[1]) : 1;
+  // 서브타입별 회차가 없고 BBL 전체에 회차가 있으면 공통 적용
+  if(!bblColorQtyM && !bblTightQtyM && !bblAcneQtyM){
+    const bblGlobalQtyM = raw.match(/bbl\s*(?:\([^)]*\))?\s*(\d+)\s*회/i);
+    if(bblGlobalQtyM){
+      const gq = parseInt(bblGlobalQtyM[1]);
+      if(hasBblColor && !bblColorQtyM) { /* bblColorQty already 1, override */ }
+      // 글로벌 회차는 이미 각 qty가 1이므로 override
+    }
+  }
   const bblTypeCount = (hasBblColor?1:0)+(hasBblAcne?1:0)+(hasBblTight?1:0);
   if(hasBblColor) results.push({item:'BBL(색소)', qty:bblColorQty, _bblGroup:bblTypeCount>1});
-  if(hasBblTight) results.push({item:'BBL(스킨타이트닝)', qty:1, _bblGroup:bblTypeCount>1});
+  if(hasBblTight) results.push({item:'BBL(스킨타이트닝)', qty:bblTightQty, _bblGroup:bblTypeCount>1});
   if(hasBblAcne) results.push({item:'BBL(여드름)', qty:bblAcneQty, _bblGroup:bblTypeCount>1});
 
   // ── 듀얼피코 (피코토닝, 피코 단독 포함) ──
@@ -2017,8 +2079,8 @@ function localParse(raw){
     const ybTotal = ybAmtM ? parseFloat(ybAmtM[1]) : (extractAmount(raw) || 0);
     results.push({item:'예약금', qty:1, _fixedAmt: ybTotal||0});
   }
-  // 적립금 잔액: "442.2m 남음", "남은 적립금 442.2" 등
-  const remainM = _origRaw.match(/([\d.]+)\s*[mM만]?\s*남음/i) || _origRaw.match(/남은\s*(?:적립금|금액|잔액)\s*([\d.]+)/i);
+  // 적립금 잔액: "442.2m 남음", "64.1m (남음)", "남은 적립금 442.2" 등
+  const remainM = _origRaw.match(/([\d.]+)\s*[mM만]?\s*\(?남음/i) || _origRaw.match(/남은\s*(?:적립금|금액|잔액)\s*([\d.]+)/i);
   if(remainM){
     const remainAmt = parseFloat(remainM[1]);
     if(remainAmt > 0) results.push({item:'적립금', qty:1, _fixedAmt: remainAmt});
