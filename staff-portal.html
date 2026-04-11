@@ -1114,10 +1114,17 @@ function extractTextPrices(raw, treatments){
       if(t._fixedAmt !== undefined) return;
 
       // 외부(top-level)에서 먼저 가격 추출 → 확실한 가격
-      if(found[t.item]===undefined && kw.test(outer)){
+      // 같은 항목이 여러 세그먼트에 나오면 (보톡스 등) 가격 합산
+      if(kw.test(outer) || kw.test(seg)){
         const p = getPrice(outer);
-        if(p!==null) found[t.item]=p;
-        else {
+        if(p!==null){
+          if(found[t.item]!==undefined && t.qty > 1){
+            // 같은 항목 반복 → 합산 (사각턱b 33 + 자갈턱b 22 + 콧볼b 22)
+            found[t.item] = Math.round((found[t.item] + p)*100)/100;
+          } else if(found[t.item]===undefined){
+            found[t.item] = p;
+          }
+        } else if(found[t.item]===undefined && kw.test(outer)){
           // outer에 키워드는 있지만 가격이 없으면, inner에서 순수 숫자 찾기
           // 예: 소프300샷(이마제외얼전)+티타늄40KJ(390.5) → outer "티타늄40KJ" 가격없음, inner "(390.5)"
           for(const inn of inner){
@@ -1128,13 +1135,6 @@ function extractTextPrices(raw, treatments){
             }
           }
         }
-      }
-
-      // 세그먼트 전체(괄호 포함)에서 매칭되지만 outer만으로는 안 되는 경우
-      // 예: 자갈b(제오민)22 → outer에 자갈b, inner에 제오민 → 키워드가 seg 전체서 매칭
-      if(found[t.item]===undefined && !kw.test(outer) && kw.test(seg)){
-        const p = getPrice(outer);
-        if(p!==null) found[t.item]=p;
       }
 
       // 괄호 안에서 발견 → 잠정 가격 (합계 초과 시 잔액으로 재계산)
