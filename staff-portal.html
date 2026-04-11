@@ -916,7 +916,7 @@ const TREATMENT_ITEMS = [
   '리투핏주사','리투업주사','쥬베룩볼륨','리쥬란','쥬베룩','튠바디','리투핏주사(바디)',
   '플라즈마','라라필','포텐자(모공)','포텐자(기미)','인텐스울트라','코레지셀핏','LDM',
   '크라이오','제모(여자)','제모(남자)','새살주사','펌핑팁','수면비','히알라제',
-  '상담만','TA','아쿠아필','포텐자(펌핑)','아그네스','PDRN','줄기세포','VIP회원권',
+  '상담만','TA','아쿠아필','포텐자(펌핑)','아그네스','PDRN','줄기세포','VIP회원권','VIP할인혜택',
   '프락셀','써마지300','아이써마지225','하이쿡스','리쥬란아이','써마지600',
   '리쥬란HB','소프웨이브(50샷)','위고비','미라젯','엠페이스','온다','스킨바이브',
   '써마지900샷','줄기세포30cc','줄기세포60cc','줄기세포120cc','줄기세포240cc',
@@ -970,14 +970,17 @@ const CHARGE_PRICE = {
 function extractTextPrices(raw, treatments){
   // 최종 결제금액 + 이벤트 접두어 + 예약금제외 제거
   const text = raw
-    .replace(/^\s*vip\s*\d+\s*[+=＝].*$/gim, '')       // VIP 헤더줄 제거 (VIP700=... 형태만)
+    .replace(/^\s*(?:\d+\s*)?vip\s*\d*\s*[+=＝].*$/gim, '') // VIP 헤더줄 제거 (VIP700=, 1000vip+=)
     .replace(/^.*?(?:지인분).*$/gim, '')               // 지인분 메모줄 제거
     .replace(/[-－]\s*남은\s*금액\s*[\d.]+/gi, '')       // -남은금액66 인라인 제거
     .replace(/^.*모두\s*사용.*$/gim, '')                 // 모두사용 메모줄 제거
     .replace(/^.*남은\s*적립금\s*없음.*$/gim, '')         // 남은적립금없음 메모줄 제거
+    .replace(/^.*남은\s*금액\s*[x×X].*$/gim, '')         // 남은 금액x 메모줄 제거
+    .replace(/^.*총\s*[\d.,]+\s*차감.*$/gim, '')         // 총1131.9 차감 후... 메모줄 제거
     .replace(/[=＝]\s*[\d.,]+\s*[mM만].*$/gim, '')    // =결제금액 제거 (각 줄별)
     .replace(/[=＝]\s*[\d.,]+\s*(?:차감|결제).*$/gim, '')  // =N차감, =N결제 제거
     .replace(/총\s*[\d.,]+\s*[mM만]?\s*$/gim, '')        // "총435.9" 잔여 제거
+    .replace(/^\s*[-－]\s*/gm, '')                       // 줄 시작 - (리스트 마커) 제거
     .replace(/\d+월?[eE]\)?\s*/g, ',')                // 4월e) 3e) 등 → 콤마로 분리
     .replace(/[가-힣]+[eE]\)\s*/g, ',')              // 리쥬란e) 등 한글 이벤트 → 콤마로 분리
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '')    // -예약금제외 제거
@@ -1190,16 +1193,16 @@ function extractTextPrices(raw, treatments){
     });
   });
 
-  // 콤마 그룹 기반 복합소계 감지:
+  // 콤마/줄바꿈 그룹 기반 복합소계 감지:
   // "소프150샷+티타늄40KJ(하관만)209" → +로 연결된 그룹에서 하나만 가격이 있으면 복합소계
-  // 콤마(괄호 밖)로 먼저 분리
+  // 콤마 및 줄바꿈(괄호 밖)으로 분리
   const commaGroups = [];
   { let depth=0, cur='';
     for(let i=0;i<text.length;i++){
       const c=text[i];
       if(c==='(') depth++;
       else if(c===')') depth--;
-      else if(c===','&&depth===0){ commaGroups.push(cur.trim()); cur=''; continue; }
+      else if((c===','||c==='\n')&&depth===0){ commaGroups.push(cur.trim()); cur=''; continue; }
       cur+=c;
     }
     if(cur.trim()) commaGroups.push(cur.trim());
@@ -1217,9 +1220,8 @@ function extractTextPrices(raw, treatments){
     if(withPrice.length===1 && withoutPrice.length>=1){
       const p = found[withPrice[0].item];
       const stdSum = groupItems.reduce((s,t)=>s+(CHARGE_PRICE[t.item]??0)*t.qty, 0);
-      // 가격이 해당 항목 표준가의 2배 이상이고 그룹 표준가합 범위 내면 복합소계
-      const itemStd = (CHARGE_PRICE[withPrice[0].item]??0)*withPrice[0].qty;
-      if(itemStd>0 && p > itemStd*2 && p <= stdSum*2 && p >= stdSum*0.5){
+      // +로 연결된 그룹에서 가격없는 항목 존재 → 복합소계로 판단 (그룹 표준가합 범위 내)
+      if(stdSum>0 && p >= stdSum*0.3 && p <= stdSum*3){
         // 복합소계 → 표준가 비율로 그룹 내 분배 (마지막 항목에서 반올림 오차 보정)
         let distRunning = 0;
         groupItems.forEach((t,idx)=>{
@@ -1367,14 +1369,15 @@ function distributePrices(treatments, total, rawText){
     return {...t, price: Math.round(unit*t.qty*100)/100, fromText:false};
   });
 
-  // 예약금제외 자동 조정: 명시가 합 > total이면 예약금제외 금액을 차액으로 재계산
-  // 예: 시술합 807.4, total 755.1 → 예약금제외 = 755.1 - 807.4 = -52.3
-  const depositIdx = priced.findIndex(t=>t.item==='예약금제외');
-  if(depositIdx >= 0){
-    const otherSum = priced.reduce((s,t,i)=>i===depositIdx?s:s+t.price, 0);
-    if(Math.abs(otherSum - total) > 0.1){
-      const depositAmt = Math.round((total - otherSum)*100)/100;
-      priced[depositIdx] = {...priced[depositIdx], price: depositAmt};
+  // VIP할인혜택 자동 추가: VIP회원권 있고 시술합 > total이면
+  // 차액을 "VIP할인혜택" 마이너스 항목으로 추가
+  // 예: 시술합 807.4, 예약금-3.3, VIP0, total 755.1 → VIP할인혜택 = -(807.4-3.3-755.1) = -49
+  const hasVip = priced.some(t=>t.item==='VIP회원권');
+  if(hasVip){
+    const treatmentSum = priced.reduce((s,t)=>s+t.price, 0);
+    const diff = Math.round((treatmentSum - total)*100)/100;
+    if(diff > 0.5){
+      priced.push({item:'VIP할인혜택', qty:1, price: -diff, fromText:true, _deductAmt: -diff});
     }
   }
 
@@ -1427,7 +1430,7 @@ function distributePrices(treatments, total, rawText){
       if(hasBalDeduct){
         // _balanceDeduct 항목이 있으면 명시가 유지 (잔액계산에서 처리됨)
       } else if(Math.abs(sum - total) > 0.05){
-        const deductSet2 = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','위약금']);
+        const deductSet2 = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','VIP할인혜택','위약금']);
         const fixedItems2 = priced.filter(t=>deductSet2.has(t.item));
         const scaleItems2 = priced.filter(t=>!deductSet2.has(t.item));
         const fixedTotal2 = fixedItems2.reduce((s,t)=>s+t.price, 0);
@@ -1478,7 +1481,7 @@ function distributePrices(treatments, total, rawText){
       const hasBalDeduct3 = priced.some(t=>t._balanceDeduct);
       if(!hasBalDeduct3){
         // 차감/고정 항목은 스케일링 제외 → 나머지만 스케일
-        const deductSet = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','위약금']);
+        const deductSet = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','VIP할인혜택','위약금']);
         const fixedItems = priced.filter(t=>deductSet.has(t.item));
         const scaleItems = priced.filter(t=>!deductSet.has(t.item));
         const fixedTotal = fixedItems.reduce((s,t)=>s+t.price, 0);
@@ -1674,10 +1677,12 @@ function localParse(raw){
     else results.push({item:'티타튠', qty:1});
   } else {
     // ── 티타늄 (단독) — KJ에 따라 가격 다름 ──
+    // "티타늄대체" = 티타늄 대신 다른 시술 → 티타늄 카운트 안 함
+    const isTitanReplace = /티타늄\s*대체/i.test(raw);
     // 홍/티타늄 패턴: 홍조치료 포함이라 티타늄은 카운트하되 가격 0원
     const isHongTitan = /홍\s*[\/·,]\s*티타늄/i.test(raw);
-    const titanM = raw.match(/티타늄\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
-    const titanS = /티타늄/i.test(raw) && !titanM;
+    const titanM = !isTitanReplace && raw.match(/티타늄\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
+    const titanS = !isTitanReplace && /티타늄/i.test(raw) && !titanM;
     if(titanM) results.push({item:'티타늄', qty: titanM[1]?parseInt(titanM[1]):1, ...(isHongTitan?{_fixedAmt:0}:{})});
     else if(titanS) results.push({item:'티타늄', qty:1, ...(isHongTitan?{_fixedAmt:0}:{})});
     // KJ 추출 → CHARGE_PRICE 동적 보정
@@ -1819,9 +1824,18 @@ function localParse(raw){
   // 단독 미라젯 (조합 없이) - N회 수량 인식
   // 쥬브아셀 안에 미라젯이 포함된 경우도 스킵 (아래 쥬브아셀 블록에서 처리)
   const hasMjInJba = /쥬브아셀[^,+\n]*미라젯/i.test(raw) || /쥬브아셀[^,+\n]*\([^)]*미라젯/i.test(raw);
-  if(!hasMjRjHB && !hasMjRj && !hasMjJbv && !hasMjJba && !hasMjLto && !hasMjFromJba && !hasMjInJba && /미라젯/i.test(raw)){
+  const hasAnyMjCombo = hasMjRjHB || hasMjRj || hasMjJbv || hasMjJba || hasMjLto || hasMjFromJba || hasMjInJba;
+  // 콤보 미라젯 외에 단독 미라젯 언급이 있는지 확인
+  // "미라젯38.5" 또는 "-미라젯38.5" 같은 별도 라인/세그먼트
+  const standaloneMjPattern = /(?:^|[\n,+\-－])[\s\-－]*미라젯(?!\s*(?:쥬베룩|쥬브아셀|리투오|리쥬란))\s*(?:(\d+)\s*회\s*)?/gim;
+  const standaloneMjAll = [...raw.matchAll(standaloneMjPattern)];
+  if(!hasAnyMjCombo && /미라젯/i.test(raw)){
     const mjQtyM = raw.match(/미라젯\s*(\d+)\s*회/i);
     results.push({item:'미라젯', qty: mjQtyM ? parseInt(mjQtyM[1]) : 1});
+  } else if(hasAnyMjCombo && standaloneMjAll.length > 0){
+    // 콤보 미라젯 있는데 별도 단독 미라젯도 있음 → 추가
+    const extraQty = standaloneMjAll.reduce((s,m) => s + (m[1] ? parseInt(m[1]) : 1), 0);
+    results.push({item:'미라젯', qty: extraQty, _fixedAmt: 38.5 * extraQty});
   }
 
   // ── 쥬베룩볼륨 (띄어쓰기 허용: "쥬베룩 볼륨") ──
