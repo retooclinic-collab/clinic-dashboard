@@ -1406,7 +1406,7 @@ function renderArcList(){
     if(a.cData)sub.push(won(a.cData.total));
     if(a.aData)sub.push('재료 '+won(a.aData.totalCost));
     if(a.bData)sub.push('수수료 '+won(a.bData.totalCommission));
-    return'<div class="sbm" id="sbm-'+i+'" onclick="viewArc('+i+')">'+'<span class="sbm-del" onclick="event.stopPropagation();delArc('+i+')" title="삭제">✕</span>'+'<div class="sbm-name">'+esc(a.label)+'</div>'+'<div class="sbm-sub">'+sub.join(' · ')+'</div></div>';
+    return'<div class="sbm" id="sbm-'+i+'" onclick="viewArc('+i+')">'+'<span class="sbm-del" onclick="event.stopPropagation();delArc('+i+')" title="삭제">✕</span>'+'<div class="sbm-name">'+esc(a.displayLabel||a.label)+'</div>'+'<div class="sbm-sub">'+sub.join(' · ')+'</div></div>';
   }).join('');
 }
 function viewArc(i){
@@ -1430,7 +1430,7 @@ function viewArc(i){
   if(a.bankData&&a.bankData.file)markDone('k',a.bankData.file);
   goTab('an');render();renderCrossTable();renderBankSection();renderCardSection();renderFixedDisplay();renderSummary();
   // 아카이브 뷰 배너 표시
-  showArcBanner(a.label);
+  showArcBanner(a.displayLabel||a.label);
 }
 
 function showArcBanner(label){
@@ -1733,6 +1733,8 @@ function renderDailyTotals(){
   h+='<div style="background:#fff7ed;border-radius:8px;padding:10px 12px;border-left:3px solid #f97316;"><div style="font-size:10px;color:#64748b;">총 수수료</div><div style="font-size:16px;font-weight:800;color:#f97316;">'+formatW(tComm)+'</div></div>';
   h+='<div style="background:#faf5ff;border-radius:8px;padding:10px 12px;border-left:3px solid #a855f7;"><div style="font-size:10px;color:#64748b;">총 재료비</div><div style="font-size:16px;font-weight:800;color:#a855f7;">'+formatW(tMat)+'</div></div>';
   h+='<div style="background:'+(tNet>=0?'#f0fdf4':'#fef2f2')+';border-radius:8px;padding:10px 12px;border-left:3px solid '+(tNet>=0?'#16a34a':'#ef4444')+';"><div style="font-size:10px;color:#64748b;">순이익</div><div style="font-size:16px;font-weight:800;color:'+(tNet>=0?'#16a34a':'#ef4444')+';">'+formatW(tNet)+'</div></div>';
+  var tNetRate=tAmt>0?Math.round(tNet/tAmt*1000)/10:0;
+  h+='<div style="background:#f0f9ff;border-radius:8px;padding:10px 12px;border-left:3px solid #0ea5e9;"><div style="font-size:10px;color:#64748b;">순이익비율</div><div style="font-size:16px;font-weight:800;color:#0ea5e9;">'+tNetRate+'%</div></div>';
   h+='</div>';
 
   // 실장별 소계 테이블
@@ -1740,9 +1742,10 @@ function renderDailyTotals(){
   if(staffKeys.length>1 || (staffKeys.length===1 && staffKeys[0]!=='미지정')){
     h+='<details style="margin-bottom:8px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">👤 상담실장별 소계 ('+staffKeys.length+'명)</summary>';
     h+='<table style="width:100%;border-collapse:collapse;font-size:11px;">';
-    h+='<thead><tr style="background:#f1f5f9;"><th style="padding:5px 8px;text-align:left;color:#64748b;">실장</th><th style="padding:5px 8px;text-align:right;color:#64748b;">건수</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수납액</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수수료</th><th style="padding:5px 8px;text-align:right;color:#64748b;">재료비</th><th style="padding:5px 8px;text-align:right;color:#64748b;">순이익</th></tr></thead><tbody>';
+    h+='<thead><tr style="background:#f1f5f9;"><th style="padding:5px 8px;text-align:left;color:#64748b;">실장</th><th style="padding:5px 8px;text-align:right;color:#64748b;">건수</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수납액</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수수료</th><th style="padding:5px 8px;text-align:right;color:#64748b;">재료비</th><th style="padding:5px 8px;text-align:right;color:#64748b;">순이익</th><th style="padding:5px 8px;text-align:right;color:#64748b;">이익률</th></tr></thead><tbody>';
     staffKeys.forEach(function(sk){
       var s=byStaff[sk]; var net=s.amt-s.comm-s.mat;
+      var rate=s.amt>0?Math.round(net/s.amt*1000)/10:0;
       h+='<tr style="border-bottom:1px solid #e2e8f0;">';
       h+='<td style="padding:5px 8px;font-weight:600;color:#1e293b;">'+sk+'</td>';
       h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+s.cnt+'</td>';
@@ -1750,6 +1753,7 @@ function renderDailyTotals(){
       h+='<td style="padding:5px 8px;text-align:right;color:#f97316;">'+formatW(s.comm)+'</td>';
       h+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(s.mat)+'</td>';
       h+='<td style="padding:5px 8px;text-align:right;color:'+(net>=0?'#16a34a':'#ef4444')+';font-weight:600;">'+formatW(net)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#0ea5e9;font-weight:600;">'+rate+'%</td>';
       h+='</tr>';
     });
     h+='</tbody></table></details>';
@@ -1760,9 +1764,10 @@ function renderDailyTotals(){
   if(catKeys.length>1 || (catKeys.length===1 && catKeys[0]!=='미분류')){
     h+='<details><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">🔀 내원경로별 소계 ('+catKeys.length+'개)</summary>';
     h+='<table style="width:100%;border-collapse:collapse;font-size:11px;">';
-    h+='<thead><tr style="background:#f1f5f9;"><th style="padding:5px 8px;text-align:left;color:#64748b;">경로</th><th style="padding:5px 8px;text-align:right;color:#64748b;">건수</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수납액</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수수료</th><th style="padding:5px 8px;text-align:right;color:#64748b;">재료비</th><th style="padding:5px 8px;text-align:right;color:#64748b;">순이익</th></tr></thead><tbody>';
+    h+='<thead><tr style="background:#f1f5f9;"><th style="padding:5px 8px;text-align:left;color:#64748b;">경로</th><th style="padding:5px 8px;text-align:right;color:#64748b;">건수</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수납액</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수수료</th><th style="padding:5px 8px;text-align:right;color:#64748b;">재료비</th><th style="padding:5px 8px;text-align:right;color:#64748b;">순이익</th><th style="padding:5px 8px;text-align:right;color:#64748b;">이익률</th></tr></thead><tbody>';
     catKeys.forEach(function(ck){
       var c=byCat[ck]; var net=c.amt-c.comm-c.mat;
+      var rate=c.amt>0?Math.round(net/c.amt*1000)/10:0;
       h+='<tr style="border-bottom:1px solid #e2e8f0;">';
       h+='<td style="padding:5px 8px;font-weight:600;color:#1e293b;">'+ck+'</td>';
       h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+c.cnt+'</td>';
@@ -1770,6 +1775,7 @@ function renderDailyTotals(){
       h+='<td style="padding:5px 8px;text-align:right;color:#f97316;">'+formatW(c.comm)+'</td>';
       h+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(c.mat)+'</td>';
       h+='<td style="padding:5px 8px;text-align:right;color:'+(net>=0?'#16a34a':'#ef4444')+';font-weight:600;">'+formatW(net)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#0ea5e9;font-weight:600;">'+rate+'%</td>';
       h+='</tr>';
     });
     h+='</tbody></table></details>';
@@ -1850,8 +1856,8 @@ function renderDailyPage(){
   // 테이블
   var html='<table style="width:100%;border-collapse:collapse;font-size:12px;">';
   html+='<thead><tr style="border-bottom:2px solid #cbd5e1;">';
-  ['날짜','이름','분류','수납액','수수료','재료비','순이익','시술항목','실장','의사','결제'].forEach(function(h){
-    var align=(['수납액','수수료','재료비','순이익'].indexOf(h)>=0)?'right':'left';
+  ['날짜','이름','분류','수납액','수수료','재료비','순이익','이익률','시술항목','실장','의사','결제'].forEach(function(h){
+    var align=(['수납액','수수료','재료비','순이익','이익률'].indexOf(h)>=0)?'right':'left';
     html+='<th style="padding:8px 6px;text-align:'+align+';color:#64748b;font-weight:600;white-space:nowrap;font-size:11px;">'+h+'</th>';
   });
   html+='</tr></thead><tbody>';
@@ -1861,12 +1867,14 @@ function renderDailyPage(){
   function flushDaySummary(){
     if(!dayCount) return '';
     var dayNet=dayAmt-dayComm-dayMat;
+    var dayRate=dayAmt>0?Math.round(dayNet/dayAmt*1000)/10:0;
     var r='<tr style="background:#f1f5f9;border-bottom:2px solid #cbd5e1;">';
     r+='<td style="padding:6px;font-size:11px;color:#475569;font-weight:700;" colspan="3">소계 '+dayCount+'건</td>';
     r+='<td style="padding:6px;text-align:right;color:#2563eb;font-weight:700;font-size:12px;">'+formatW(dayAmt)+'</td>';
     r+='<td style="padding:6px;text-align:right;color:#ea580c;font-weight:600;font-size:11px;">'+(dayComm>0?formatW(dayComm):'-')+'</td>';
     r+='<td style="padding:6px;text-align:right;color:#7c3aed;font-weight:600;font-size:11px;">'+(dayMat>0?formatW(dayMat):'-')+'</td>';
     r+='<td style="padding:6px;text-align:right;color:'+(dayNet>=0?'#16a34a':'#ef4444')+';font-weight:700;font-size:12px;">'+formatW(dayNet)+'</td>';
+    r+='<td style="padding:6px;text-align:right;color:#0ea5e9;font-weight:600;font-size:11px;">'+dayRate+'%</td>';
     r+='<td colspan="4"></td></tr>';
     dayAmt=0;dayComm=0;dayMat=0;dayCount=0;
     return r;
@@ -1901,6 +1909,8 @@ function renderDailyPage(){
     html+='<td style="padding:7px 6px;text-align:right;color:#ea580c;white-space:nowrap;">'+(comm>0?formatW(comm):'-')+'</td>';
     html+='<td style="padding:7px 6px;text-align:right;color:#7c3aed;white-space:nowrap;">'+(mat>0?formatW(mat):'-')+'</td>';
     html+='<td style="padding:7px 6px;text-align:right;color:'+(net>=0?'#16a34a':'#ef4444')+';font-weight:600;white-space:nowrap;">'+formatW(net)+'</td>';
+    var rowRate=amt>0?Math.round(net/amt*1000)/10:0;
+    html+='<td style="padding:7px 6px;text-align:right;color:#0ea5e9;white-space:nowrap;font-size:11px;">'+rowRate+'%</td>';
     html+='<td style="padding:7px 6px;color:#64748b;max-width:220px;word-break:break-all;font-size:11px;">'+treats+'</td>';
     html+='<td style="padding:7px 6px;color:#64748b;white-space:nowrap;font-size:11px;">'+(it.staff||'-')+'</td>';
     html+='<td style="padding:7px 6px;color:#64748b;white-space:nowrap;font-size:11px;">'+(it.doctor||'-')+'</td>';
@@ -2459,7 +2469,7 @@ function renderSummary(){
   h+='<span style="color:#94a3b8;">−</span>';
   h+='<span style="font-size:13px;color:#f59e0b;font-weight:600;">수수료 '+colorNum(comm)+'</span>';
   h+='<span style="color:#94a3b8;font-size:16px;">=</span>';
-  h+=resultNum(calc1);
+  h+=resultNum(calc1,rev);
   h+='</div>';
   h+='<div style="font-size:12px;color:#94a3b8;padding:8px 10px;background:#fff;border-radius:7px;">';
   h+=won(rev)+' − '+won(mat)+' − '+won(comm)+' = <b style="color:'+(calc1>=0?'#10b981':'#ef4444')+';">'+won(calc1)+'</b>';
@@ -2647,7 +2657,8 @@ function renderCloudTab(){
 
     h+='<div class="card" style="padding:16px;">';
     h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">';
-    h+='<div><div style="font-size:15px;font-weight:700;">'+esc(a.label)+'</div>';
+    var dispLabel = a.displayLabel || a.label;
+    h+='<div><div style="font-size:15px;font-weight:700;cursor:pointer;" onclick="renameCloudLabel('+i+')" title="클릭하여 이름 수정">'+esc(dispLabel)+' <span style="font-size:11px;color:#64748b;">✏</span></div>';
     h+='<div style="font-size:11px;color:#94a3b8;">저장: '+savedAt+'</div></div>';
     h+='<div style="display:flex;gap:6px;">';
     if(hasCRows)h+='<button class="btn btn-o btn-sm" style="font-size:11px;" onclick="downloadCloudCSV('+i+',\'c\')">⬇ 수납기록</button>';
@@ -2673,6 +2684,18 @@ function renderCloudTab(){
   });
   h+='</div>';
   el.innerHTML=h;
+}
+
+async function renameCloudLabel(i){
+  var a=G.arc[i]; if(!a) return;
+  var cur=a.displayLabel||a.label;
+  var newName=prompt('표시 이름 수정:',cur);
+  if(!newName||newName.trim()===cur) return;
+  a.displayLabel=newName.trim();
+  // Firebase에 displayLabel 업데이트
+  if(window.fbSave){ await window.fbSave(a); }
+  renderCloudTab();
+  renderArcList();
 }
 
 function downloadCloudCSV(arcIdx,type){
