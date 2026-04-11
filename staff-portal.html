@@ -2811,26 +2811,81 @@ function handleImportFile(input){
 }
 
 function showXlsxSheetPicker(names){
-  // 기존 피커 제거
   let old = document.getElementById('xlsx-sheet-picker');
   if(old) old.remove();
 
+  const curYear = new Date().getFullYear();
   let h = '<div id="xlsx-sheet-picker" style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:14px 16px;margin-bottom:12px;">';
-  h += '<div style="font-size:13px;font-weight:700;color:#1d4ed8;margin-bottom:8px;">📋 시트 선택 — '+names.length+'개 시트 발견</div>';
+  h += '<div style="font-size:13px;font-weight:700;color:#1d4ed8;margin-bottom:10px;">📋 시트 선택 — '+names.length+'개 시트 발견</div>';
+
+  // 연도 선택
+  h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">';
+  h += '<label style="font-size:12px;font-weight:600;color:#475569;">연도:</label>';
+  h += '<select id="xlsx-year" style="padding:5px 10px;border:1px solid #93c5fd;border-radius:6px;font-size:13px;background:#fff;">';
+  for(let y=curYear; y>=curYear-3; y--) h += '<option value="'+y+'"'+(y===curYear?' selected':'')+'>'+y+'년</option>';
+  h += '</select>';
+  h += '<span style="font-size:11px;color:#64748b;">선택한 탭의 날짜에 적용됩니다</span>';
+  h += '</div>';
+
+  // 시트 체크박스
   h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
-  names.forEach(function(nm){
-    h += '<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;" onclick="pickXlsxSheet(\''+nm.replace(/'/g,"\\'")+'\')">'+nm+'</button>';
+  names.forEach(function(nm, i){
+    h += '<label style="display:flex;align-items:center;gap:4px;background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;">';
+    h += '<input type="checkbox" class="xlsx-sheet-chk" value="'+i+'" style="cursor:pointer;"> '+nm;
+    h += '</label>';
   });
   h += '</div>';
-  h += '<button class="btn btn-sm btn-p" onclick="pickXlsxSheetAll()">전체 시트 한번에 등록</button>';
-  h += ' <button class="btn btn-sm btn-o" onclick="document.getElementById(\'xlsx-sheet-picker\').remove()">취소</button>';
+
+  // 전체선택 + 업로드 버튼
+  h += '<div style="display:flex;gap:6px;align-items:center;">';
+  h += '<button class="btn btn-sm" style="background:#e2e8f0;color:#475569;" onclick="document.querySelectorAll(\'.xlsx-sheet-chk\').forEach(c=>c.checked=true)">전체 선택</button>';
+  h += '<button class="btn btn-sm" style="background:#e2e8f0;color:#475569;" onclick="document.querySelectorAll(\'.xlsx-sheet-chk\').forEach(c=>c.checked=false)">전체 해제</button>';
+  h += '<button class="btn btn-sm btn-p" onclick="pickXlsxSheetSelected()">선택 시트 등록</button>';
+  h += '<button class="btn btn-sm btn-o" onclick="document.getElementById(\'xlsx-sheet-picker\').remove()">취소</button>';
+  h += '</div>';
   h += '</div>';
 
   const ta = document.getElementById('import-text');
-  ta.parentElement.insertBefore(
-    Object.assign(document.createElement('div'), {innerHTML:h}).firstChild,
-    ta
-  );
+  const div = document.createElement('div');
+  div.innerHTML = h;
+  ta.parentElement.insertBefore(div.firstChild, ta);
+}
+
+function pickXlsxSheetSelected(){
+  const wb = window._xlsxWorkbook;
+  if(!wb) return;
+  const year = document.getElementById('xlsx-year').value;
+  const checked = document.querySelectorAll('.xlsx-sheet-chk:checked');
+  if(!checked.length){ showToast('시트를 1개 이상 선택해주세요','error'); return; }
+
+  document.getElementById('xlsx-sheet-picker')?.remove();
+
+  let allTsv = '';
+  checked.forEach(function(chk){
+    const idx = parseInt(chk.value);
+    const name = wb.SheetNames[idx];
+    const sheet = wb.Sheets[name];
+    cleanXlsxSheet(sheet);
+    // 날짜 셀에 연도 보정: SheetJS cellDates로 Date 객체가 들어있음
+    const range = XLSX.utils.decode_range(sheet['!ref']||'A1');
+    for(let r=range.s.r+1; r<=range.e.r; r++){
+      const addr = XLSX.utils.encode_cell({r:r, c:0});
+      const cell = sheet[addr];
+      if(cell && cell.t==='d' && cell.v instanceof Date){
+        // 연도를 선택된 연도로 교체
+        const d = cell.v;
+        const mon = d.getMonth(); // 0-based
+        // 탭 이름에서 월 추출하여 연도 자동 판단할 수도 있지만, 사용자가 선택한 연도 사용
+        d.setFullYear(parseInt(year));
+        cell.v = d;
+        cell.w = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      }
+    }
+    allTsv += XLSX.utils.sheet_to_csv(sheet, {FS:'\t', RS:'\n'}) + '\n';
+  });
+  document.getElementById('import-text').value = allTsv;
+  processImportText(allTsv);
+  showToast(checked.length+'개 시트 ('+year+'년) 등록 완료','success');
 }
 
 function pickXlsxSheet(name){
@@ -2838,21 +2893,6 @@ function pickXlsxSheet(name){
   if(!wb) return;
   document.getElementById('xlsx-sheet-picker')?.remove();
   processXlsxSheet(wb, name);
-}
-
-function pickXlsxSheetAll(){
-  const wb = window._xlsxWorkbook;
-  if(!wb) return;
-  document.getElementById('xlsx-sheet-picker')?.remove();
-  // 전체 시트를 하나의 TSV로 합침
-  let allTsv = '';
-  wb.SheetNames.forEach(function(name){
-    const sheet = wb.Sheets[name];
-    cleanXlsxSheet(sheet);
-    allTsv += XLSX.utils.sheet_to_csv(sheet, {FS:'\t', RS:'\n'}) + '\n';
-  });
-  document.getElementById('import-text').value = allTsv;
-  processImportText(allTsv);
 }
 
 function cleanXlsxSheet(sheet){
