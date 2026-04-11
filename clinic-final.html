@@ -1200,8 +1200,11 @@ function renderTrendTab(){
     return;
   }
 
-  // 월별 데이터 정렬 (오래된 순)
-  var months=arc.slice().sort(function(a,b){return (a.savedAt||'').localeCompare(b.savedAt||'')});
+  // 월별 데이터 정렬 (라벨 기준 오래된 순 — displayLabel 우선)
+  var months=arc.slice().sort(function(a,b){
+    var la=(a.displayLabel||a.label||''), lb=(b.displayLabel||b.label||'');
+    return la.localeCompare(lb);
+  });
 
   // 전체 직원 목록 수집
   var staffSet={};
@@ -1220,7 +1223,7 @@ function renderTrendTab(){
     var cd=m.cData,ad=m.aData,bd=m.bData;
     var rev=cd?cd.total:0, mat=ad?ad.totalCost:0, comm=bd?bd.totalCommission:0;
     h+='<tr>';
-    h+='<td><b>'+esc(m.label)+'</b></td>';
+    h+='<td><b>'+esc(m.displayLabel||m.label)+'</b></td>';
     h+='<td class="r bold" style="color:#3b82f6;">'+won(rev)+'</td>';
     h+='<td class="r" style="color:#8b5cf6;">'+(mat?won(mat):'-')+'</td>';
     h+='<td class="r" style="color:#f59e0b;">'+(comm?won(comm):'-')+'</td>';
@@ -1249,7 +1252,7 @@ function renderTrendTab(){
 
     months.forEach(function(m){
       var cd=m.cData;
-      h+='<tr><td><b>'+esc(m.label)+'</b></td>';
+      h+='<tr><td><b>'+esc(m.displayLabel||m.label)+'</b></td>';
       h+='<td class="r bold">'+(cd?Math.round(cd.total/10000).toLocaleString('ko-KR')+'만':'-')+'</td>';
       staffs.forEach(function(s){
         var sd=cd&&cd.byStaff?cd.byStaff.find(function(x){return x.name===s;}):null;
@@ -1737,49 +1740,75 @@ function renderDailyTotals(){
   h+='<div style="background:#f0f9ff;border-radius:8px;padding:10px 12px;border-left:3px solid #0ea5e9;"><div style="font-size:10px;color:#64748b;">순이익비율</div><div style="font-size:16px;font-weight:800;color:#0ea5e9;">'+tNetRate+'%</div></div>';
   h+='</div>';
 
-  // 실장별 소계 테이블
-  var staffKeys=Object.keys(byStaff).sort(function(a,b){return byStaff[b].amt-byStaff[a].amt;});
-  if(staffKeys.length>1 || (staffKeys.length===1 && staffKeys[0]!=='미지정')){
-    h+='<details style="margin-bottom:8px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">👤 상담실장별 소계 ('+staffKeys.length+'명)</summary>';
-    h+='<table style="width:100%;border-collapse:collapse;font-size:11px;">';
-    h+='<thead><tr style="background:#f1f5f9;"><th style="padding:5px 8px;text-align:left;color:#64748b;">실장</th><th style="padding:5px 8px;text-align:right;color:#64748b;">건수</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수납액</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수수료</th><th style="padding:5px 8px;text-align:right;color:#64748b;">재료비</th><th style="padding:5px 8px;text-align:right;color:#64748b;">순이익</th><th style="padding:5px 8px;text-align:right;color:#64748b;">이익률</th></tr></thead><tbody>';
-    staffKeys.forEach(function(sk){
-      var s=byStaff[sk]; var net=s.amt-s.comm-s.mat;
-      var rate=s.amt>0?Math.round(net/s.amt*1000)/10:0;
-      h+='<tr style="border-bottom:1px solid #e2e8f0;">';
-      h+='<td style="padding:5px 8px;font-weight:600;color:#1e293b;">'+sk+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+s.cnt+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#2563eb;font-weight:600;">'+formatW(s.amt)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#f97316;">'+formatW(s.comm)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(s.mat)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:'+(net>=0?'#16a34a':'#ef4444')+';font-weight:600;">'+formatW(net)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#0ea5e9;font-weight:600;">'+rate+'%</td>';
-      h+='</tr>';
+  // ── 정렬 가능한 소계 테이블 공통 함수 ──
+  function buildSortableTable(id, title, emoji, dataMap, labelField){
+    var keys=Object.keys(dataMap);
+    if(keys.length<1||(keys.length===1&&(keys[0]==='미지정'||keys[0]==='미분류')))return '';
+    // 정렬 상태 관리
+    if(!window._subtotalSort) window._subtotalSort={};
+    var ss=window._subtotalSort[id]||{col:'amt',asc:false};
+    window._subtotalSort[id]=ss;
+    // 각 행 데이터 준비 (순이익, 이익률 포함)
+    var rows=keys.map(function(k){
+      var d=dataMap[k]; var net=d.amt-d.comm-d.mat;
+      var rate=d.amt>0?Math.round(net/d.amt*1000)/10:0;
+      return {key:k, cnt:d.cnt, amt:d.amt, comm:d.comm, mat:d.mat, net:net, rate:rate};
     });
-    h+='</tbody></table></details>';
+    // 정렬 적용
+    rows.sort(function(a,b){
+      var va=a[ss.col], vb=b[ss.col];
+      if(ss.col==='key') return ss.asc?va.localeCompare(vb):vb.localeCompare(va);
+      return ss.asc?va-vb:vb-va;
+    });
+    var cols=[
+      {key:'key',label:labelField,align:'left'},
+      {key:'cnt',label:'건수',align:'right'},
+      {key:'amt',label:'수납액',align:'right'},
+      {key:'comm',label:'수수료',align:'right'},
+      {key:'mat',label:'재료비',align:'right'},
+      {key:'net',label:'순이익',align:'right'},
+      {key:'rate',label:'이익률',align:'right'}
+    ];
+    var th='';
+    cols.forEach(function(c){
+      var active=ss.col===c.key;
+      var arrow=active?(ss.asc?' ▲':' ▼'):' ⇅';
+      var arrowColor=active?'#3b82f6':'#94a3b8';
+      th+='<th style="padding:5px 8px;text-align:'+c.align+';color:#64748b;cursor:pointer;user-select:none;white-space:nowrap;" onclick="window._sortSubtotal(\''+id+'\',\''+c.key+'\')">';
+      th+=c.label+'<span style="font-size:9px;color:'+arrowColor+';margin-left:2px;">'+arrow+'</span></th>';
+    });
+    var tb='';
+    rows.forEach(function(r){
+      tb+='<tr style="border-bottom:1px solid #e2e8f0;">';
+      tb+='<td style="padding:5px 8px;font-weight:600;color:#1e293b;">'+r.key+'</td>';
+      tb+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+r.cnt+'</td>';
+      tb+='<td style="padding:5px 8px;text-align:right;color:#2563eb;font-weight:600;">'+formatW(r.amt)+'</td>';
+      tb+='<td style="padding:5px 8px;text-align:right;color:#f97316;">'+formatW(r.comm)+'</td>';
+      tb+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(r.mat)+'</td>';
+      tb+='<td style="padding:5px 8px;text-align:right;color:'+(r.net>=0?'#16a34a':'#ef4444')+';font-weight:600;">'+formatW(r.net)+'</td>';
+      tb+='<td style="padding:5px 8px;text-align:right;color:#0ea5e9;font-weight:600;">'+r.rate+'%</td>';
+      tb+='</tr>';
+    });
+    var out='<details style="margin-bottom:8px;" open><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">'+emoji+' '+title+' ('+keys.length+(labelField==='실장'?'명':'개')+')</summary>';
+    out+='<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+    out+='<thead><tr style="background:#f1f5f9;">'+th+'</tr></thead><tbody>'+tb+'</tbody></table></details>';
+    return out;
   }
+  // 정렬 클릭 핸들러
+  window._sortSubtotal=function(id,col){
+    if(!window._subtotalSort) window._subtotalSort={};
+    var ss=window._subtotalSort[id]||{col:'amt',asc:false};
+    if(ss.col===col) ss.asc=!ss.asc;
+    else{ss.col=col; ss.asc=col==='key'?true:false;}
+    window._subtotalSort[id]=ss;
+    renderDailyTotals();
+  };
+
+  // 실장별 소계 테이블
+  h+=buildSortableTable('staff','상담실장별 소계','👤',byStaff,'실장');
 
   // 내원경로별 소계 테이블
-  var catKeys=Object.keys(byCat).sort(function(a,b){return byCat[b].amt-byCat[a].amt;});
-  if(catKeys.length>1 || (catKeys.length===1 && catKeys[0]!=='미분류')){
-    h+='<details><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">🔀 내원경로별 소계 ('+catKeys.length+'개)</summary>';
-    h+='<table style="width:100%;border-collapse:collapse;font-size:11px;">';
-    h+='<thead><tr style="background:#f1f5f9;"><th style="padding:5px 8px;text-align:left;color:#64748b;">경로</th><th style="padding:5px 8px;text-align:right;color:#64748b;">건수</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수납액</th><th style="padding:5px 8px;text-align:right;color:#64748b;">수수료</th><th style="padding:5px 8px;text-align:right;color:#64748b;">재료비</th><th style="padding:5px 8px;text-align:right;color:#64748b;">순이익</th><th style="padding:5px 8px;text-align:right;color:#64748b;">이익률</th></tr></thead><tbody>';
-    catKeys.forEach(function(ck){
-      var c=byCat[ck]; var net=c.amt-c.comm-c.mat;
-      var rate=c.amt>0?Math.round(net/c.amt*1000)/10:0;
-      h+='<tr style="border-bottom:1px solid #e2e8f0;">';
-      h+='<td style="padding:5px 8px;font-weight:600;color:#1e293b;">'+ck+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+c.cnt+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#2563eb;font-weight:600;">'+formatW(c.amt)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#f97316;">'+formatW(c.comm)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(c.mat)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:'+(net>=0?'#16a34a':'#ef4444')+';font-weight:600;">'+formatW(net)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#0ea5e9;font-weight:600;">'+rate+'%</td>';
-      h+='</tr>';
-    });
-    h+='</tbody></table></details>';
-  }
+  h+=buildSortableTable('cat','내원경로별 소계','🔀',byCat,'경로');
 
   el.innerHTML=h;
   el.style.display=cnt>0?'block':'none';
@@ -1844,8 +1873,20 @@ function renderDailyPage(){
 
   // 요약
   var allCnt=_dailyAllItems.length;
+  // 년월 추출 (데이터의 날짜 범위)
+  var dateRange='';
+  if(_dailyFiltered.length){
+    var dates=_dailyFiltered.map(function(it){return it.date||'';}).filter(Boolean).sort();
+    if(dates.length){
+      var first=dates[0], last=dates[dates.length-1];
+      var ym1=first.slice(0,7).replace('-','년 ').replace(/^(\d{4}년)0?/,'$1')+'월';
+      var ym2=last.slice(0,7).replace('-','년 ').replace(/^(\d{4}년)0?/,'$1')+'월';
+      dateRange=ym1===ym2?ym1:ym1+'~'+ym2;
+    }
+  }
   var sumText=total===allCnt ? '전체 '+total+'건' : '필터 '+total+'건 / 전체 '+allCnt+'건';
-  document.getElementById('daily-summary').textContent=sumText+' | '+(start+1)+'~'+end+'번째 ('+totalPages+'p 중 '+_dailyPage+'p)';
+  var srcLabel=dateRange?dateRange+'_(상담리스트)':'(상담리스트)';
+  document.getElementById('daily-summary').textContent=srcLabel+' · '+sumText+' | '+(start+1)+'~'+end+'번째 ('+totalPages+'p 중 '+_dailyPage+'p)';
 
   if(!total){
     document.getElementById('daily-table-wrap').innerHTML='<div style="text-align:center;padding:40px;color:#64748b;">수납 데이터가 없습니다</div>';
