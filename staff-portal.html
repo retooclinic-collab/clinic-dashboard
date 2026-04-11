@@ -1810,12 +1810,12 @@ function localParse(raw){
     results.push({item:'미라젯', qty: mjQtyM ? parseInt(mjQtyM[1]) : 1});
   }
 
-  // ── 쥬베룩볼륨 ──
-  const jbvM = raw.match(/쥬베룩볼륨.*?(\d+)\s*회/i);
-  const jbvB = raw.match(/쥬베룩볼륨.*?(\d+)\s*병/i);
+  // ── 쥬베룩볼륨 (띄어쓰기 허용: "쥬베룩 볼륨") ──
+  const jbvM = raw.match(/쥬베룩\s*볼륨.*?(\d+)\s*회/i);
+  const jbvB = raw.match(/쥬베룩\s*볼륨.*?(\d+)\s*병/i);
   if(jbvM) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvM[1])});
   else if(jbvB) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvB[1])});
-  else if(/쥬베룩볼륨/i.test(raw)) results.push({item:'쥬베룩볼륨', qty:1});
+  else if(/쥬베룩\s*볼륨/i.test(raw)) results.push({item:'쥬베룩볼륨', qty:1});
 
   // ── 쥬베룩아이 (띄어쓰기 허용: "쥬베룩 아이") ──
   const jbeyeM = raw.match(/쥬베룩\s*아이.*?(\d+)\s*회/i);
@@ -1823,7 +1823,7 @@ function localParse(raw){
   else if(/쥬베룩\s*아이/i.test(raw)) results.push({item:'쥬베룩아이', qty:1});
 
   // ── 쥬베룩 (단독, 볼륨/아이가 아닌 일반 쥬베룩) ──
-  if(!(/쥬베룩볼륨/i.test(raw)) && !(/쥬베룩\s*아이/i.test(raw)) && !hasMjJbv){
+  if(!(/쥬베룩\s*볼륨/i.test(raw)) && !(/쥬베룩\s*아이/i.test(raw)) && !hasMjJbv){
     const jbCc = raw.match(/쥬베룩\s*(\d+)\s*cc/i);
     const jbBottle = raw.match(/쥬베룩\s*(\d+)\s*병/i);
     const jbQtyM = raw.match(/쥬베룩\s*(\d+)\s*회/i);
