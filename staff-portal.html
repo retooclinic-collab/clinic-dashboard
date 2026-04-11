@@ -2143,6 +2143,31 @@ function localParse(raw){
   else if(/co2/i.test(raw)) results.push({item:'CO2', qty:1});
   if(/좌측볼사마귀|사마귀|편사|점\s*\d+개/i.test(raw) && !/제거/i.test(raw)) {}
 
+  // SV(서비스/무료) 감지: "시술명SV" 또는 "시술명 SV" → 해당 항목 가격 0
+  // 예: "얼전국산b(눈밑눈가메인)SV" → 보톡스(국산) _fixedAmt:0
+  const svPattern = /(?:^|[\n,+])([^,\n]+?)sv(?:\s|[=,\n+]|$)/gim;
+  const svMatches = [..._origRaw.matchAll(svPattern)];
+  if(svMatches.length > 0){
+    results.forEach(r => {
+      if(r._fixedAmt !== undefined) return; // 이미 고정가 있으면 스킵
+      // 해당 항목의 키워드가 SV 컨텍스트에 있는지 확인
+      svMatches.forEach(sm => {
+        const svContext = sm[1] + 'sv';
+        const KEYWORDS = {
+          '울쎄라(100샷)':/울쎄라/i, '소프웨이브(50샷)':/소프/i,
+          '튠페이스':/튠페/i, '튠라이너':/튠라이너/i, '티타늄':/티타늄/i,
+          '온다':/온다/i, 'BBL(색소)':/bbl/i, '보톡스(국산)':/국산.*?b|b.*?국|국산.*?보톡스|보톡스.*?국/i,
+          '보톡스(수입)':/제오민|보톡스.*?수입/i, '필러(수입)':/수입.*?필러|필러.*?수입/i,
+          '필러(국산)':/국산.*?필러|필러.*?국/i, '엠페이스':/엠페/i,
+          '듀얼피코':/듀얼피코|피코/i, '리쥬란':/리쥬란/i, '힐로웨이브':/힐로웨이브/i,
+          '미라젯':/미라젯/i, '수면비':/수면/i, '피부관리':/진정|피부관리/i,
+        };
+        const kw = KEYWORDS[r.item];
+        if(kw && kw.test(svContext)) r._fixedAmt = 0;
+      });
+    });
+  }
+
   // 중복 제거
   const seen = {};
   const deduped = [];
@@ -2308,6 +2333,9 @@ function extractAmount(text){
   // → 숫자m 패턴 우선 (최종 결제금액): "= 264m(...) → 258.8m(알리)" → 258.8
   const arrow = text.match(/→\s*(-?[\d,]+\.?\d*)\s*(?:[mM만](?:원)?)/);
   if(arrow) return parseFloat(arrow[1].replace(/,/g,''));
+  // =N중 패턴: "=697.4중 647.9m(카)+49.5미수" → 총액 697.4
+  const jung = text.match(/[=＝]\s*(-?[\d,]+\.?\d*)\s*중/);
+  if(jung){ const v=parseFloat(jung[1].replace(/,/g,'')); if(v>0) return v; }
   // =숫자m/M/만원/만 패턴 (마이너스 허용)
   const m = text.match(/[=＝]\s*(-?[\d,]+\.?\d*)\s*(?:[mM만](?:원)?)/);
   if(m) return parseFloat(m[1].replace(/,/g,''));
@@ -2329,8 +2357,10 @@ function extractPayment(text){
     return { methods: ['이체(자진)'], splitDetails: [{method:'이체(자진)', amt}] };
   }
   // 금액m(결제방식) 패턴: =855.2m(위챗), →258.8m(알리), =170.5m(120현금자진+50.5카)
-  const amtPayPattern = /(?:→|[=＝])\s*([\d,.]+)\s*[mM만]?\s*\(([^)]+)\)/g;
-  const amtPayMatches = [...text.matchAll(amtPayPattern)];
+  // "=697.4중 647.9m(카)+49.5미수" → "N중" 부분 제거하여 "647.9m(카)+49.5미수" 매칭 가능하게
+  const payText2 = text.replace(/[=＝]\s*[\d,.]+\s*중\s*/g, '');
+  const amtPayPattern = /(?:→|[=＝])?\s*([\d,.]+)\s*[mM만]\s*\(([^)]+)\)/g;
+  const amtPayMatches = [...payText2.matchAll(amtPayPattern)];
 
   let methods = [];
   let splitDetails = [];
@@ -2372,6 +2402,16 @@ function extractPayment(text){
     // 단일 결제방식이면 전체 금액 자동 채우기
     if(methods.length === 1 && splitDetails.length === 0 && totalAmt > 0){
       splitDetails.push({method: methods[0], amt: totalAmt});
+    }
+  }
+
+  // 미수 패턴: "+49.5미수", "49.5미수" (괄호 밖, 결제 뒤에 붙는 미수금)
+  const misuM = text.match(/([\d,.]+)\s*미수/i);
+  if(misuM){
+    const misuAmt = parseFloat(misuM[1].replace(/,/g,''));
+    if(misuAmt > 0){
+      if(!methods.includes('미수')) methods.push('미수');
+      splitDetails.push({method:'미수', amt: misuAmt});
     }
   }
 
@@ -2432,6 +2472,7 @@ function normalizePayMethod(s){
   if(/위챗|위쳇|wechat/.test(s)) return '위챗';
   if(/알리/.test(s)) return '알리페이';
   if(/자진/.test(s)) return '현금(자진)';
+  if(/미수/.test(s)) return '미수';
   return null;
 }
 
@@ -3397,7 +3438,7 @@ function showPaymentMethod(payInfo){
   }
   el.style.display='block';
 
-  const PAY_OPTIONS = ['카드','현금(자진)','이체(현영)','위챗','알리페이'];
+  const PAY_OPTIONS = ['카드','현금(자진)','이체(현영)','위챗','알리페이','미수'];
   const total = parseFloat(document.getElementById('f-amount')?.value)||0;
 
   // 내부 데이터 정규화
@@ -3426,11 +3467,15 @@ function showPaymentMethod(payInfo){
   <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">`;
 
   pm.items.forEach((item, i) => {
+    const isMisu = item.method === '미수';
+    const misuStyle = isMisu ? 'border-color:#ef4444;' : '';
+    const misuColor = isMisu ? '#ef4444' : 'var(--sub)';
+    const misuAmtColor = isMisu ? '#ef4444' : 'var(--accent)';
     html += `
-    <span style="display:inline-flex;align-items:center;gap:4px;background:#0f172a;border:1px solid var(--border);border-radius:20px;padding:4px 6px 4px 10px;font-size:12px">
-      <span style="color:var(--sub)">${item.method}</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;background:#0f172a;border:1px solid ${isMisu?'#ef4444':'var(--border)'};border-radius:20px;padding:4px 6px 4px 10px;font-size:12px">
+      <span style="color:${misuColor};font-weight:${isMisu?'700':'400'}">${item.method}</span>
       <input type="number" value="${item.amt||''}" placeholder="금액" step="0.1" min="0"
-        style="width:56px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--accent);font-size:12px;font-weight:700;text-align:right;outline:none;padding:0 2px"
+        style="width:56px;background:transparent;border:none;border-bottom:1px solid ${isMisu?'#ef4444':'var(--border)'};color:${misuAmtColor};font-size:12px;font-weight:700;text-align:right;outline:none;padding:0 2px"
         onchange="updatePayItem(${i},this.value)"
         title="${item.method} 금액(만원)">
       <span style="color:var(--muted);font-size:11px">만</span>
