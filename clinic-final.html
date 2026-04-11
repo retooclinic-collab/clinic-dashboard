@@ -947,6 +947,58 @@ async function loadFromConsultations(){
 
     markDone('c',G.cFile);
     computeC();
+
+    // 상담데이터 treatments → aData(재료비) 자동 계산
+    var treatMap={};
+    items.forEach(function(it){
+      (it.treatments||[]).forEach(function(t){
+        var nm=(t.item||'').trim();
+        if(!nm) return;
+        if(!treatMap[nm]) treatMap[nm]={count:0};
+        treatMap[nm].count+=(parseFloat(t.qty)||1);
+      });
+    });
+    if(Object.keys(treatMap).length){
+      var cfgT=loadCfg();
+      var aItems=[];
+      Object.keys(treatMap).forEach(function(nm){
+        var cnt=treatMap[nm].count;
+        var pr=cfgT.procedures[nm]?parseFloat(cfgT.procedures[nm].price)||0:0;
+        aItems.push({name:nm,count:cnt,price:pr,subtotal:cnt*pr});
+      });
+      aItems.sort(function(a,b){return b.subtotal-a.subtotal});
+      G.aData={items:aItems,totalCost:aItems.reduce(function(s,i){return s+i.subtotal},0)};
+      G.aFile=ym.replace('-','년 ')+'월_(상담시술집계)';
+      markDone('a',G.aFile);
+    }
+
+    // 상담데이터 cat1 → bData(수수료) 자동 계산
+    var routeMap={};
+    items.forEach(function(it){
+      var route=(it.cat1||'').trim();
+      if(!route || /합계|총계/.test(route)) return;
+      var amt=(parseFloat(it.amount)||0)*10000; // manwon→원
+      if(!routeMap[route]) routeMap[route]=0;
+      routeMap[route]+=amt;
+    });
+    if(Object.keys(routeMap).length){
+      var cfgB=loadCfg();
+      var bItems=[];
+      Object.keys(routeMap).forEach(function(route){
+        var amt=routeMap[route];
+        var rc=cfgB.routes[route];
+        var v=rc?parseFloat(rc.value)||0:0;
+        var tp=rc?rc.type:'percent';
+        var comm=tp==='percent'?amt*(v/100):v;
+        bItems.push({route:route,amount:amt,type:tp,value:v,commission:comm});
+      });
+      var totA=bItems.reduce(function(s,i){return s+i.amount},0);
+      var totC=bItems.reduce(function(s,i){return s+i.commission},0);
+      G.bData={items:bItems,totalAmount:totA,totalCommission:totC};
+      G.bFile=ym.replace('-','년 ')+'월_(상담경로집계)';
+      markDone('b',G.bFile);
+    }
+
     render();
     renderCardSection();
     renderSummary();
@@ -962,13 +1014,54 @@ async function loadFromConsultations(){
     document.getElementById('df-to').value=ym+'-'+String(lastDay).padStart(2,'0');
     applyDailyFilter();
 
-    // 저장 모달 월/라벨 자동 세팅
-    var saveMonth=document.getElementById('save-month');
-    if(saveMonth) saveMonth.value=ym;
-    var saveLbl=document.getElementById('save-lbl');
-    if(saveLbl) saveLbl.value=ym.replace('-','년 ')+'월_(상담리스트)';
+    // 새 시술항목 → 설정 재료비단가에 자동 추가 (price 0)
+    var cfg=loadCfg();
+    var newProcs={};
+    items.forEach(function(it){
+      (it.treatments||[]).forEach(function(t){
+        var nm=(t.item||'').trim();
+        if(nm && !cfg.procedures[nm] && !newProcs[nm]){
+          newProcs[nm]={price:0};
+        }
+      });
+    });
+    if(Object.keys(newProcs).length){
+      Object.assign(cfg.procedures,newProcs);
+      saveCfg(cfg);
+      renderCfgUI();
+    }
 
-    alert(ym+' 상담데이터 '+items.length+'건 불러옴!\n분석 탭에서 확인 후 💾 저장하세요.');
+    // 자동 저장 → clinic_archive (종합분석에 바로 반영)
+    var saveLbl=ym.replace('-','년 ')+'월';
+    document.getElementById('save-lbl').value=saveLbl;
+    document.getElementById('save-month').value=ym;
+    if(window.fbSave){
+      // doSave와 동일한 로직 (인라인)
+      function clean(v){
+        if(v===undefined||v===null)return null;
+        try{var str=JSON.stringify(v,function(k,val){if(val===undefined)return null;return val;});var parsed=JSON.parse(str);return deepCleanAuto(parsed);}catch(e){return null;}
+      }
+      function deepCleanAuto(obj){
+        if(Array.isArray(obj))return obj.map(deepCleanAuto);
+        if(obj&&typeof obj==='object'){var out={};Object.keys(obj).forEach(function(k){if(k==='')return;out[k]=deepCleanAuto(obj[k]);});return out;}
+        return obj;
+      }
+      var entry={
+        label:saveLbl, displayLabel:saveLbl, savedAt:new Date().toISOString(),
+        cData:clean(G.cData), aData:clean(G.aData), bData:clean(G.bData),
+        bankData:clean(G.bankData), bankManualCards:clean(G.bankManualCards)||[],
+        bankEditedCards:clean(G.bankEditedCards)||[],
+        fixedEditedCosts:G.fixedEditedCosts!==null?clean(G.fixedEditedCosts):null,
+        cFile:G.cFile||'', aFile:G.aFile||'', bFile:G.bFile||'',
+        cCols:clean(G.cCols),
+        cRows:clean(G.cRows), aRows:clean(G.aRows), bRows:clean(G.bRows)
+      };
+      var sz=JSON.stringify(entry).length;
+      if(sz>900000){entry.cRows=null;entry.aRows=null;entry.bRows=null;entry._rowsOmitted=true;}
+      await window.fbSave(entry);
+    }
+
+    alert(ym+' 상담데이터 '+items.length+'건 불러옴!\n✅ 자동 저장 완료 — 종합분석에서 확인하세요.'+(Object.keys(newProcs).length?'\n🧪 새 시술항목 '+Object.keys(newProcs).length+'개 추가 (설정에서 재료비 단가 입력)':''));
   }catch(e){
     alert('불러오기 실패: '+e.message);
     console.error(e);
