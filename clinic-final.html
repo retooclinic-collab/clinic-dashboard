@@ -1032,7 +1032,7 @@ async function loadFromConsultations(){
     }
 
     // 자동 저장 → clinic_archive (종합분석에 바로 반영)
-    var saveLbl=ym.replace('-','년 ')+'월';
+    var saveLbl=ym.replace('-','년 ')+'월_(상담리스트)';
     document.getElementById('save-lbl').value=saveLbl;
     document.getElementById('save-month').value=ym;
     if(window.fbSave){
