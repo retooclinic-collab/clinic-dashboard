@@ -1036,13 +1036,14 @@ async function loadFromConsultations(){
     document.getElementById('save-lbl').value=saveLbl;
     document.getElementById('save-month').value=ym;
     if(window.fbSave){
-      // 같은 월 기존 데이터 정리 (라벨 다른 중복 방지)
+      // 같은 월 상담리스트 기존 데이터만 정리 (엑셀 업로드 건드리지 않음)
       var ymKey=ym.replace('-','년 ')+'월'; // "2026년 04월"
       if(G.arc&&G.arc.length&&window.fbDelete){
         for(var ai=0;ai<G.arc.length;ai++){
           var oldLbl=G.arc[ai].label||'';
-          // 같은 월이지만 다른 라벨이면 삭제 (예: "2026년 04월" vs "2026년 04월_(상담리스트)")
-          if(oldLbl!==saveLbl && oldLbl.indexOf(ymKey)===0){
+          // "2026년 04월" (접미사 없음) 또는 "2026년 04월_(상담리스트)" 만 삭제
+          // "2026년 04월_베가스" 같은 엑셀 업로드는 절대 안 건드림
+          if(oldLbl!==saveLbl && (oldLbl===ymKey || oldLbl===ymKey+'_(상담리스트)')){
             await window.fbDelete(oldLbl);
           }
         }
