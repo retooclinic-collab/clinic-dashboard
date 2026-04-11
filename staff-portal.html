@@ -331,6 +331,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
             <option value="중국원내">중국원내</option>
             <option value="일본(통)">일본(통)</option>
             <option value="외국인">외국인</option>
+            <option value="예약금">예약금</option>
           </select>
         </div>
         <div class="form-group" id="cat2-wrap" style="display:none">
@@ -1596,7 +1597,8 @@ function localParse(raw){
   const notes = [];
 
   // ── 환불 감지: "환불" 키워드가 있으면 다른 시술 파싱 건너뜀 ──
-  if(/환불/i.test(raw)){
+  // 단, "환불후재결제" + 위약금이 있으면 환불이 아닌 위약금 결제
+  if(/환불/i.test(raw) && !/환불\s*후\s*재결제/i.test(raw) && !/위약금/i.test(raw)){
     // 금액 추출: -19.8만원, -19.8m, 환불금액19.8 등
     const refundM = raw.match(/([\d,.]+)\s*만\s*원/i) || raw.match(/[=＝]\s*([\d,.]+)\s*[mM]/i) || raw.match(/([\d,.]+)\s*[mM]/i);
     const refundAmt = refundM ? parseFloat(refundM[1].replace(/,/g,'')) : Math.abs(extractAmount(raw)||0);
@@ -2413,6 +2415,9 @@ function extractAmount(text){
   // (가격)/결제방식 패턴: 제네시스PTT(38.5)/카
   const m2 = text.match(/\((-?[\d.]+)\)\s*\/\s*(?:카|현|알|위|이체)/i);
   if(m2) return parseFloat(m2[1]);
+  // =N(결제방식) 패턴 (m/M 생략): =183.7(91알리+나머지92.7카)
+  const m2b = text.match(/[=＝]\s*(-?[\d,]+\.?\d*)\s*\(/);
+  if(m2b){ const v=parseFloat(m2b[1].replace(/,/g,'')); if(v>0) return v; }
   // N만원 폴백 (환불 등 = 없는 케이스): -19.8만원
   const m3 = text.match(/(-?[\d,]+\.?\d*)\s*만\s*원/);
   if(m3) return parseFloat(m3[1].replace(/,/g,''));
@@ -2426,8 +2431,8 @@ function extractAmount(text){
 
 /* ── 결제방식 추출 ── */
 function extractPayment(text){
-  // 환불: 이체(현영)으로 자동 설정
-  if(/환불/i.test(text)){
+  // 환불: 이체(현영)으로 자동 설정 (환불후재결제+위약금은 제외)
+  if(/환불/i.test(text) && !/환불\s*후\s*재결제/i.test(text) && !/위약금/i.test(text)){
     const refM = text.match(/([\d,.]+)\s*만\s*원/i) || text.match(/[=＝]\s*([\d,.]+)\s*[mM]/i) || text.match(/([\d,.]+)\s*[mM]/i);
     const amt = refM ? -parseFloat(refM[1].replace(/,/g,'')) : 0;
     return { methods: ['이체(현영)'], splitDetails: [{method:'이체(현영)', amt}] };
@@ -2435,7 +2440,7 @@ function extractPayment(text){
   // 금액m(결제방식) 패턴: =855.2m(위챗), →258.8m(알리), =170.5m(120현금자진+50.5카)
   // "=697.4중 647.9m(카)+49.5미수" → "N중" 부분 제거하여 "647.9m(카)+49.5미수" 매칭 가능하게
   const payText2 = text.replace(/[=＝]\s*[\d,.]+\s*중\s*/g, '');
-  const amtPayPattern = /(?:→|[=＝])?\s*([\d,.]+)\s*[mM만]\s*\(([^)]+)\)?/g;
+  const amtPayPattern = /(?:→|[=＝])?\s*([\d,.]+)\s*[mM만]?\s*\(([^)]+)\)?/g;
   const amtPayMatches = [...payText2.matchAll(amtPayPattern)];
 
   let methods = [];
@@ -2445,7 +2450,8 @@ function extractPayment(text){
   const lastAmtPay = amtPayMatches.length > 0 ? amtPayMatches[amtPayMatches.length - 1] : null;
   if(lastAmtPay){
     const totalAmt = parseFloat(lastAmtPay[1].replace(/,/g,''));
-    const inner = lastAmtPay[2];
+    // "이체+자진", "이체,자진" → 이체현영으로 통합 (분리 방지)
+    const inner = lastAmtPay[2].replace(/이체\s*[+,]\s*자진/gi, '이체현영');
     // 분할결제: (120현금자진+50.5카), (400카+나머지알리) 형태
     const parts = inner.split(/[+,\/]/);
     let remainderMethod = null; // "나머지" 키워드용
@@ -3114,7 +3120,7 @@ function openImportEditModal(idx){
 
   const STAFF_LIST = ['김구슬','길연주','김도은','호아신','장나은','테스트'];
   const STAFF_ALL = [...STAFF_LIST, '명재은','데스크','퇴사-장','퇴사-황','퇴사-이','퇴사-공','퇴사-한빛','퇴사-유엄진','퇴사-주미진'];
-  const CAT1_LIST = ['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국원내','일본(통)','외국인'];
+  const CAT1_LIST = ['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국원내','일본(통)','외국인','예약금'];
   const DOCTORS = ['김재림','김선민','윤규성','송승아','장명선','기록없음'];
 
   modal.innerHTML = `
