@@ -3579,9 +3579,8 @@ function showPaymentMethod(payInfo){
     const amountWrap = document.getElementById('amount-wrap');
     if(amountWrap) amountWrap.parentNode.insertBefore(el, amountWrap);
   }
-  if(!payInfo || (!payInfo.methods?.length && !payInfo.splitDetails?.length)){
-    el.style.display='none'; return;
-  }
+  // 결제방식 감지 안 돼도 항상 표시 (수동 추가 가능하도록)
+  if(!payInfo) payInfo = {methods:[], splitDetails:[]};
   el.style.display='block';
 
   const PAY_OPTIONS = ['카드','현금(자진)','이체(현영)','위챗','알리페이','미수'];
