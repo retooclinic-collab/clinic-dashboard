@@ -293,6 +293,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
             <option value="호아신">호아신</option>
             <option value="장나은">장나은</option>
             <option value="테스트">테스트</option>
+            <option value="예약금">예약금</option>
           </select>
         </div>
         <div class="form-group">
@@ -834,7 +835,8 @@ const STAFF_MAP = {
   '주미진':'퇴사-주미진', '아신':'호아신',
   // 풀네임 그대로
   '김구슬':'김구슬', '길연주':'길연주', '명재은':'명재은',
-  '장나은':'장나은', '호아신':'호아신', '김도은':'김도은'
+  '장나은':'장나은', '호아신':'호아신', '김도은':'김도은',
+  '예약금':'예약금'
 };
 function mapStaff(s){
   if(!s) return s;
@@ -1243,10 +1245,17 @@ function distributePrices(treatments, total, rawText){
   if(treatments.length===1 && treatments[0]._fixedAmt!==undefined){
     return [{...treatments[0], price: treatments[0]._fixedAmt}];
   }
-  if(!total || total<=0) return treatments.map(t=>({
-    ...t,
-    price: t._deductAmt !== undefined ? t._deductAmt : t._fixedAmt !== undefined ? t._fixedAmt : Math.round((CHARGE_PRICE[t.item]??0)*t.qty*100)/100
-  }));
+  // 적립금차감 전액결제: 모든 항목 0원
+  const hasCreditPayAll = treatments.some(t=>t._creditPayAll);
+  if(hasCreditPayAll || (!total || total<=0)){
+    if(hasCreditPayAll){
+      return treatments.map(t=>({...t, price: 0}));
+    }
+    return treatments.map(t=>({
+      ...t,
+      price: t._deductAmt !== undefined ? t._deductAmt : t._fixedAmt !== undefined ? t._fixedAmt : Math.round((CHARGE_PRICE[t.item]??0)*t.qty*100)/100
+    }));
+  }
 
   let found={}, foundParen={};
   try {
@@ -1495,6 +1504,14 @@ function localParse(raw){
     return {treatments: results, notes: '환불'};
   }
 
+  // ── 적립금차감 전액결제 감지: "적립금차감 432m 소프+울쎄라+온다" ──
+  // 텍스트 시작 부근에 "적립금차감 Nm"이 있으면 전액 적립금 결제
+  const creditPayM = raw.match(/적립금차감\s*([\d,.]+)\s*[mM만]?/i);
+  const isCreditPay = creditPayM && !/[-－]\s*(?:남은)?\s*적립금/.test(raw); // -남은적립금 패턴이 아닌 경우만
+  if(isCreditPay){
+    results.push({item:'적립금차감', qty:1, _fixedAmt: 0, _creditPayAll: true});
+  }
+
   // ── 적립금/남은금액/선납금 차감 파싱 ──
   // 패턴: -남은금액66, -남은적립금121차감, -어머님남은적립금121차감후, 적립금N차감, 상품권N
   const deductPatterns = [
@@ -1516,7 +1533,7 @@ function localParse(raw){
       }
     });
   });
-  if(totalDeduct > 0){
+  if(totalDeduct > 0 && !isCreditPay){
     results.push({item:'적립금차감', qty:1, _deductAmt: -totalDeduct});
   }
 
@@ -1976,7 +1993,9 @@ function localParse(raw){
   }
   // 예약금: "예약금=110m" 또는 단독 "예약금" 결제 (제외 아닌 경우)
   else if(/예약금/i.test(raw)){
-    const ybTotal = extractAmount(raw) || 0;
+    // 예약금3.3, 예약금 3.3m 등에서 금액 추출
+    const ybAmtM = raw.match(/예약금\s*([\d.]+)\s*[mM만]?/i);
+    const ybTotal = ybAmtM ? parseFloat(ybAmtM[1]) : (extractAmount(raw) || 0);
     results.push({item:'예약금', qty:1, _fixedAmt: ybTotal||0});
   }
   // 적립금 잔액: "442.2m 남음", "남은 적립금 442.2" 등
@@ -2013,14 +2032,30 @@ async function parsePayment(){
 
   try {
     const parsed = localParse(text);
-    // ── 결제금액: 텍스트에서 추출되면 항상 업데이트 ──
-    const extracted = extractAmount(text);
+    // ── 적립금차감 전액결제 감지 → 결제금액 0 자동 세팅 ──
+    const hasCreditPayAll = parsed.treatments?.some(t=>t._creditPayAll);
     const amountInput = document.getElementById('f-amount');
-    if(extracted !== null && amountInput){
+    if(hasCreditPayAll && amountInput){
+      amountInput.value = 0;
+      checkAmountMatch();
+    }
+    // ── 예약금 감지 → 상담직원 '예약금' 자동 세팅 + 금액 자동 ──
+    const yb = parsed.treatments?.find(t=>t.item==='예약금');
+    if(yb && parsed.treatments.length === 1){
+      const staffSel = document.getElementById('f-staff');
+      if(staffSel) staffSel.value = '예약금';
+      if(yb._fixedAmt > 0 && amountInput){
+        amountInput.value = yb._fixedAmt;
+        checkAmountMatch();
+      }
+    }
+    // ── 결제금액: 텍스트에서 추출되면 항상 업데이트 ──
+    const extracted = hasCreditPayAll ? 0 : extractAmount(text);
+    if(extracted !== null && !hasCreditPayAll && amountInput){
       amountInput.value = extracted;
       checkAmountMatch();
     }
-    const total = extracted || parseFloat(amountInput?.value) || 0;
+    const total = hasCreditPayAll ? 0 : (extracted || parseFloat(amountInput?.value) || 0);
     showParseResult(parsed, total);
     // ── 결제방식 자동 추출 (재분석 시 초기화) ──
     window._paymentMethods = null;
