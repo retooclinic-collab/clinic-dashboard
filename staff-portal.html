@@ -1228,11 +1228,11 @@ function extractTextPrices(raw, treatments){
           const std = (CHARGE_PRICE[t.item]??0)*t.qty;
           if(stdSum>0){
             if(idx < groupItems.length-1){
-              const share = Math.round(p * std / stdSum * 100)/100;
+              const share = Math.round(p * std / stdSum * 10)/10;
               found[t.item] = share;
               distRunning += share;
             } else {
-              found[t.item] = Math.round((p - distRunning)*100)/100;
+              found[t.item] = Math.round((p - distRunning)*10)/10;
             }
           } else {
             found[t.item] = p/groupItems.length;
@@ -1278,12 +1278,12 @@ function extractTextPrices(raw, treatments){
     const pairStdSum = curStd + prevStd;
     if(pairStdSum>0 && p >= pairStdSum*0.4 && p <= pairStdSum*2){
       // 묶음가 → 비율 분배 (반올림 오차 보정: 한쪽 계산 후 나머지로 차감)
-      const curShare = Math.round(p * curStd / pairStdSum * 100)/100;
-      const prevShare = Math.round((p - curShare)*100)/100;
+      const curShare = Math.round(p * curStd / pairStdSum * 10)/10;
+      const prevShare = Math.round((p - curShare)*10)/10;
       found[curItem.item] = curShare;
       // prevItem에 이미 다른 세그먼트 가격이 있으면 합산, 없으면 새로 설정
       if(found[prevItem.item]!==undefined){
-        found[prevItem.item] = Math.round((found[prevItem.item] + prevShare)*100)/100;
+        found[prevItem.item] = Math.round((found[prevItem.item] + prevShare)*10)/10;
       } else {
         found[prevItem.item] = prevShare;
       }
