@@ -857,8 +857,8 @@ function setMode(mode){
   document.getElementById('vip-notice').style.display=mode==='vip'?'block':'none';
   document.getElementById('import-section').style.display=mode==='import'?'block':'none';
 
-  // 수납 리스트: list/import 탭에서 표시 (직원은 import에서도 숨김 → 홈의 최근3일만 열람)
-  const showList = mode==='list' || (mode==='import' && window._isAdmin);
+  // 수납 리스트: list 탭 + import 탭에서 모두 표시
+  const showList = mode==='list' || mode==='import';
   const hs = document.getElementById('history-section');
   if(hs) hs.style.display = showList ? 'block' : 'none';
 
@@ -2688,7 +2688,7 @@ function renderImportPreview(){
     html += '<td style="padding:6px;text-align:right;color:#38bdf8;font-weight:700;font-size:11px">' + r.amount + '만</td>';
     html += '<td style="padding:6px;color:#94a3b8;font-size:11px;overflow:hidden;text-overflow:ellipsis">' + r.staff + '</td>';
     html += '<td style="padding:6px;text-align:center"><span style="font-size:10px;padding:2px 6px;border:1px solid '+badgeColor+';border-radius:10px;color:'+badgeColor+';cursor:pointer" onclick="toggleImportTreat('+i+')">' + treatCount + (sumOk?'✓':'⚠') + '</span></td>';
-    html += '<td style="padding:6px"><button onclick="openImportEditModal('+i+')" style="font-size:10px;padding:3px 7px;background:#38bdf8;color:#0f172a;border:none;border-radius:7px;cursor:pointer;font-weight:700">수정</button></td>';
+    html += '<td style="padding:6px;white-space:nowrap"><button onclick="openImportEditModal('+i+')" style="font-size:10px;padding:3px 7px;background:#38bdf8;color:#0f172a;border:none;border-radius:7px;cursor:pointer;font-weight:700">수정</button> <button onclick="deleteImportRow('+i+')" style="font-size:10px;padding:3px 7px;background:#ef4444;color:#fff;border:none;border-radius:7px;cursor:pointer;font-weight:700">삭제</button></td>';
     html += '</tr>';
 
     // 시술 펼침 행
@@ -2710,6 +2710,19 @@ function renderImportPreview(){
 
   document.getElementById('import-count').textContent = _importRows.length + '건 파싱됨';
   document.getElementById('import-preview').style.display = 'block';
+}
+
+/* ── 미리보기 행 삭제 ── */
+function deleteImportRow(idx){
+  if(!confirm(`${idx+1}번째 행 (${_importRows[idx]?.name||'이름없음'}) 을 삭제할까요?`)) return;
+  _importRows.splice(idx, 1);
+  if(_importRows.length > 0){
+    renderImportPreview();
+  } else {
+    document.getElementById('import-preview').style.display = 'none';
+    document.getElementById('import-preview-body').innerHTML = '';
+    showToast('모든 행이 삭제되었습니다','info');
+  }
 }
 
 /* ── 직원 계정 목록 렌더 (관리자 전용) ── */
@@ -3569,7 +3582,11 @@ function renderStatsPanel(){
 
 /* ── 그룹 필터 (상담자/의사/분류1) ── */
 function applyGroupFilter(){
-  const base = window._dateFiltered || window._allItems || [];
+  let base = window._dateFiltered || window._allItems || [];
+  // 직원계정: 수납리스트도 최근 3일만 표시 (날짜필터 미적용 시)
+  if(!window._isAdmin && !window._dateFiltered){
+    base = filterRecent3Days(base);
+  }
   const staff  = document.getElementById('filter-staff')?.value || '';
   const doctor = document.getElementById('filter-doctor')?.value || '';
   const cat1   = document.getElementById('filter-cat1')?.value || '';
