@@ -3870,17 +3870,23 @@ function renderHistory(items){
 
   Object.keys(grouped).sort((a,b)=>b.localeCompare(a)).forEach(date=>{
     // 날짜별 합산 (환불: amount=0이면 treatments에서 환불 금액 폴백)
+    let dateMisu = 0;
     const dateTotal = grouped[date].filter(it=>it.type!=='vip').reduce((s,it)=>{
       let a = parseFloat(it.amount)||0;
       if(a===0 && it.treatments?.length){ const r=it.treatments.find(t=>t.item==='환불'); if(r) a=r.price||0; }
+      // 날짜별 미수 합산
+      const dpm = it.paymentMethods;
+      if(dpm)(dpm.items||dpm.splitDetails||[]).forEach(p=>{ if(p.method==='미수') dateMisu+=(p.amt||0); });
       return s+a;
     }, 0);
     const dateCount = grouped[date].length;
+    const dateMisuStr = dateMisu > 0 ? `<span style="color:#ef4444;font-weight:700;margin-left:8px">미수 ${Math.round(dateMisu*10)/10}만</span>` : '';
     html += `<tr>
       <td colspan="11" style="padding:8px 10px;background:#0a0f1a;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border)">
         📅 ${date}
         <span style="color:var(--muted);font-weight:400"> ${dateCount}건</span>
         <span style="color:var(--green);font-weight:700;margin-left:10px">${(Math.round(dateTotal*100)/100).toLocaleString()}만원</span>
+        ${dateMisuStr}
       </td>
     </tr>`;
 
@@ -3907,12 +3913,21 @@ function renderHistory(items){
         }
       }
 
+      // 미수 체크
+      let rowMisu = 0;
+      if(pm){
+        const misuItems = (pm.items||pm.splitDetails||[]).filter(p=>p.method==='미수');
+        misuItems.forEach(p=>{ rowMisu += (p.amt||0); });
+      }
+      const misuBadge = rowMisu > 0 ? `<span style="font-size:9px;background:#2a0a0a;color:#ef4444;border-radius:10px;padding:1px 5px;margin-left:4px;font-weight:700">미수 ${rowMisu}</span>` : '';
+
       html += `<tr style="border-bottom:1px solid #1a2236;${isVip?'opacity:.75':''}">
         <td style="padding:9px 8px;color:var(--muted);white-space:nowrap">${it.date||''}</td>
         <td style="padding:9px 8px;white-space:nowrap">${it.chart||''}</td>
         <td style="padding:9px 8px;font-weight:600;white-space:nowrap">
           ${it.name||''}
           ${isVip?'<span style="font-size:9px;background:#2a1f00;color:var(--yellow);border-radius:10px;padding:1px 5px;margin-left:4px">VIP재료</span>':''}
+          ${misuBadge}
         </td>
         <td style="padding:9px 8px;white-space:nowrap">${it.cat1||''}</td>
         <td style="padding:9px 8px;color:var(--sub);white-space:nowrap">${it.cat2||''}</td>
@@ -3921,7 +3936,7 @@ function renderHistory(items){
             onclick="this.style.webkitLineClamp=this.style.webkitLineClamp?'':'2';this.style.display=this.style.webkitLineClamp?'-webkit-box':'block'"
             title="클릭하면 펼치기">${it.paymentText||''}</div>
         </td>
-        <td style="padding:9px 8px;text-align:right;color:${isVip?'var(--muted)':'var(--accent)'};font-weight:700;white-space:nowrap">${isVip?'-':amt.toLocaleString()}</td>
+        <td style="padding:9px 8px;text-align:right;color:${isVip?'var(--muted)':'var(--accent)'};font-weight:700;white-space:nowrap">${isVip?'-':amt.toLocaleString()}${rowMisu>0?'<div style="font-size:9px;color:#ef4444;font-weight:400">미수 '+rowMisu+'</div>':''}</td>
         <td style="padding:9px 8px;color:var(--sub);font-size:11px;white-space:nowrap">${payStr}</td>
         <td style="padding:9px 8px;color:var(--muted);font-size:11px;white-space:nowrap">${it.doctor||''}</td>
         <td style="padding:9px 8px;color:var(--muted);white-space:nowrap">${it.staff||''}</td>
