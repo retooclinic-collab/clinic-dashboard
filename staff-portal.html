@@ -971,7 +971,10 @@ function extractTextPrices(raw, treatments){
   // 최종 결제금액 + 이벤트 접두어 + 예약금제외 제거
   const text = raw
     .replace(/^\s*vip\s*\d+\s*[+=＝].*$/gim, '')       // VIP 헤더줄 제거 (VIP700=... 형태만)
-    .replace(/^.*?(?:남은\s*금액|지인분|남음\s*$).*$/gim, '')  // 메모줄 제거
+    .replace(/^.*?(?:지인분).*$/gim, '')               // 지인분 메모줄 제거
+    .replace(/[-－]\s*남은\s*금액\s*[\d.]+/gi, '')       // -남은금액66 인라인 제거
+    .replace(/^.*모두\s*사용.*$/gim, '')                 // 모두사용 메모줄 제거
+    .replace(/^.*남은\s*적립금\s*없음.*$/gim, '')         // 남은적립금없음 메모줄 제거
     .replace(/[=＝]\s*[\d.,]+\s*[mM만].*$/gim, '')    // =결제금액 제거 (각 줄별)
     .replace(/[=＝]\s*[\d.,]+\s*(?:차감|결제).*$/gim, '')  // =N차감, =N결제 제거
     .replace(/총\s*[\d.,]+\s*[mM만]?\s*$/gim, '')        // "총435.9" 잔여 제거
@@ -991,9 +994,9 @@ function extractTextPrices(raw, treatments){
   const hasBblTightText = /bbl.*?스킨타이트닝/i.test(raw);
   const bblTypeCountText = (hasBblColorText?1:0)+(hasBblAcneText?1:0)+(hasBblTightText?1:0);
   // 서브타입별 개별 가격 추출 시도
-  const bblColorPriceM = raw.match(/(?:포에버영|색소|홍조|화이트닝|미백)\s*(?:\d+\s*회\s*)?([\d.]+)/i);
-  const bblTightPriceM = raw.match(/스킨타이트닝\s*(?:\d+\s*회\s*)?([\d.]+)/i);
-  const bblAcnePriceM = raw.match(/여드름\s*(?:\d+\s*회\s*)?([\d.]+)/i);
+  const bblColorPriceM = raw.match(/(?:포에버영|색소|홍조|화이트닝|미백)(?:\s*\d+\s*회)?[\s만]*([\d.]+)(?!\s*회)/i);
+  const bblTightPriceM = raw.match(/스킨타이트닝(?:\s*\d+\s*회)?\s*([\d.]+)(?!\s*회)/i);
+  const bblAcnePriceM = raw.match(/여드름(?:\s*\d+\s*회)?\s*([\d.]+)(?!\s*회)/i);
   const hasSubPrices = bblColorPriceM || bblTightPriceM || bblAcnePriceM;
   if(hasSubPrices){
     // 서브타입별 가격 추출 → 마지막 숫자가 BBL 소계일 수 있음
@@ -1021,7 +1024,7 @@ function extractTextPrices(raw, treatments){
     }
   } else {
     // 서브타입별 가격 없으면 기존 로직: BBL 전체 가격 → 균등분할
-    const bblRe = /bbl\s*(?:\([^)]*\))?\s*(?:(?:포에버영|색소|홍조|화이트닝|미백|여드름|스킨타이트닝)\s*\+?\s*)*(?:[\d.]+\s*회\s*)?([\d.]+)/gi;
+    const bblRe = /bbl\s*(?:\([^)]*\))?\s*(?:(?:포에버영|색소|홍조|화이트닝|미백|여드름|스킨타이트닝)\s*\+?\s*)*(?:[\d.]+\s*회\s*)?([\d.]+)(?!\s*회)/gi;
     for(const m of raw.matchAll(bblRe)){
       const price = parseFloat(m[1]);
       if(price >= 1 && price < 2000){
@@ -1364,12 +1367,23 @@ function distributePrices(treatments, total, rawText){
     return {...t, price: Math.round(unit*t.qty*100)/100, fromText:false};
   });
 
+  // 예약금제외 자동 조정: 명시가 합 > total이면 예약금제외 금액을 차액으로 재계산
+  // 예: 시술합 807.4, total 755.1 → 예약금제외 = 755.1 - 807.4 = -52.3
+  const depositIdx = priced.findIndex(t=>t.item==='예약금제외');
+  if(depositIdx >= 0){
+    const otherSum = priced.reduce((s,t,i)=>i===depositIdx?s:s+t.price, 0);
+    if(Math.abs(otherSum - total) > 0.1){
+      const depositAmt = Math.round((total - otherSum)*100)/100;
+      priced[depositIdx] = {...priced[depositIdx], price: depositAmt};
+    }
+  }
+
   // 적립금 잔액 자동 조정: 적립금(_fixedAmt>0)은 total - 시술합으로 재계산
   // VIP800에서 시술 748 차감 → 적립금 = 800-748 = 52 (원래 214.5는 누적 잔액이므로 무시)
   const creditRemainIdx = priced.findIndex(t=>t.item==='적립금' && t._fixedAmt!==undefined && t._fixedAmt > 0);
   if(creditRemainIdx >= 0){
-    const otherSum = priced.reduce((s,t,i)=>i===creditRemainIdx?s:s+t.price, 0);
-    const creditAmt = Math.round((total - otherSum)*100)/100;
+    const otherSum2 = priced.reduce((s,t,i)=>i===creditRemainIdx?s:s+t.price, 0);
+    const creditAmt = Math.round((total - otherSum2)*100)/100;
     priced[creditRemainIdx] = {...priced[creditRemainIdx], price: creditAmt > 0 ? creditAmt : 0};
   }
 
