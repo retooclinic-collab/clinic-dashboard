@@ -857,8 +857,8 @@ function setMode(mode){
   document.getElementById('vip-notice').style.display=mode==='vip'?'block':'none';
   document.getElementById('import-section').style.display=mode==='import'?'block':'none';
 
-  // 수납 리스트: list 탭 + import 탭에서 모두 표시
-  const showList = mode==='list' || mode==='import';
+  // 수납 리스트: list/import 탭에서 표시 (직원은 import에서도 숨김 → 홈의 최근3일만 열람)
+  const showList = mode==='list' || (mode==='import' && window._isAdmin);
   const hs = document.getElementById('history-section');
   if(hs) hs.style.display = showList ? 'block' : 'none';
 
