@@ -1391,16 +1391,21 @@ function renderTrendTab(){
   // ── 월별 수납 총액 추이 ──
   h+='<div class="sdiv">월별 총 수납 추이</div>';
   h+='<div class="card" style="overflow-x:auto;">';
-  h+='<table style="font-size:13px;"><thead><tr><th>월</th><th class="r">총 수납</th><th class="r">재료비</th><th class="r">수수료</th><th class="r">추정 순매출</th><th class="r">내원 건수</th></tr></thead><tbody>';
+  var fixedTotal=getFixedTotal(); // 현재 설정 고정비 (매월 동일)
+  h+='<table style="font-size:13px;"><thead><tr><th>월</th><th class="r">총 수납</th><th class="r">재료비</th><th class="r">수수료</th><th class="r">고정비</th><th class="r">추정 순매출</th><th class="r">순이익률</th><th class="r">내원 건수</th></tr></thead><tbody>';
   months.forEach(function(m){
     var cd=m.cData,ad=m.aData,bd=m.bData;
     var rev=cd?cd.total:0, mat=ad?ad.totalCost:0, comm=bd?bd.totalCommission:0;
+    var net=rev-mat-comm-fixedTotal;
+    var pct=rev>0?((net/rev)*100).toFixed(1)+'%':'-';
     h+='<tr>';
     h+='<td><b>'+esc(m.displayLabel||m.label)+'</b></td>';
     h+='<td class="r bold" style="color:#3b82f6;">'+won(rev)+'</td>';
     h+='<td class="r" style="color:#8b5cf6;">'+(mat?won(mat):'-')+'</td>';
     h+='<td class="r" style="color:#f59e0b;">'+(comm?won(comm):'-')+'</td>';
-    h+='<td class="r bold" style="color:#10b981;">'+won(rev-mat-comm)+'</td>';
+    h+='<td class="r" style="color:#374151;">'+(fixedTotal?won(fixedTotal):'-')+'</td>';
+    h+='<td class="r bold" style="color:'+(net>=0?'#10b981':'#ef4444')+';">'+won(net)+'</td>';
+    h+='<td class="r" style="color:'+(parseFloat(pct)>=0?'#10b981':'#ef4444')+';">'+pct+'</td>';
     h+='<td class="r muted">'+(cd?nf(cd.count)+'건':'-')+'</td>';
     h+='</tr>';
   });
@@ -1500,6 +1505,8 @@ function applyProc(){
   render();
   renderCardSection();
   renderSummary();
+  // 기존 아카이브 데이터도 새 단가로 재계산
+  recomputeArchiveProc(cfg);
   flashSaved('proc-saved');
   goTab('an');
 }
@@ -1520,8 +1527,60 @@ function applyRoute(){
   render();
   renderCardSection();
   renderSummary();
+  // 기존 아카이브 데이터도 새 수수료율로 재계산
+  recomputeArchiveRoute(cfg);
   flashSaved('route-saved');
   goTab('an');
+}
+
+/* ── 설정 변경 → 아카이브 일괄 재계산 ── */
+async function recomputeArchiveProc(cfg){
+  if(!G.arc||!G.arc.length||!window.fbSave) return;
+  var updated=0;
+  for(var i=0;i<G.arc.length;i++){
+    var a=G.arc[i];
+    if(!a.aData||!a.aData.items||!a.aData.items.length) continue;
+    var changed=false;
+    var newTotal=0;
+    a.aData.items.forEach(function(item){
+      var newPrice=cfg.procedures[item.name]?parseFloat(cfg.procedures[item.name].price)||0:0;
+      if(newPrice!==item.price){changed=true; item.price=newPrice;}
+      item.subtotal=item.count*item.price;
+      newTotal+=item.subtotal;
+    });
+    if(changed){
+      a.aData.totalCost=newTotal;
+      await window.fbSave(a);
+      updated++;
+    }
+  }
+  if(updated) renderTrendTab();
+}
+
+async function recomputeArchiveRoute(cfg){
+  if(!G.arc||!G.arc.length||!window.fbSave) return;
+  var updated=0;
+  for(var i=0;i<G.arc.length;i++){
+    var a=G.arc[i];
+    if(!a.bData||!a.bData.items||!a.bData.items.length) continue;
+    var changed=false;
+    var totC=0;
+    a.bData.items.forEach(function(item){
+      var rc=cfg.routes[item.route];
+      var newType=rc?rc.type:'percent';
+      var newVal=rc?parseFloat(rc.value)||0:0;
+      if(newType!==item.type||newVal!==item.value){changed=true;}
+      item.type=newType; item.value=newVal;
+      item.commission=newType==='percent'?item.amount*(newVal/100):newVal;
+      totC+=item.commission;
+    });
+    if(changed){
+      a.bData.totalCommission=totC;
+      await window.fbSave(a);
+      updated++;
+    }
+  }
+  if(updated) renderTrendTab();
 }
 
 function flashSaved(id){
