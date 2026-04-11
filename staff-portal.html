@@ -2794,6 +2794,21 @@ function handleImportFile(input){
       const data = new Uint8Array(e.target.result);
       const workbook = XLSX.read(data, {type:'array', cellDates:true});
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      // @dropdown 등 불필요 칼럼 제거 (구글시트 xlsx 저장 시 포함됨)
+      const range = XLSX.utils.decode_range(sheet['!ref']||'A1');
+      for(let c=range.e.c; c>=0; c--){
+        const addr = XLSX.utils.encode_cell({r:0, c:c});
+        const cell = sheet[addr];
+        const hdr = cell ? String(cell.v||'').trim().toLowerCase() : '';
+        if(hdr.startsWith('@') || hdr==='dropdown' || hdr===''){
+          // 마지막 빈 칼럼이나 @로 시작하는 칼럼 제거
+          for(let r=range.s.r; r<=range.e.r; r++){
+            delete sheet[XLSX.utils.encode_cell({r:r, c:c})];
+          }
+          if(c===range.e.c) range.e.c--;
+        } else break; // 유효 칼럼 만나면 중단
+      }
+      sheet['!ref'] = XLSX.utils.encode_range(range);
       const tsv = XLSX.utils.sheet_to_csv(sheet, {FS:'\t', RS:'\n'});
       document.getElementById('import-text').value = tsv;
       processImportText(tsv);
