@@ -1180,10 +1180,21 @@ function extractTextPrices(raw, treatments){
       // 가격이 해당 항목 표준가의 2배 이상이고 그룹 표준가합 범위 내면 복합소계
       const itemStd = (CHARGE_PRICE[withPrice[0].item]??0)*withPrice[0].qty;
       if(itemStd>0 && p > itemStd*2 && p <= stdSum*2 && p >= stdSum*0.5){
-        // 복합소계 → 표준가 비율로 그룹 내 분배
-        groupItems.forEach(t=>{
+        // 복합소계 → 표준가 비율로 그룹 내 분배 (마지막 항목에서 반올림 오차 보정)
+        let distRunning = 0;
+        groupItems.forEach((t,idx)=>{
           const std = (CHARGE_PRICE[t.item]??0)*t.qty;
-          found[t.item] = stdSum>0 ? Math.round(p * std / stdSum * 100)/100 : p/groupItems.length;
+          if(stdSum>0){
+            if(idx < groupItems.length-1){
+              const share = Math.round(p * std / stdSum * 100)/100;
+              found[t.item] = share;
+              distRunning += share;
+            } else {
+              found[t.item] = Math.round((p - distRunning)*100)/100;
+            }
+          } else {
+            found[t.item] = p/groupItems.length;
+          }
         });
       }
     }
@@ -1224,9 +1235,9 @@ function extractTextPrices(raw, treatments){
     const prevStd = (CHARGE_PRICE[prevItem.item]??0)*adjPrevQty;
     const pairStdSum = curStd + prevStd;
     if(pairStdSum>0 && p >= pairStdSum*0.4 && p <= pairStdSum*2){
-      // 묶음가 → 비율 분배
+      // 묶음가 → 비율 분배 (반올림 오차 보정: 한쪽 계산 후 나머지로 차감)
       const curShare = Math.round(p * curStd / pairStdSum * 100)/100;
-      const prevShare = Math.round(p * prevStd / pairStdSum * 100)/100;
+      const prevShare = Math.round((p - curShare)*100)/100;
       found[curItem.item] = curShare;
       // prevItem에 이미 다른 세그먼트 가격이 있으면 합산, 없으면 새로 설정
       if(found[prevItem.item]!==undefined){
@@ -1316,9 +1327,15 @@ function distributePrices(treatments, total, rawText){
     return {...t, price: Math.round(unit*t.qty*100)/100, fromText:false};
   });
 
-  // 합계 맞추기
+  // 합계 맞추기 — 0.01 이하 오차도 보정 후 반환
   const sum = priced.reduce((s,t)=>s+t.price, 0);
-  if(Math.abs(sum - total) < 0.05) return priced;
+  const earlyDiff = Math.round((total - sum)*100)/100;
+  if(Math.abs(earlyDiff) > 0 && Math.abs(earlyDiff) < 0.05){
+    const lastAdjIdx = [...priced.keys()].reverse().find(i=>priced[i].price>0 && !priced[i]._balanceDeduct) ?? priced.length-1;
+    priced[lastAdjIdx]={...priced[lastAdjIdx], price:Math.round((priced[lastAdjIdx].price+earlyDiff)*100)/100};
+    return priced;
+  }
+  if(Math.abs(sum - total) < 0.005) return priced;
 
   const allFromText = priced.every(t=>t.fromText || t._deductAmt!==undefined);
 
