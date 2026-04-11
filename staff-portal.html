@@ -2697,9 +2697,20 @@ function processImportText(text){
         amount  = cols[6]||'';
         staffRaw= cols[7]||'';
       } else if(cols.length === 7){
-        cat2    = cols[4]||'';
-        payText = cols[5]||'';
-        amount  = cols[6]||'';
+        // 7컬럼: 분류2 유무 감지 — 마지막 컬럼이 짧은 이름(상담자)이면 분류2 없는 형식
+        var last7 = (cols[6]||'').trim();
+        var noCat2 = last7.length <= 4 && last7.length > 0 && !/[\d.=+()]/.test(last7);
+        if(noCat2){
+          // 분류2 없음: date,chart,name,cat1,payText,amount,staff
+          payText = cols[4]||'';
+          amount  = cols[5]||'';
+          staffRaw= cols[6]||'';
+        } else {
+          // 분류2 있음: date,chart,name,cat1,cat2,payText,amount
+          cat2    = cols[4]||'';
+          payText = cols[5]||'';
+          amount  = cols[6]||'';
+        }
       } else if(cols.length === 6){
         payText = cols[4]||'';
         amount  = cols[5]||'';
@@ -2714,11 +2725,25 @@ function processImportText(text){
       chart  = cols[0]||'';
       name   = cols[1]||'';
       cat1   = cols[2]||'';
-      if(cols.length >= 7){
+      if(cols.length >= 8){
         cat2    = cols[3]||'';
         payText = cols[4]||'';
         amount  = cols[5]||'';
         staffRaw= cols[6]||'';
+      } else if(cols.length === 7){
+        // 7컬럼: 분류2 유무 감지
+        var last7b = (cols[6]||'').trim();
+        var noCat2b = last7b.length <= 4 && last7b.length > 0 && !/[\d.=+()]/.test(last7b);
+        if(noCat2b){
+          payText = cols[3]||'';
+          amount  = cols[4]||'';
+          staffRaw= cols[5]||'';
+        } else {
+          cat2    = cols[3]||'';
+          payText = cols[4]||'';
+          amount  = cols[5]||'';
+          staffRaw= cols[6]||'';
+        }
       } else if(cols.length >= 5){
         payText = cols[3]||'';
         amount  = cols[4]||'';
@@ -2740,7 +2765,7 @@ function processImportText(text){
     const amtRaw = String(amount||'').replace(/,/g,'').replace(/[mM만원]/g,'');
     const amtNum = parseFloat(amtRaw)||0;
     const amtFromText = extractAmount(payText)||0;
-    const finalAmt = amtNum>0 ? amtNum : amtFromText;
+    const finalAmt = amtNum!==0 ? amtNum : amtFromText;
 
     // 이름이나 결제내역 없으면 스킵
     if(!name && !payText) return;
@@ -3047,11 +3072,15 @@ function renderImportPreview(){
     // 실제 결제금액 = 시술합계 - 미수 (파란색으로 표시할 금액)
     var paidAmt = Math.round((treatSumR - misuAmt)*100)/100;
     // 원본 컬럼 금액이 있으면 우선 사용 (엑셀 결제금액 컬럼 값 보존)
-    if(r._origColAmt && r._origColAmt > 0){
-      // 원본 컬럼 금액 유지 — 미수만 차감
-      r.amount = hasMisu ? Math.round((r._origColAmt - misuAmt)*100)/100 : r._origColAmt;
+    if(r._origColAmt && r._origColAmt !== 0){
+      // 원본 컬럼 금액 유지 — 양수는 미수 차감, 음수(환불)는 그대로
+      if(r._origColAmt < 0){
+        r.amount = r._origColAmt;
+      } else {
+        r.amount = hasMisu ? Math.round((r._origColAmt - misuAmt)*100)/100 : r._origColAmt;
+      }
     } else if(treatSumR < -0.01){
-      r.amount = treatSumR;  // 환불: -64.9 등
+      r.amount = treatSumR;  // 환불
     } else if(treatSumR > 0){
       r.amount = paidAmt > 0 ? paidAmt : treatSumR;
     }
