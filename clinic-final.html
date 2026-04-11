@@ -148,6 +148,13 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
         </div>
         <input type="file" id="fi-c" accept=".csv,.xlsx,.xls" style="display:none" onchange="onFile(this.files[0],'c')">
         <div id="err-c" class="err-box"></div>
+        <div style="margin-top:8px;border-top:1px solid #e2e8f0;padding-top:8px;">
+          <div style="font-size:11px;color:#64748b;margin-bottom:6px;">또는 상담입력 DB에서 직접 불러오기</div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input type="month" id="consult-load-month" style="background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;color:#1a2035;padding:5px 8px;font-size:12px;outline:none;flex:1;">
+            <button onclick="loadFromConsultations()" style="white-space:nowrap;background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">📊 불러오기</button>
+          </div>
+        </div>
       </div>
       <div class="card" style="padding:14px;">
         <div style="font-size:11px;font-weight:700;color:#8b5cf6;margin-bottom:10px;">② 시술별집계 (재료비)</div>
@@ -894,6 +901,79 @@ function confirmCol(){
   if(!am){alert('결제금액 열을 선택해주세요');return}
   G.cCols={staff:document.getElementById('pk-st').value,channel:document.getElementById('pk-ch').value,amount:am,manwon:document.getElementById('pk-mw').checked};
   closeColMdl();markDone('c',G.cFile);computeC();render();renderCardSection();renderSummary();
+}
+
+/* ═══ 상담데이터 → 분석 파이프라인 ═══ */
+async function loadFromConsultations(){
+  var monthEl=document.getElementById('consult-load-month');
+  if(!monthEl||!monthEl.value){alert('불러올 월을 선택해주세요');return;}
+  if(!window.fbGetConsultations){alert('Firebase 연결이 필요해요');return;}
+
+  var ym=monthEl.value; // "2026-04"
+  var from=ym+'-01', to=ym+'-31';
+  var dzLabel=document.getElementById('dz-c-t');
+  if(dzLabel) dzLabel.textContent='상담데이터 불러오는 중...';
+
+  try{
+    var items=await window.fbGetConsultations(from,to);
+    items=items.filter(function(it){return it.type!=='vip';});
+    if(!items.length){alert(ym+' 데이터가 없어요');if(dzLabel)dzLabel.textContent='클릭 또는 드래그';return;}
+
+    // consultations → cRows 변환 (Excel 업로드와 동일한 형식)
+    var rows=items.map(function(it){
+      return {
+        '상담자': it.staff||'미지정',
+        '내원경로': it.cat1||'미지정',
+        '결제금액': parseFloat(it.amount)||0,
+        '날짜': it.date||'',
+        '차트번호': it.chart||'',
+        '이름': it.name||'',
+        '진료의사': it.doctor||'',
+        '분류2': it.cat2||'',
+        '결제내역': it.paymentText||'',
+        '결제방식': (function(){
+          var pm=it.paymentMethods;
+          if(pm&&pm.items&&pm.items.length) return pm.items.map(function(p){return p.method+(p.amt?' '+p.amt:'');}).join('+');
+          if(pm&&pm.methods&&pm.methods.length) return pm.methods.join('/');
+          return '';
+        })()
+      };
+    });
+
+    // 분석 파이프라인에 주입
+    G.cRows=rows;
+    G.cCols={staff:'상담자',channel:'내원경로',amount:'결제금액',manwon:true};
+    G.cFile=ym.replace('-','년 ')+'월_(상담리스트)';
+
+    markDone('c',G.cFile);
+    computeC();
+    render();
+    renderCardSection();
+    renderSummary();
+
+    // 수납내역 탭 데이터도 동시 세팅
+    _dailyAllItems=items.filter(function(it){return it.type!=='vip'}).sort(function(a,b){
+      return (b.date||'').localeCompare(a.date||'');
+    });
+    populateDailyFilters();
+    // 해당 월로 필터 세팅
+    document.getElementById('df-from').value=from;
+    var lastDay=new Date(parseInt(ym.slice(0,4)),parseInt(ym.slice(5,7)),0).getDate();
+    document.getElementById('df-to').value=ym+'-'+String(lastDay).padStart(2,'0');
+    applyDailyFilter();
+
+    // 저장 모달 월/라벨 자동 세팅
+    var saveMonth=document.getElementById('save-month');
+    if(saveMonth) saveMonth.value=ym;
+    var saveLbl=document.getElementById('save-lbl');
+    if(saveLbl) saveLbl.value=ym.replace('-','년 ')+'월_(상담리스트)';
+
+    alert(ym+' 상담데이터 '+items.length+'건 불러옴!\n분석 탭에서 확인 후 💾 저장하세요.');
+  }catch(e){
+    alert('불러오기 실패: '+e.message);
+    console.error(e);
+    if(dzLabel) dzLabel.textContent='클릭 또는 드래그';
+  }
 }
 
 /* ═══ COMPUTE ═══ */
