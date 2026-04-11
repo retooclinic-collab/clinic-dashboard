@@ -2258,9 +2258,8 @@ function dailyGoPage(p){
 function formatW(val){
   if(Math.abs(val)>=100000000) return (val/100000000).toFixed(2)+'억';
   if(Math.abs(val)>=10000){
-    var m=val/10000;
-    // 정수이면 소수점 없이, 아니면 소수점 2자리
-    return (m%1===0?m.toLocaleString():m.toFixed(2))+'만';
+    var m=Math.round(val/10000*10)/10; // 소수점 1자리 반올림
+    return (m%1===0?m.toLocaleString():m.toFixed(1))+'만';
   }
   return val.toLocaleString()+'원';
 }
