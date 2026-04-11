@@ -2755,6 +2755,7 @@ function processImportText(text){
       cat2:  cat2.trim(),
       payText,
       amount: finalAmt,
+      _origColAmt: amtNum,   // 원본 컬럼 금액 보존
       staff:  mapStaff(staffRaw.trim()),
       staffRaw: staffRaw.trim(),
     });
@@ -3045,8 +3046,11 @@ function renderImportPreview(){
     var hasMisu = misuAmt > 0;
     // 실제 결제금액 = 시술합계 - 미수 (파란색으로 표시할 금액)
     var paidAmt = Math.round((treatSumR - misuAmt)*100)/100;
-    // 환불(마이너스)이면 그대로 음수 금액 적용, 양수면 미수 차감 적용
-    if(treatSumR < -0.01){
+    // 원본 컬럼 금액이 있으면 우선 사용 (엑셀 결제금액 컬럼 값 보존)
+    if(r._origColAmt && r._origColAmt > 0){
+      // 원본 컬럼 금액 유지 — 미수만 차감
+      r.amount = hasMisu ? Math.round((r._origColAmt - misuAmt)*100)/100 : r._origColAmt;
+    } else if(treatSumR < -0.01){
       r.amount = treatSumR;  // 환불: -64.9 등
     } else if(treatSumR > 0){
       r.amount = paidAmt > 0 ? paidAmt : treatSumR;
