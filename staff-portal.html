@@ -1596,7 +1596,7 @@ function localParse(raw){
   // ── 환불 감지: "환불" 키워드가 있으면 다른 시술 파싱 건너뜀 ──
   if(/환불/i.test(raw)){
     // 금액 추출: -19.8만원, -19.8m, 환불금액19.8 등
-    const refundM = raw.match(/([\d,.]+)\s*만\s*원/i) || raw.match(/[=＝]\s*([\d,.]+)\s*[mM]/i);
+    const refundM = raw.match(/([\d,.]+)\s*만\s*원/i) || raw.match(/[=＝]\s*([\d,.]+)\s*[mM]/i) || raw.match(/([\d,.]+)\s*[mM]/i);
     const refundAmt = refundM ? parseFloat(refundM[1].replace(/,/g,'')) : Math.abs(extractAmount(raw)||0);
     results.push({item:'환불', qty:1, _fixedAmt: -refundAmt});
     return {treatments: results, notes: '환불'};
@@ -2358,6 +2358,11 @@ function extractAmount(text){
   // N만원 폴백 (환불 등 = 없는 케이스): -19.8만원
   const m3 = text.match(/(-?[\d,]+\.?\d*)\s*만\s*원/);
   if(m3) return parseFloat(m3[1].replace(/,/g,''));
+  // 환불 전용 bare Nm 폴백: "계좌환불 64.9m 완료" → 64.9
+  if(/환불/i.test(text)){
+    const m4 = text.match(/([\d,.]+)\s*[mM]/i);
+    if(m4) return parseFloat(m4[1].replace(/,/g,''));
+  }
   return null;
 }
 
@@ -2365,7 +2370,7 @@ function extractAmount(text){
 function extractPayment(text){
   // 환불: 이체(자진)으로 자동 설정
   if(/환불/i.test(text)){
-    const refM = text.match(/([\d,.]+)\s*만\s*원/i) || text.match(/[=＝]\s*([\d,.]+)\s*[mM]/i);
+    const refM = text.match(/([\d,.]+)\s*만\s*원/i) || text.match(/[=＝]\s*([\d,.]+)\s*[mM]/i) || text.match(/([\d,.]+)\s*[mM]/i);
     const amt = refM ? -parseFloat(refM[1].replace(/,/g,'')) : 0;
     return { methods: ['이체(자진)'], splitDetails: [{method:'이체(자진)', amt}] };
   }
