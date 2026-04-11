@@ -2368,11 +2368,11 @@ function extractAmount(text){
 
 /* ── 결제방식 추출 ── */
 function extractPayment(text){
-  // 환불: 이체(자진)으로 자동 설정
+  // 환불: 이체(현영)으로 자동 설정
   if(/환불/i.test(text)){
     const refM = text.match(/([\d,.]+)\s*만\s*원/i) || text.match(/[=＝]\s*([\d,.]+)\s*[mM]/i) || text.match(/([\d,.]+)\s*[mM]/i);
     const amt = refM ? -parseFloat(refM[1].replace(/,/g,'')) : 0;
-    return { methods: ['이체(자진)'], splitDetails: [{method:'이체(자진)', amt}] };
+    return { methods: ['이체(현영)'], splitDetails: [{method:'이체(현영)', amt}] };
   }
   // 금액m(결제방식) 패턴: =855.2m(위챗), →258.8m(알리), =170.5m(120현금자진+50.5카)
   // "=697.4중 647.9m(카)+49.5미수" → "N중" 부분 제거하여 "647.9m(카)+49.5미수" 매칭 가능하게
@@ -2866,10 +2866,18 @@ function renderImportPreview(){
     var hasMisu = misuAmt > 0;
     // 실제 결제금액 = 시술합계 - 미수 (파란색으로 표시할 금액)
     var paidAmt = Math.round((treatSumR - misuAmt)*10)/10;
-    if(treatSumR > 0) r.amount = paidAmt > 0 ? paidAmt : treatSumR;
+    // 환불(마이너스)이면 그대로 음수 금액 적용, 양수면 미수 차감 적용
+    if(treatSumR < -0.01){
+      r.amount = treatSumR;  // 환불: -64.9 등
+    } else if(treatSumR > 0){
+      r.amount = paidAmt > 0 ? paidAmt : treatSumR;
+    }
     var origAmt = extractAmount(r.payText)||0;
+    // 환불인 경우 origAmt를 음수로 변환하여 비교
+    var isRefund = /환불/i.test(r.payText||'');
+    var compareAmt = isRefund ? -Math.abs(origAmt) : origAmt;
     // 미수 있으면: 시술합-미수 == 결제텍스트금액-미수 비교 (미수 제외 실결제 기준)
-    var sumOk = hasMisu ? true : Math.abs(treatSumR - origAmt) < 0.5;
+    var sumOk = hasMisu ? true : Math.abs(treatSumR - compareAmt) < 0.5;
     var badgeColor = sumOk ? '#4ade80' : '#facc15';
     var treatCount = (r.treatments||[]).length;
 
@@ -2892,7 +2900,8 @@ function renderImportPreview(){
     html += '<td style="padding:6px;overflow:hidden;text-overflow:ellipsis"><div style="color:#64748b;font-size:10px;overflow:hidden;text-overflow:ellipsis">' + r.chart + '</div><div style="color:#f1f5f9;font-weight:700;overflow:hidden;text-overflow:ellipsis">' + (r.name||'<span style="color:#ef4444">없음</span>') + '</div></td>';
     html += '<td style="padding:6px;color:#94a3b8;font-size:11px;overflow:hidden;text-overflow:ellipsis">' + (r.cat1||'<span style="color:#ef4444">없음</span>') + (r.cat2?'<br>'+r.cat2:'') + '</td>';
     html += '<td style="padding:6px;color:#94a3b8;font-size:11px;word-break:break-all;line-height:1.4">' + r.payText + '</td>';
-    html += '<td style="padding:6px;text-align:right;color:#38bdf8;font-weight:700;font-size:11px">' + r.amount + '만</td>';
+    var amtColor = r.amount < 0 ? '#ef4444' : '#38bdf8';
+    html += '<td style="padding:6px;text-align:right;color:'+amtColor+';font-weight:700;font-size:11px">' + r.amount + '만</td>';
     html += '<td style="padding:6px;color:#94a3b8;font-size:11px;overflow:hidden;text-overflow:ellipsis">' + r.staff + '</td>';
     html += '<td style="padding:6px;text-align:center"><span style="font-size:10px;padding:2px 6px;border:1px solid '+badgeColor+';border-radius:10px;color:'+badgeColor+';cursor:pointer" onclick="toggleImportTreat('+i+')">' + treatCount + (sumOk?'✓':'⚠') + '</span></td>';
     html += '<td style="padding:6px;white-space:nowrap"><button onclick="openImportEditModal('+i+')" style="font-size:10px;padding:3px 7px;background:#38bdf8;color:#0f172a;border:none;border-radius:7px;cursor:pointer;font-weight:700">수정</button> <button onclick="deleteImportRow('+i+')" style="font-size:10px;padding:3px 7px;background:#ef4444;color:#fff;border:none;border-radius:7px;cursor:pointer;font-weight:700">삭제</button></td>';
@@ -2904,7 +2913,8 @@ function renderImportPreview(){
     html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">';
     (r.treatments||[]).forEach(function(t){
       html += '<span style="background:#1e293b;border-radius:8px;padding:2px 8px;font-size:11px;color:#94a3b8">';
-      html += t.item + ' <span style="color:#38bdf8">×' + t.qty + '</span> <span style="color:#64748b">' + t.price + '만</span>';
+      var tPriceColor = t.price < 0 ? '#ef4444' : '#64748b';
+      html += t.item + ' <span style="color:#38bdf8">×' + t.qty + '</span> <span style="color:'+tPriceColor+'">' + t.price + '만</span>';
       html += '</span>';
     });
     html += '</div>';
