@@ -1686,7 +1686,7 @@ function localParse(raw){
 
   // ── 티타튠 (단일 항목으로 처리, 뒤 숫자는 가격이므로 무시) ──
   const titaTuneMax = /티타튠\s*max/i.test(raw);
-  const titaTuneM = raw.match(/티타튠(?:max|r|업)?\s*(?:\(.*?\))?\s*(\d+)\s*회/i);
+  const titaTuneM = raw.match(/티타튠(?:max|r|업)?\s*(?:\([^)]*\))?\s*(\d+)\s*회/i);
   if(titaTuneM){
     const q = parseInt(titaTuneM[1]);
     if(titaTuneMax) results.push({item:'티타튠max', qty:q});
@@ -1701,7 +1701,7 @@ function localParse(raw){
     const isTitanReplace = /티타늄\s*대체/i.test(raw);
     // 홍/티타늄 패턴: 홍조치료 포함이라 티타늄은 카운트하되 가격 0원
     const isHongTitan = /홍\s*[\/·,]\s*티타늄/i.test(raw);
-    const titanM = !isTitanReplace && raw.match(/티타늄\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
+    const titanM = !isTitanReplace && raw.match(/티타늄\s*(?:\d+\s*kj)?\s*(?:\([^)]*\))?\s*(\d+)?\s*회/i);
     const titanS = !isTitanReplace && /티타늄/i.test(raw) && !titanM;
     if(titanM) results.push({item:'티타늄', qty: titanM[1]?parseInt(titanM[1]):1, ...(isHongTitan?{_fixedAmt:0}:{})});
     else if(titanS) results.push({item:'티타늄', qty:1, ...(isHongTitan?{_fixedAmt:0}:{})});
@@ -1717,7 +1717,7 @@ function localParse(raw){
     // 패턴: 튠라이너2-1,2(설명)110 → qty:2, 가격110
     // 패턴: 튠라이너 N회 → qty:N
     const tuneLmulti = raw.match(/튠라이너\s*(\d+)\s*[-－]/i);
-    const tuneL = raw.match(/튠라이너(?:\s*10분)?\s*(?:\(.*?\))?\s*(\d+)?\s*회/i);
+    const tuneL = raw.match(/튠라이너(?:\s*10분)?\s*(?:\([^)]*\))?\s*(\d+)?\s*회/i);
     const tuneLs = /튠라이너/i.test(raw) && !tuneL && !tuneLmulti;
     if(tuneLmulti){
       const q = parseInt(tuneLmulti[1]);
@@ -1730,8 +1730,8 @@ function localParse(raw){
 
   // ── 튠페이스 — 티타튠과 공존 가능 ──
   {
-    const tuneF = raw.match(/튠페(?:이스)?\s*(?:b|r|max)?\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)\s*회/i);
-    const tuneFrc = raw.match(/튠페(?:이스)?\s*(?:b|r|max)?\s*(?:\d+\s*kj)?\s*(?:\(.*?\))?\s*(\d+)\s*회차/i);
+    const tuneF = raw.match(/튠페(?:이스)?\s*(?:b|r|max)?\s*(?:\d+\s*kj)?\s*(?:\([^)]*\))?\s*(\d+)\s*회/i);
+    const tuneFrc = raw.match(/튠페(?:이스)?\s*(?:b|r|max)?\s*(?:\d+\s*kj)?\s*(?:\([^)]*\))?\s*(\d+)\s*회차/i);
     const tuneFsingle = /튠페(?:이스)?/i.test(raw) && !tuneF && !tuneFrc;
     if(tuneFrc) results.push({item:'튠페이스', qty: parseInt(tuneFrc[1])});
     else if(tuneF) results.push({item:'튠페이스', qty: parseInt(tuneF[1])});
