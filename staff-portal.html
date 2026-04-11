@@ -2919,7 +2919,7 @@ function renderImportPreview(){
   for(var i=0; i<_importRows.length; i++){
     var r = _importRows[i];
     var treatSum = (r.treatments||[]).reduce(function(s,t){return s+(t.price||0);},0);
-    var treatSumR = Math.round(treatSum*10)/10;
+    var treatSumR = Math.round(treatSum*100)/100;
     // 미수 금액 확인 (결제방식에서)
     var misuAmt = 0;
     try {
@@ -2929,7 +2929,7 @@ function renderImportPreview(){
     } catch(e){}
     var hasMisu = misuAmt > 0;
     // 실제 결제금액 = 시술합계 - 미수 (파란색으로 표시할 금액)
-    var paidAmt = Math.round((treatSumR - misuAmt)*10)/10;
+    var paidAmt = Math.round((treatSumR - misuAmt)*100)/100;
     // 환불(마이너스)이면 그대로 음수 금액 적용, 양수면 미수 차감 적용
     if(treatSumR < -0.01){
       r.amount = treatSumR;  // 환불: -64.9 등
@@ -2999,9 +2999,9 @@ function renderImportPreview(){
       pmjItems.forEach(function(p){ if(p.method==='미수') totalMisu += (p.amt||0); });
     } catch(e){}
   }
-  totalTreat = Math.round(totalTreat*10)/10;
-  totalPaid = Math.round(totalPaid*10)/10;
-  totalMisu = Math.round(totalMisu*10)/10;
+  totalTreat = Math.round(totalTreat*100)/100;
+  totalPaid = Math.round(totalPaid*100)/100;
+  totalMisu = Math.round(totalMisu*100)/100;
   html += '<div style="padding:10px 12px;background:#1e293b;border-radius:0 0 12px 12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">';
   html += '<span style="font-size:12px;color:#94a3b8;font-weight:700">합계</span>';
   html += '<span style="font-size:13px;color:#38bdf8;font-weight:700">실결제 '+totalPaid+'만</span>';
@@ -3143,11 +3143,12 @@ function openImportEditModal(idx){
             <option value="">기록없음</option>
           </select></div>
         <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류1</div>
-          <select id="ie-cat1" class="form-select">
+          <select id="ie-cat1" class="form-select" onchange="window._ieUpdateCat2()">
             ${CAT1_LIST.map(o=>`<option value="${o}" ${r.cat1===o?'selected':''}>${o}</option>`).join('')}
           </select></div>
-        <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류2</div>
-          <input id="ie-cat2" type="text" class="form-input" value="${r.cat2||''}"></div>
+        <div id="ie-cat2-wrap" style="${(CAT2_MAP[r.cat1]||[]).length?'':'display:none'}"><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류2</div>
+          <input id="ie-cat2" type="text" class="form-input" value="${r.cat2||''}" list="ie-cat2-datalist" autocomplete="off">
+          <datalist id="ie-cat2-datalist">${(CAT2_MAP[r.cat1]||[]).map(o=>'<option value="'+o+'">').join('')}</datalist></div>
         <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">결제금액(만)</div>
           <input id="ie-amount" type="number" step="0.1" class="form-input" value="${r.amount||''}"></div>
         <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">상담직원</div>
@@ -3308,6 +3309,18 @@ function reparseImportRow(idx){
   } catch(e){}
 }
 
+// 임포트 편집 모달: 분류1 변경 시 분류2 datalist 연동
+window._ieUpdateCat2 = function(){
+  const cat1 = document.getElementById('ie-cat1').value;
+  const opts = CAT2_MAP[cat1]||[];
+  const wrap = document.getElementById('ie-cat2-wrap');
+  if(wrap) wrap.style.display = opts.length ? '' : 'none';
+  const dl = document.getElementById('ie-cat2-datalist');
+  if(dl) dl.innerHTML = opts.map(o=>'<option value="'+o+'">').join('');
+  const inp = document.getElementById('ie-cat2');
+  if(inp) inp.value = '';
+};
+
 function saveImportRow(idx){
   const r = _importRows[idx];
   if(!r) return;
@@ -3322,7 +3335,7 @@ function saveImportRow(idx){
   r.treatments = window._ieTreats||[];
   // 시술합계로 금액 동기화 (시술이 있으면 시술합이 기준)
   var saveTreatSum = r.treatments.reduce(function(s,t){return s+(t.price||0);},0);
-  r.amount = saveTreatSum > 0 ? Math.round(saveTreatSum*10)/10 : (parseFloat(document.getElementById('ie-amount').value)||0);
+  r.amount = saveTreatSum > 0 ? Math.round(saveTreatSum*100)/100 : (parseFloat(document.getElementById('ie-amount').value)||0);
   r.paymentMethods = {
     items: window._iePays||[],
     splitDetails: (window._iePays||[]).filter(p=>p.amt>0),
