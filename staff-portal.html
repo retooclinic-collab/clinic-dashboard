@@ -2377,7 +2377,7 @@ function normalizePayMethod(s){
   if(/이체\+현영|이체.*현영|현영/.test(s)) return '이체(현영)';
   if(/이체\+자진|이체.*자진|자진.*이체/.test(s)) return '이체(현영)';  // 자진→현영 통합
   if(/이체/.test(s)) return '이체(현영)';  // 단순 이체→현영 통합
-  if(/위챗/.test(s)) return '위챗';
+  if(/위챗|위쳇|wechat/.test(s)) return '위챗';
   if(/알리/.test(s)) return '알리페이';
   if(/자진/.test(s)) return '현금(자진)';
   return null;
