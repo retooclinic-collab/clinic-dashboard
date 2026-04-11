@@ -1084,7 +1084,7 @@ function extractTextPrices(raw, treatments){
     if(slashPrice){ const v=parseFloat(slashPrice[1]); if(v>=1&&v<3000) return v; }
     // 마지막 유효 숫자 (cc/샷/회/개/kj 뒤 제외, 영역번호 N-N,N 제외)
     const clean = seg2
-      .replace(/\d+\s*(?:cc|샷|회|개|kj|병|ml|분)/gi, '?')
+      .replace(/\d+\s*(?:cc|샷|회|개|kj|병|ml|분|명)/gi, '?')
       .replace(/\d+[-－]\d+[,\d]*/g, '?');  // 2-1,2 같은 영역번호 제거
     const nums = [...clean.matchAll(/([\d]+\.?\d*)/g)].map(m=>parseFloat(m[1]));
     const prices = nums.filter(n=>n>=1 && n<2000);
@@ -1374,10 +1374,15 @@ function distributePrices(treatments, total, rawText){
   // 예: 시술합 807.4, 예약금-3.3, VIP0, total 755.1 → VIP할인혜택 = -(807.4-3.3-755.1) = -49
   const hasVip = priced.some(t=>t.item==='VIP회원권');
   if(hasVip){
+    // 적립금 라인에서 직접 추출: "1359.7+100=1459.7m 적립" → 100
+    const creditLineM = rawText && rawText.match(/[\d.]+\s*\+\s*([\d.]+)\s*=\s*[\d.]+\s*[mM만]\s*적립/);
+    const directCredit = creditLineM ? parseFloat(creditLineM[1]) : 0;
     const treatmentSum = priced.reduce((s,t)=>s+t.price, 0);
     const diff = Math.round((treatmentSum - total)*100)/100;
-    if(diff > 0.5){
-      priced.push({item:'VIP할인혜택', qty:1, price: -diff, fromText:true, _deductAmt: -diff});
+    // 적립금 직접 추출값이 있으면 우선 사용 (더 정확), 없으면 차액 계산
+    const vipDiscount = directCredit > 0.5 ? directCredit : diff;
+    if(vipDiscount > 0.5){
+      priced.push({item:'VIP할인혜택', qty:1, price: -vipDiscount, fromText:true, _deductAmt: -vipDiscount});
     }
   }
 
@@ -1516,8 +1521,8 @@ function distributePrices(treatments, total, rawText){
     }
   }
 
-  // 마이너스 가격 방지 (차감/환불/위약금/예약금 항목 제외) — 예약금 체크보다 먼저
-  const deductItems = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외']);
+  // 마이너스 가격 방지 (차감/환불/위약금/예약금/VIP할인 항목 제외) — 예약금 체크보다 먼저
+  const deductItems = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP할인혜택']);
   priced = priced.map(t=>{
     if(deductItems.has(t.item)) return t; // 차감항목은 음수 허용
     if(t.price < 0) return {...t, price: 0};
@@ -1552,10 +1557,14 @@ function localParse(raw){
     const contentLines = vipLines.filter(line => {
       const t = line.trim();
       if(!t) return false;
-      // VIP 헤더: "VIP700=677m" "VIP 500 = 500m" "VIP1000+차액...=1198.2m" 등
-      if(/^\s*vip\s*\d/i.test(t)) return false;
+      // VIP 헤더: "VIP700=677m" "1000VIP+차액...=1359.7m" 등
+      if(/^\s*vip\s*\d/i.test(t) || /^\s*\d+\s*vip/i.test(t)) return false;
+      // 적립 합산줄: "1359.7+100=1459.7m 적립" 등 (숫자+숫자=숫자m 적립)
+      if(/^\d[\d.]*\s*\+\s*\d[\d.]*\s*=\s*[\d.]+\s*[mM만]\s*적립/i.test(t)) return false;
       // 메모/주석: "예약금N은..." "남은금액없음" "BBL...남음" "64.1m(남음)" 등
       if(/^예약금[\d.]|남은\s*금액|남음|지인분|^총\s*[\d.]+/i.test(t)) return false;
+      // 차감줄: "1463-예약금=1459.7m 차감 후..." 등
+      if(/^\d[\d.]*\s*-\s*예약금/i.test(t)) return false;
       // "// 남은금액" 형태 주석
       if(/^\/\//.test(t)) return false;
       // "**회원권혜택..." "**리쥬셀릭..." 등 메모 줄
@@ -1563,6 +1572,8 @@ function localParse(raw){
       // "1500+적립금150+기존남은금액374.6=2024.6m 적립" 적립금 합산 메모줄
       if(/적립금\s*\d.*적립|적립금.*기존|기존.*적립금/i.test(t)) return false;
       if(/^\d+\s*\+\s*적립금/i.test(t)) return false;
+      // 서술형 메모줄 필터: 한글 일반 서술 (시술명이 아닌 설명문)
+      if(/^(?:친구|지인|소개|오늘|내일|다음|요청|참고|메모|비고|특이)/i.test(t)) return false;
       return true;
     });
     if(contentLines.length > 0){
@@ -1766,7 +1777,7 @@ function localParse(raw){
   const rjEye = raw.match(/(?:아이리쥬란|리쥬란아이|리쥬란\s*e\s*아이)\s*(\d+)\s*cc/i);
   if(rjEye) results.push({item:'리쥬란아이', qty: parseInt(rjEye[1])});
   // 미라젯리쥬란 콤보가 있을 경우 단독 리쥬란 파서는 스킵 (콤보에서 처리)
-  const hasMjRjCombo = /미라젯\s*리쥬란/i.test(raw) || /미라젯\s*\([^)]*리쥬란/i.test(raw);
+  const hasMjRjCombo = /미라젯\s*리쥬란/i.test(raw) || /미라젯\s*\([^)]*리쥬란/i.test(raw) || /리쥬란\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw);
   const rjNorm = raw.match(/(?<!아이)리쥬란\s*(\d+)\s*cc/i);
   if(rjNorm && !rjHB && !hasMjRjCombo) {
     const cc = parseInt(rjNorm[1]);
@@ -1786,8 +1797,8 @@ function localParse(raw){
 
   // ── 미라젯 조합 시술 (순서 중요: 조합 먼저 체크) ──
   const hasMjRjHB = /미라젯\s*리쥬란\s*hb/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*hb/i.test(raw);
-  const hasMjRj = (/미라젯\s*리쥬란(?!\s*hb)/i.test(raw) || /미라젯\s*\([^)]*리쥬란(?!\s*hb)/i.test(raw)) && !hasMjRjHB;
-  const hasMjJbv = /미라젯\s*쥬베룩/i.test(raw) || /미라젯\s*\([^)]*쥬베룩/i.test(raw);
+  const hasMjRj = (/미라젯\s*리쥬란(?!\s*hb)/i.test(raw) || /미라젯\s*\([^)]*리쥬란(?!\s*hb)/i.test(raw) || /리쥬란\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw)) && !hasMjRjHB;
+  const hasMjJbv = /미라젯\s*쥬베룩/i.test(raw) || /미라젯\s*\([^)]*쥬베룩/i.test(raw) || /쥬베룩\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw);
   const hasMjJba = /미라젯\s*쥬브아셀/i.test(raw) || /미라젯\s*\([^)]*쥬브아셀/i.test(raw);
   const hasMjLto = /미라젯\s*리투오/i.test(raw) || /미라젯\s*\([^)]*리투오/i.test(raw);
 
@@ -1798,11 +1809,13 @@ function localParse(raw){
   }
   if(hasMjRj){
     results.push({item:'미라젯', qty:1});
-    const cc = raw.match(/미라젯\s*리쥬란\s*(\d+)\s*cc/i) || raw.match(/미라젯\s*\([^)]*리쥬란\s*(\d+)\s*cc/i);
+    const cc = raw.match(/미라젯\s*리쥬란\s*(\d+)\s*cc/i) || raw.match(/미라젯\s*\([^)]*리쥬란\s*(\d+)\s*cc/i)
+            || raw.match(/리쥬란\s*(\d+)\s*cc\s*\(\s*미라젯\s*\)/i);
     results.push({item:'리쥬란', qty: cc?Math.round(parseInt(cc[1])/2):1});
   }
   if(hasMjJbv){
     const m = raw.match(/미라젯\s*쥬베룩\s*(\d+)\s*회/i) || raw.match(/미라젯\s*\([^)]*쥬베룩\s*(\d+)\s*회/i);
+    // 역방향: 쥬베룩Ncc(미라젯) → 미라젯쥬베룩 1개
     results.push({item:'미라젯쥬베룩', qty: m?parseInt(m[1]):1});
   }
   if(hasMjJba){
@@ -1875,8 +1888,8 @@ function localParse(raw){
       const jbaQty = parseInt(jbaM[1]);
       results.push({item:'쥬브아셀', qty: jbaQty});
       // 쥬브아셀N병(...미라젯...) 패턴 → 미라젯 수량은 괄호 안 명시 or 1개
-      const jbaBundleMj = raw.match(/쥬브아셀[^,+\n]*?\(.*?(\d+)?\s*병?\s*미라젯.*?\)/i)
-                       || raw.match(/쥬브아셀[^,+\n]*?(\d+)?\s*병?\s*미라젯/i);
+      const jbaBundleMj = raw.match(/쥬브아셀[^,+\n]*?\(.*?(\d+)?[^\S\n]*병?[^\S\n]*미라젯.*?\)/i)
+                       || raw.match(/쥬브아셀[^,+\n]*?(\d+)?[^\S\n]*병?[^\S\n]*미라젯/i);
       if(jbaBundleMj && !hasMjLto && !hasMjRj && !hasMjRjHB && !hasMjJbv){
         const mjQtyFromJba = jbaBundleMj[1] ? parseInt(jbaBundleMj[1]) : 1;
         results.push({item:'미라젯', qty: mjQtyFromJba});
@@ -1902,7 +1915,7 @@ function localParse(raw){
   const hasBblTight = /bbl.*?(?:스킨타이트닝)/i.test(raw);
   const hasBblAcne = /bbl.*?여드름/i.test(raw);
   // 각 서브타입별 회차 추출: "포에버영2회", "스킨타이트닝3회", "여드름2회" 등
-  const bblColorQtyM = raw.match(/(?:포에버영|색소|홍조|화이트닝|미백)\s*(\d+)\s*회/i);
+  const bblColorQtyM = raw.match(/(?:포에버영|색소|홍조|화이트닝|미백)\s*(\d+)\s*회(?!대체|대신)/i);
   const bblColorQty = bblColorQtyM ? parseInt(bblColorQtyM[1]) : 1;
   // 스킨타이트닝 회차 추출 (BBL 전체 회차가 아닌 서브타입 회차)
   const bblTightQtyM = raw.match(/스킨타이트닝\s*(\d+)\s*회/i);
