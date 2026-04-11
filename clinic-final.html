@@ -1932,21 +1932,47 @@ function renderDailyTotals(){
   var el=document.getElementById('daily-totals');
   if(!el) return;
   var cfg2=loadCfg();
+
+  // 월별 필터 감지: 1일~말일이면 고정값 수수료도 포함
+  var dfFrom=document.getElementById('df-from').value||'';
+  var dfTo=document.getElementById('df-to').value||'';
+  var isFullMonth=false;
+  if(dfFrom&&dfTo){
+    var fParts=dfFrom.split('-'),tParts=dfTo.split('-');
+    if(fParts.length===3&&tParts.length===3&&fParts[0]===tParts[0]&&fParts[1]===tParts[1]&&parseInt(fParts[2])===1){
+      var lastDay=new Date(parseInt(tParts[0]),parseInt(tParts[1]),0).getDate();
+      if(parseInt(tParts[2])===lastDay) isFullMonth=true;
+    }
+  }
+
   var tAmt=0, tComm=0, tMat=0, cnt=_dailyFiltered.length;
   // 실장별/경로별 소계
   var byStaff={}, byCat={};
+  // 1차: percent 수수료만 건별 계산
   _dailyFiltered.forEach(function(it){
     var amt=(parseFloat(it.amount)||0)*10000;
-    var comm=calcCommission(it.cat1||'',amt,cfg2,true);
+    var cat1=it.cat1||'';
+    var comm=calcCommission(cat1,amt,cfg2,true); // percent만
     var mat=calcMaterialCost(it.treatments,cfg2);
     tAmt+=amt; tComm+=comm; tMat+=mat;
     var sk=it.staff||'미지정';
     if(!byStaff[sk]) byStaff[sk]={amt:0,comm:0,mat:0,cnt:0};
     byStaff[sk].amt+=amt; byStaff[sk].comm+=comm; byStaff[sk].mat+=mat; byStaff[sk].cnt++;
-    var ck=it.cat1||'미분류';
+    var ck=cat1||'미분류';
     if(!byCat[ck]) byCat[ck]={amt:0,comm:0,mat:0,cnt:0};
     byCat[ck].amt+=amt; byCat[ck].comm+=comm; byCat[ck].mat+=mat; byCat[ck].cnt++;
   });
+  // 2차: 월별이면 fixed 수수료를 경로별 소계에 1회 추가
+  if(isFullMonth){
+    Object.keys(byCat).forEach(function(cat1){
+      var rc=cfg2.routes[cat1];
+      if(rc&&rc.type==='fixed'){
+        var fixedVal=parseFloat(rc.value)||0;
+        byCat[cat1].comm+=fixedVal;
+        tComm+=fixedVal;
+      }
+    });
+  }
   var tNet=tAmt-tComm-tMat;
 
   // 필터 활성 여부 확인
@@ -1959,7 +1985,9 @@ function renderDailyTotals(){
   if(document.getElementById('df-doctor').value) filterDesc.push('의사:'+document.getElementById('df-doctor').value);
 
   var h='';
-  h+='<div style="font-size:13px;font-weight:700;margin-bottom:8px;">📊 합계 요약'+(hasFilter?' <span style="font-size:11px;color:#3b82f6;font-weight:400;">('+filterDesc.join(' · ')+')</span>':'')+'</div>';
+  h+='<div style="font-size:13px;font-weight:700;margin-bottom:8px;">📊 합계 요약'+(hasFilter?' <span style="font-size:11px;color:#3b82f6;font-weight:400;">('+filterDesc.join(' · ')+')</span>':'');
+  if(isFullMonth) h+=' <span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:2px 6px;border-radius:4px;">월별 — 고정수수료 포함</span>';
+  h+='</div>';
 
   // 전체 합계 KPI
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;">';
@@ -1984,7 +2012,8 @@ function renderDailyTotals(){
     var rows=keys.map(function(k){
       var d=dataMap[k]; var net=d.amt-d.comm-d.mat;
       var rate=d.amt>0?Math.round(net/d.amt*1000)/10:0;
-      return {key:k, cnt:d.cnt, amt:d.amt, comm:d.comm, mat:d.mat, net:net, rate:rate};
+      var avg=d.cnt>0?d.amt/d.cnt:0;
+      return {key:k, cnt:d.cnt, avg:avg, amt:d.amt, comm:d.comm, mat:d.mat, net:net, rate:rate};
     });
     // 정렬 적용
     rows.sort(function(a,b){
@@ -1995,6 +2024,7 @@ function renderDailyTotals(){
     var cols=[
       {key:'key',label:labelField,align:'left'},
       {key:'cnt',label:'건수',align:'right'},
+      {key:'avg',label:'객단가',align:'right'},
       {key:'amt',label:'수납액',align:'right'},
       {key:'comm',label:'수수료',align:'right'},
       {key:'mat',label:'재료비',align:'right'},
@@ -2014,6 +2044,7 @@ function renderDailyTotals(){
       tb+='<tr style="border-bottom:1px solid #e2e8f0;">';
       tb+='<td style="padding:5px 8px;font-weight:600;color:#1e293b;">'+r.key+'</td>';
       tb+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+r.cnt+'</td>';
+      tb+='<td style="padding:5px 8px;text-align:right;color:#059669;font-weight:600;">'+formatW(r.avg)+'</td>';
       tb+='<td style="padding:5px 8px;text-align:right;color:#2563eb;font-weight:600;">'+formatW(r.amt)+'</td>';
       tb+='<td style="padding:5px 8px;text-align:right;color:#f97316;">'+formatW(r.comm)+'</td>';
       tb+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(r.mat)+'</td>';
@@ -2225,8 +2256,12 @@ function dailyGoPage(p){
 }
 
 function formatW(val){
-  if(Math.abs(val)>=100000000) return (val/100000000).toFixed(1)+'억';
-  if(Math.abs(val)>=10000) return Math.round(val/10000).toLocaleString()+'만';
+  if(Math.abs(val)>=100000000) return (val/100000000).toFixed(2)+'억';
+  if(Math.abs(val)>=10000){
+    var m=val/10000;
+    // 정수이면 소수점 없이, 아니면 소수점 2자리
+    return (m%1===0?m.toLocaleString():m.toFixed(2))+'만';
+  }
   return val.toLocaleString()+'원';
 }
 
