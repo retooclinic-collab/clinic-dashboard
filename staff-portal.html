@@ -2933,19 +2933,23 @@ function pickXlsxSheetSelected(){
     const name = wb.SheetNames[idx];
     const sheet = wb.Sheets[name];
     cleanXlsxSheet(sheet);
-    // 날짜 셀에 연도 보정: SheetJS cellDates로 Date 객체가 들어있음
+    // 날짜 셀에 연도 보정: SheetJS cellDates의 Date 객체는 타임존 오류 가능
+    // → cell.w (SheetJS가 시리얼넘버에서 직접 포맷한 값)에서 월/일 추출하여 사용
     const range = XLSX.utils.decode_range(sheet['!ref']||'A1');
     for(let r=range.s.r+1; r<=range.e.r; r++){
       const addr = XLSX.utils.encode_cell({r:r, c:0});
       const cell = sheet[addr];
-      if(cell && cell.t==='d' && cell.v instanceof Date){
-        // 연도를 선택된 연도로 교체
-        const d = cell.v;
-        const mon = d.getMonth(); // 0-based
-        // 탭 이름에서 월 추출하여 연도 자동 판단할 수도 있지만, 사용자가 선택한 연도 사용
-        d.setFullYear(parseInt(year));
-        cell.v = d;
-        cell.w = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      if(cell && cell.t==='d'){
+        // cell.w에서 M/D 추출 (SheetJS 시리얼넘버 기반 — 항상 정확)
+        const origW = String(cell.w||'');
+        const wMatch = origW.match(/(\d{1,2})\/(\d{1,2})/);
+        if(wMatch){
+          const mon = parseInt(wMatch[1]);
+          const day = parseInt(wMatch[2]);
+          cell.w = year+'-'+String(mon).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+          cell.t = 's'; // 문자열로 변환 (sheet_to_csv가 cell.w 대신 cell.v Date를 쓰는 것 방지)
+          cell.v = cell.w;
+        }
       }
     }
     allTsv += XLSX.utils.sheet_to_csv(sheet, {FS:'\t', RS:'\n'}) + '\n';
