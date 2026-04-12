@@ -939,7 +939,7 @@ const TREATMENT_ITEMS = [
   'NAD','미라젯쥬베룩','알라딘필','문신제거',
   '피부관리',
   '적립금차감','선납금차감','상품권차감','할인차감','적립금',
-  '예약금','예약금제외','환불','위약금','제품','지정비용','점,편사제거'
+  '예약금','예약금제외','환불','위약금','제품','지정비용','점,편사제거','차액결제'
 ];
 
 /* ══════════════════════════════════════════════
@@ -974,7 +974,7 @@ const CHARGE_PRICE = {
   '새살주사':27.5, '인텐스울트라':27.5, '히알라제':16.5,
   '피부관리':16.5,
   '적립금차감':0, '선납금차감':0, '상품권차감':0, '할인차감':0, '적립금':0,
-  '예약금':0, '예약금제외':0, '환불':0, '위약금':0, '제품':0, '지정비용':0, '점,편사제거':0,
+  '예약금':0, '예약금제외':0, '환불':0, '위약금':0, '제품':0, '지정비용':0, '점,편사제거':0, '차액결제':0,
 };
 
 /* ── 텍스트에서 시술별 명시 가격 추출 ── */
@@ -2126,6 +2126,12 @@ function localParse(raw){
       const vipTotal = extractAmount(_origRaw) || 0;
       const vipPrice = vipPriceM ? parseFloat(vipPriceM[1].replace(/,/g,'')) : vipTotal;
       results.push({item:'VIP회원권', qty:1, _fixedAmt: vipPrice||0});
+      // VIP+차액: "1500VIP+차액348.7M" → 차액결제 348.7 자동 추가
+      const chaAekM = _origRaw.match(/차액\s*([\d.]+)/i);
+      if(chaAekM){
+        const chaAmt = parseFloat(chaAekM[1]);
+        if(chaAmt > 0) results.push({item:'차액결제', qty:1, _fixedAmt: chaAmt});
+      }
     }
   }
   if(/상담비|상담만/i.test(raw)) results.push({item:'상담만', qty:1});
@@ -2461,14 +2467,30 @@ function extractPayment(text){
   if(lastAmtPay){
     const totalAmt = parseFloat(lastAmtPay[1].replace(/,/g,''));
     // "이체+자진", "이체,자진" → 이체현영으로 통합 (분리 방지)
-    const inner = lastAmtPay[2].replace(/이체\s*[+,]\s*자진/gi, '이체현영');
-    // 분할결제: (120현금자진+50.5카), (400카+나머지알리) 형태
-    const parts = inner.split(/[+,\/]/);
+    // "현,자진", "현+자진" → 현금자진으로 통합 (분리 방지)
+    const inner = lastAmtPay[2]
+      .replace(/이체\s*[+,]\s*자진/gi, '이체현영')
+      .replace(/현\s*[,+]\s*자진/gi, '현금자진');
+    // 분할결제: (120현금자진+50.5카), (400카+나머지알리), (카998.7 위챗850) 형태
+    // 공백도 구분자로 사용 (방식+금액 형태: "카998.7 위챗850")
+    const parts = inner.split(/[+,\/\s]+/).filter(Boolean);
     let remainderMethod = null; // "나머지" 키워드용
     parts.forEach(part => {
       const isRemainder = /나머지/.test(part);
-      const pm = part.match(/([\d.]+)\s*([^\d\s]+)/);
-      if(pm && !isRemainder){
+      // 패턴1: 금액+방식 (120현금자진, 50.5카)
+      const pm = part.match(/([\d.]+)\s*([^\d\s.]+)/);
+      // 패턴2: 방식+금액 (카998.7, 위챗850, 현금자진40)
+      const pm2 = part.match(/^([가-힣a-zA-Z]+?)([\d.]+)$/);
+      if(pm2 && !isRemainder){
+        // 방식-금액 순서 (카998.7, 위챗850, 현금자진40)
+        const method = normalizePayMethod(pm2[1]);
+        const amt = parseFloat(pm2[2]);
+        if(method && amt > 0){
+          splitDetails.push({method, amt});
+          if(!methods.includes(method)) methods.push(method);
+        }
+      } else if(pm && !isRemainder){
+        // 금액-방식 순서 (120현금자진, 50.5카)
         const amt = parseFloat(pm[1]);
         const method = normalizePayMethod(pm[2]);
         if(method && amt > 0){
@@ -2480,7 +2502,6 @@ function extractPayment(text){
         const method = normalizePayMethod(cleaned);
         if(method){
           if(isRemainder) remainderMethod = method;
-          // 금액 없는 비-나머지 항목은 splitDetails에 넣지 않음 → 단일결제 자동채우기 작동
           if(!methods.includes(method)) methods.push(method);
         }
       }
@@ -2507,17 +2528,27 @@ function extractPayment(text){
     }
   }
 
-  // 분할결제 폴백: (50현금+50카드+100위챗+129알리) 형태 (금액 없는 괄호)
+  // 분할결제 폴백: (50현금+50카드+100위챗+129알리), (카998.7 위챗850) 형태
   if(methods.length === 0){
-    const splitPattern = /\(([^)]+(?:현금|카드|위챗|알리|이체|자진)[^)]*)\)/gi;
+    const splitPattern = /\(([^)]+(?:현금|카드|카|위챗|알리|이체|자진)[^)]*)\)/gi;
     const splitMatches = [...text.matchAll(splitPattern)];
     if(splitMatches.length > 0){
       splitMatches.forEach(match => {
-        const inner = match[1];
-        const parts = inner.split(/[+,]/);
+        const innerFb = match[1]
+          .replace(/이체\s*[+,]\s*자진/gi, '이체현영')
+          .replace(/현\s*[,+]\s*자진/gi, '현금자진');
+        const parts = innerFb.split(/[+,\/\s]+/).filter(Boolean);
         parts.forEach(part => {
-          const pm = part.match(/([\d.]+)\s*([^\d\s]+)/);
-          if(pm){
+          const pm2 = part.match(/^([가-힣a-zA-Z]+?)([\d.]+)$/);
+          const pm = part.match(/([\d.]+)\s*([^\d\s.]+)/);
+          if(pm2){
+            const method = normalizePayMethod(pm2[1]);
+            const amt = parseFloat(pm2[2]);
+            if(method && amt > 0){
+              splitDetails.push({method, amt});
+              if(!methods.includes(method)) methods.push(method);
+            }
+          } else if(pm){
             const amt = parseFloat(pm[1]);
             const method = normalizePayMethod(pm[2]);
             if(method && amt > 0){
