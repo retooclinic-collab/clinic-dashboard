@@ -3081,13 +3081,15 @@ function renderImportPreview(){
     var hasMisu = misuAmt > 0;
     // 실제 결제금액 = 시술합계 - 미수 (파란색으로 표시할 금액)
     var paidAmt = Math.round((treatSumR - misuAmt)*100)/100;
-    // 원본 컬럼 금액이 있으면 우선 사용 (엑셀 결제금액 컬럼 값 보존)
-    if(r._origColAmt && r._origColAmt !== 0){
-      // 원본 컬럼 금액 유지 — 양수는 미수 차감, 음수(환불)는 그대로
+    // 원본 컬럼 금액 우선 사용 (엑셀 결제금액 컬럼 값 100% 보존)
+    if('_origColAmt' in r){
+      // 엑셀 컬럼 값 우선 — 0(빈칸), 양수, 음수(환불) 모두 보존
       if(r._origColAmt < 0){
         r.amount = r._origColAmt;
-      } else {
+      } else if(r._origColAmt > 0){
         r.amount = hasMisu ? Math.round((r._origColAmt - misuAmt)*100)/100 : r._origColAmt;
+      } else {
+        r.amount = 0;  // 컬럼 비어있으면 0 유지 (텍스트 파싱으로 덮어쓰지 않음)
       }
     } else if(treatSumR < -0.01){
       r.amount = treatSumR;  // 환불
