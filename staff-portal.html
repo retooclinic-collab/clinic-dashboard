@@ -2018,10 +2018,11 @@ function localParse(raw){
     results.push({item:'제품', qty: m?parseInt(m[1]):1});
   }
 
-  // ── 점제거 (사마귀·점·편사·얼굴점 포함) ──
-  if(/사마귀|편사|얼굴점|(?:점\s*제거)|(?:점\s*\d+개)/i.test(raw)){
+  // ── 점제거 (사마귀·점·편사·얼굴점·act2 포함) ──
+  if(/사마귀|편사|얼굴점|(?:점\s*제거)|(?:점\s*\d+개)|act\.?\s*2/i.test(raw)){
     const countM = raw.match(/(?:사마귀|편사|얼굴점|점)\s*(\d+)\s*(?:개|곳|군데)/i)
-                || raw.match(/점\s*제거\s*(\d+)/i);
+                || raw.match(/점\s*제거\s*(\d+)/i)
+                || raw.match(/act\.?\s*2\s*(\d+)/i);
     results.push({item:'점,편사제거', qty: countM?parseInt(countM[1]):1});
   }
 
