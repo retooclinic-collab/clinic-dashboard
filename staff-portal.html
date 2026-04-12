@@ -535,6 +535,11 @@ window.fbLogin = async (email, pw) => {
 };
 
 window.fbLogout = async () => { await signOut(auth); location.reload(); };
+// Firestore 참조를 일반 스크립트에서 사용할 수 있도록 노출
+window._fbDb = db;
+window._fbDoc = doc;
+window._fbGetDoc = getDoc;
+window._fbSetDoc = setDoc;
 
 onAuthStateChanged(auth, async user => {
   if(user) {
@@ -602,6 +607,17 @@ onAuthStateChanged(auth, async user => {
         serverTs: serverTimestamp()
       });
     } catch(e){ console.warn('access log error:', e); }
+    // 커스텀 시술 아카이브 로드
+    try {
+      const ctDoc = await getDoc(doc(db, 'clinic_settings', 'custom_treatments'));
+      if(ctDoc.exists()){
+        const items = ctDoc.data().items || [];
+        items.forEach(it => {
+          if(it && !TREATMENT_ITEMS.includes(it)) TREATMENT_ITEMS.push(it);
+        });
+        console.log('커스텀 시술 로드:', items.length+'건');
+      }
+    } catch(e){ console.warn('커스텀 시술 로드 실패:', e); }
     window.startListenHistory(user.uid, user.email);
   } else {
     document.getElementById('login-screen').style.display='flex';
@@ -920,7 +936,7 @@ function onPaymentInput(){
 /* ══════════════════════════════════════════════
    시술 항목 매핑 테이블
 ══════════════════════════════════════════════ */
-const TREATMENT_ITEMS = [
+let TREATMENT_ITEMS = [
   '제네시스+PTT','제네시스','수액','튠페이스','슈링크','티타늄','울쎄라(100샷)',
   '튠라이너','아이리프팅','튠라이트IPL','피코슈어','피코웨이','듀얼피코','트리플피코',
   '여드름관리','CO2','필러(국산)','필러(수입)','보톡스(국산)','보톡스(수입)',
@@ -3735,14 +3751,35 @@ function selectManualItem(item){
   filterManualList(document.getElementById('manual-search').value);
 }
 
+// 커스텀 시술항목 Firestore 아카이브 저장
+async function saveCustomTreatment(itemName){
+  try {
+    const docRef = window._fbDb && window._fbDoc ? window._fbDoc(window._fbDb, 'clinic_settings', 'custom_treatments') : null;
+    if(!docRef) return;
+    const snap = await window._fbGetDoc(docRef);
+    const existing = snap.exists() ? (snap.data().items || []) : [];
+    if(!existing.includes(itemName)){
+      existing.push(itemName);
+      await window._fbSetDoc(docRef, { items: existing, updatedAt: new Date().toISOString() }, {merge:true});
+      console.log('커스텀 시술 아카이브 저장:', itemName);
+    }
+  } catch(e){ console.warn('커스텀 시술 저장 실패:', e); }
+}
+
 function confirmManualAdd(mode){
   let item = window._manualSelected;
   if(!item){ showToast('항목을 선택하거나 직접 입력해주세요','error'); return; }
-  if(item.startsWith('__custom__:')) item = item.replace('__custom__:', '');
+  const isCustom = item.startsWith('__custom__:');
+  if(isCustom) item = item.replace('__custom__:', '');
   const qty = parseFloat(document.getElementById('manual-qty').value)||1;
   const priceEl = document.getElementById('manual-price');
   const unitPrice = CHARGE_PRICE[item] ?? 0;
   const price = (priceEl && priceEl.value !== '') ? parseFloat(priceEl.value) : Math.round(unitPrice * qty * 10)/10;
+  // 미등록 커스텀 항목 → TREATMENT_ITEMS에 추가 + Firestore 아카이브 저장
+  if(isCustom && item && !TREATMENT_ITEMS.includes(item)){
+    TREATMENT_ITEMS.push(item);
+    saveCustomTreatment(item);
+  }
 
   if(mode === 'edit'){
     if(!window._editTreatments) window._editTreatments = [];
