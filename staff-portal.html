@@ -2599,6 +2599,27 @@ function extractPayment(text){
     }
   }
 
+  // "결제: 카드 998.7", "결제:카드998.7" 등 비표준 형식 폴백
+  if(methods.length === 0){
+    const payColonM = text.match(/결제\s*[:：]\s*([가-힣a-zA-Z]+)\s*([\d.]+)?/i);
+    if(payColonM){
+      const method = normalizePayMethod(payColonM[1]);
+      if(method){
+        methods.push(method);
+        if(payColonM[2]){
+          const amt = parseFloat(payColonM[2]);
+          if(amt > 0) splitDetails.push({method, amt});
+        }
+      }
+    }
+  }
+
+  // 텍스트 전체가 결제방식명만인 경우 (예: F열에 "카" 한 글자)
+  if(methods.length === 0){
+    const method = normalizePayMethod(text.trim());
+    if(method) methods.push(method);
+  }
+
   return { methods, splitDetails };
 }
 
@@ -2623,7 +2644,17 @@ let _importRows = [];
 
 function parseDate(s, prevDate){
   if(!s || !s.trim()) return prevDate || '';
-  const d = s.trim().replace(/\s/g,'');
+  let d = s.trim().replace(/\s/g,'');
+  // "3월2일" or "3월 2일" → "3/2" 변환
+  const korM = d.match(/^(\d{1,2})월(\d{1,2})일?$/);
+  if(korM) d = korM[1] + '/' + korM[2];
+  // "2일" (일자만) → 이전 행 월 사용
+  const dayOnly = d.match(/^(\d{1,2})일$/);
+  if(dayOnly && prevDate && /^\d{4}-\d{2}/.test(prevDate)){
+    const prevMo = prevDate.slice(5,7);
+    const prevYr = prevDate.slice(0,4);
+    return `${prevYr}-${prevMo}-${String(parseInt(dayOnly[1])).padStart(2,'0')}`;
+  }
   // 이미 연도 있는 경우
   if(/^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}$/.test(d)) return d.replace(/\//g,'-');
   // M/D 또는 MM/DD 형식 — 연도 추론
@@ -2827,8 +2858,8 @@ function processImportText(text){
 
     // 이름이나 결제내역 없으면 스킵
     if(!name && !payText) return;
-    // 결제내역이 너무 짧으면 (1~2글자) 의미없는 행 스킵
-    if(!payText || payText.length < 2) return;
+    // 결제내역 비어있으면 스킵 (1글자라도 결제방식일 수 있으므로 허용)
+    if(!payText) return;
 
     _importRows.push({
       date,
@@ -3068,7 +3099,7 @@ function processBackupCSV(text){
     const cat1    = get('cat1');
     const cat2    = get('cat2');
     const payText = get('payText');
-    const amount  = parseFloat(get('amount'))||0;
+    const amount  = parseFloat(get('amount').replace(/^[,，]+/,''))||0;
     const staffRaw= get('staff');
     const doctor  = get('doctor');
     const staff   = mapStaff(staffRaw) || staffRaw;
