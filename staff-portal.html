@@ -440,6 +440,16 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
         </div>
         <div id="stats-content" style="display:flex;flex-wrap:wrap;gap:16px"></div>
       </div>
+      <!-- 미니캘린더 -->
+      <div id="mini-cal-wrap" style="margin-bottom:14px;background:#0a0f1a;border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <button onclick="shiftCalMonth(-1)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 8px">◀</button>
+          <div id="mini-cal-title" style="font-size:13px;font-weight:700;color:var(--text)"></div>
+          <button onclick="shiftCalMonth(1)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 8px">▶</button>
+        </div>
+        <div id="mini-cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center"></div>
+        <div id="mini-cal-summary" style="margin-top:8px;font-size:11px;color:var(--muted);text-align:center"></div>
+      </div>
       <!-- 테이블 -->
       <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
         <table id="consult-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:1020px;table-layout:fixed">
@@ -3970,6 +3980,12 @@ function applyDateFilter(){
   if(from) filtered = filtered.filter(it=>(it.date||'') >= from);
   if(to)   filtered = filtered.filter(it=>(it.date||'') <= to);
   window._dateFiltered = filtered;
+  // 캘린더 월 동기화
+  if(from){
+    var fp = from.split('-');
+    _calYear = parseInt(fp[0]);
+    _calMonth = parseInt(fp[1]) - 1;
+  }
   applyGroupFilter();
 }
 function clearDateFilter(){
@@ -4133,12 +4149,14 @@ function renderHistory(items){
     }, 0);
     const dateCount = grouped[date].length;
     const dateMisuStr = dateMisu > 0 ? `<span style="color:#ef4444;font-weight:700;margin-left:8px">미수 ${Math.round(dateMisu*10)/10}만</span>` : '';
+    const delBtn = window._isAdmin ? `<button onclick="deleteDateItems('${date}')" style="float:right;font-size:10px;padding:2px 8px;background:none;border:1px solid var(--red);border-radius:6px;color:var(--red);cursor:pointer;opacity:.6;transition:opacity .15s" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='.6'">🗑 이 날짜 삭제</button>` : '';
     html += `<tr>
       <td colspan="11" style="padding:8px 10px;background:#0a0f1a;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border)">
         📅 ${date}
         <span style="color:var(--muted);font-weight:400"> ${dateCount}건</span>
         <span style="color:var(--green);font-weight:700;margin-left:10px">${(Math.round(dateTotal*100)/100).toLocaleString()}만원</span>
         ${dateMisuStr}
+        ${delBtn}
       </td>
     </tr>`;
 
@@ -4251,6 +4269,162 @@ function renderHistory(items){
 
   // 다운로드 버튼 업데이트
   window._currentItems = items;
+
+  // 미니캘린더 갱신
+  renderMiniCalendar();
+}
+
+/* ── 미니캘린더 ── */
+var _calYear = new Date().getFullYear();
+var _calMonth = new Date().getMonth(); // 0-based
+
+function shiftCalMonth(dir){
+  _calMonth += dir;
+  if(_calMonth < 0){ _calMonth = 11; _calYear--; }
+  if(_calMonth > 11){ _calMonth = 0; _calYear++; }
+  renderMiniCalendar();
+}
+
+function renderMiniCalendar(){
+  var titleEl = document.getElementById('mini-cal-title');
+  var gridEl = document.getElementById('mini-cal-grid');
+  var summEl = document.getElementById('mini-cal-summary');
+  if(!titleEl || !gridEl) return;
+
+  var y = _calYear, m = _calMonth;
+  titleEl.textContent = y + '년 ' + (m+1) + '월';
+
+  // 현재 전체 데이터에서 날짜별 건수/금액 집계
+  var allItems = (window._allItems||[]).filter(function(it){ return !it.deleted; });
+  var dayMap = {}; // 'YYYY-MM-DD' -> {count, total}
+  var monthTotal = 0, monthCount = 0;
+  allItems.forEach(function(it){
+    var d = it.date||'';
+    if(!d) return;
+    var parts = d.split('-');
+    if(parseInt(parts[0])===y && parseInt(parts[1])===(m+1)){
+      if(!dayMap[d]) dayMap[d] = {count:0, total:0};
+      dayMap[d].count++;
+      var amt = parseFloat(it.amount)||0;
+      if(it.type!=='vip') dayMap[d].total += amt;
+      monthCount++;
+      if(it.type!=='vip') monthTotal += amt;
+    }
+  });
+
+  // 달력 그리드 생성
+  var firstDay = new Date(y, m, 1).getDay(); // 0=일
+  var daysInMonth = new Date(y, m+1, 0).getDate();
+  var today = new Date();
+  var todayStr = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+
+  // 현재 선택된 날짜 (필터에서)
+  var filterFrom = document.getElementById('filter-from')?.value||'';
+  var filterTo = document.getElementById('filter-to')?.value||'';
+
+  var html = '';
+  // 요일 헤더
+  ['일','월','화','수','목','금','토'].forEach(function(dw, i){
+    var c = i===0 ? '#ef4444' : (i===6 ? '#38bdf8' : 'var(--muted)');
+    html += '<div style="font-size:10px;color:'+c+';padding:2px 0;font-weight:600">'+dw+'</div>';
+  });
+
+  // 빈 칸 (1일 이전)
+  for(var i=0; i<firstDay; i++){
+    html += '<div></div>';
+  }
+
+  // 날짜
+  for(var d=1; d<=daysInMonth; d++){
+    var dateStr = y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    var info = dayMap[dateStr];
+    var isToday = dateStr === todayStr;
+    var isSelected = filterFrom && filterTo && filterFrom===dateStr && filterTo===dateStr;
+    var isInRange = filterFrom && filterTo && dateStr>=filterFrom && dateStr<=filterTo;
+
+    var bg = 'transparent';
+    var border = 'transparent';
+    var numColor = 'var(--muted)';
+
+    if(info && info.count > 0){
+      bg = '#0c2a3a';
+      numColor = '#38bdf8';
+    }
+    if(isSelected){
+      bg = '#38bdf8';
+      numColor = '#0f172a';
+      border = '#38bdf8';
+    } else if(isInRange){
+      bg = '#0f2940';
+      border = '#1e4a6e';
+    }
+    if(isToday && !isSelected){
+      border = '#4ade80';
+    }
+
+    var badge = '';
+    if(info && info.count > 0 && !isSelected){
+      badge = '<div style="font-size:8px;color:#4ade80;line-height:1">'+info.count+'</div>';
+    }
+
+    html += '<div onclick="calDayClick(\''+dateStr+'\')" style="cursor:pointer;padding:3px 1px;border-radius:6px;background:'+bg+';border:1.5px solid '+border+';min-height:32px;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:background .15s">';
+    html += '<div style="font-size:11px;color:'+numColor+';font-weight:'+(info?'700':'400')+'">'+d+'</div>';
+    html += badge;
+    html += '</div>';
+  }
+
+  gridEl.innerHTML = html;
+
+  // 월 요약
+  summEl.innerHTML = monthCount > 0
+    ? '<span style="color:var(--text);font-weight:600">'+monthCount+'건</span> · <span style="color:var(--green);font-weight:700">'+(Math.round(monthTotal*100)/100).toLocaleString()+'만원</span>'
+    : '<span style="color:var(--muted)">데이터 없음</span>';
+}
+
+function calDayClick(dateStr){
+  var filterFrom = document.getElementById('filter-from');
+  var filterTo = document.getElementById('filter-to');
+  if(!filterFrom || !filterTo) return;
+
+  // 이미 같은 날짜가 선택돼있으면 해제
+  if(filterFrom.value === dateStr && filterTo.value === dateStr){
+    filterFrom.value = '';
+    filterTo.value = '';
+  } else {
+    filterFrom.value = dateStr;
+    filterTo.value = dateStr;
+  }
+  applyDateFilter();
+}
+
+/* ── 날짜별 일괄 삭제 ── */
+async function deleteDateItems(dateStr){
+  var allItems = (window._allItems||[]).filter(function(it){
+    return !it.deleted && it.date === dateStr;
+  });
+  if(!allItems.length){ showToast('해당 날짜에 삭제할 데이터가 없어요','error'); return; }
+
+  var total = allItems.reduce(function(s,it){ return s+(parseFloat(it.amount)||0); }, 0);
+  total = Math.round(total*100)/100;
+
+  if(!confirm('⚠ '+dateStr+' 데이터를 삭제할까요?\n\n'+allItems.length+'건 / '+total.toLocaleString()+'만원\n\n삭제된 데이터는 소프트삭제(복원 가능)됩니다.')) return;
+
+  showToast('삭제 중... 0/'+allItems.length, 'info');
+  var errors = 0;
+  for(var i=0; i<allItems.length; i++){
+    try {
+      await window.fbSoftDelete(allItems[i].id);
+    } catch(e){
+      errors++;
+      console.error('Delete error:', allItems[i].id, e);
+    }
+    if(i % 5 === 4) showToast('삭제 중... '+(i+1)+'/'+allItems.length, 'info');
+  }
+  if(errors > 0){
+    showToast(allItems.length+'건 중 '+errors+'건 오류', 'error');
+  } else {
+    showToast(dateStr+' '+allItems.length+'건 삭제 완료', 'success');
+  }
 }
 
 /* ── CSV 다운로드 ── */
