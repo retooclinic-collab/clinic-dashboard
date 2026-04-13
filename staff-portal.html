@@ -993,6 +993,55 @@ const CHARGE_PRICE = {
   '예약금':0, '예약금제외':0, '환불':0, '위약금':0, '제품':0, '지정비용':0, '점,편사제거':0, '차액결제':0,
 };
 
+/* ── 공통: 항목명 → 원문 매칭용 정규식 사전 (extractTextPrices + SV 감지 공유) ── */
+const _ITEM_KEYWORDS = {
+  'BBL(색소)':/bbl/i, 'BBL(여드름)':/bbl.*?여드름/i,
+  'BBL(스킨타이트닝)':/bbl.*?스킨타이트닝/i,
+  '울쎄라(100샷)':/울쎄라|울쎼라/i, '소프웨이브(50샷)':/소프/i,
+  '써마지300':/써마지.*?300/i, '써마지600':/써마지.*?600/i,
+  '써마지900샷':/써마지.*?900/i,
+  '아이써마지225':/아이써마지.*?225/i, '아이써마지450샷':/아이써마지.*?450/i,
+  '튠페이스':/튠페(?!이스.*라이너)/i, '튠라이너':/튠라이너/i,
+  '티타늄':/티타늄/i, '온다':/온다/i,
+  '티타튠max':/티타튠max/i, '티타튠':/티타튠(?!max)/i,
+  '리쥬란HB':/리쥬란\s*hb/i,
+  '리쥬란아이':/(?:아이리쥬란|리쥬란아이)/i,
+  '리쥬란':/(?<!아이)리쥬란(?!\s*hb|아이)/i,
+  '힐로웨이브':/힐로웨이브/i,
+  '미라젯쥬베룩':/미라젯쥬베룩/i,
+  '미라젯':/미라젯(?!쥬베룩|리쥬란|쥬브아셀|리투오)/i,
+  '쥬베룩볼륨':/쥬베룩(?!\s*아이)/i, '쥬베룩아이':/쥬베룩\s*아이/i,
+  '쥬브아셀':/쥬브아셀/i, '리투오':/리투오/i,
+  '엠페이스':/엠페(?:이스)?/i, '오푸스':/오푸스/i,
+  '포텐자(펌핑)':/포텐자.*?펌핑|펌핑팁|펌핑쥬베룩/i,
+  '포텐자(모공)':/포텐자.*?모공/i, '포텐자(기미)':/포텐자.*?기미/i,
+  '필러(수입)':/(?:수입.*?필러|필러.*?수입|턱끝[fF]|목필러)/i,
+  '필러(국산)':/(?:국산.*?필러|필러.*?국)/i,
+  '보톡스(국산)':/(?:보톡스.*?국|국산.*?b(?:톡스)?|b.*?국|국.*?보톡스)/i,
+  '보톡스(수입)':/(?:제오민|\(제\)|보톡스.*?수입)/i,
+  '듀얼피코':/듀얼피코|피코토닝|피코(?!슈어|웨이|포커스|토닝)/i, '피코슈어':/피코슈어|피코웨이/i,
+  'moxi':/moxi/i, 'LDM':/ldm/i, '플라즈마':/플라즈마(?!엑소)/i,
+  '라라필':/라라필/i, '수면비':/수면/i, '아이리프팅':/아이리프팅/i,
+  '코레지셀핏':/코레지셀핏/i, '아그네스':/아그네스/i,
+  '수액':/(?:폭탄수액|백옥슈팅|비타민수액|리커버리수액|리바이탈수액|수액)/i, 'NAD':/nad/i,
+  '알라딘필':/알라딘필/i, '문신제거':/문신제거/i,
+  '리쥬셀릭크림':/리쥬셀릭(?!앰플|선물)/i,
+  '리쥬셀릭앰플':/리쥬셀릭앰플/i,
+  '리쥬셀릭선물세트':/리쥬셀릭선물세트/i,
+  'VIP회원권':/vip/i, '상담만':/상담/i,
+  '아쿠아필':/아쿠아필/i,
+  '제네시스+PTT':/제네시스\s*\+?\s*ptt/i,
+  '제네시스':/제네시스(?!\s*\+?\s*ptt)/i,
+  'PDRN':/pdrn/i, '줄기세포':/줄기세포/i,
+  '히알라제':/히알라제/i, '새살주사':/새살주사/i,
+  '인텐스울트라':/인텐스울트라/i, '위고비':/위고비/i,
+  '스킨바이브':/스킨바이브/i, '하이쿡스':/하이쿡스/i,
+  '플라즈마엑소좀':/플라즈마엑소좀/i,
+  '피부관리':/진정(?:관리|팩)|피부관리/i,
+  '지정비용':/지정비용|지정\s*비/i,
+  '제품':/마스크팩|제품|크림\d*박스/i,
+};
+
 /* ── 텍스트에서 시술별 명시 가격 추출 ── */
 function extractTextPrices(raw, treatments){
   // 최종 결제금액 + 이벤트 접두어 + 예약금제외 제거
@@ -1104,6 +1153,8 @@ function extractTextPrices(raw, treatments){
       .replace(/[-－]\s*[가-힣]{1,6}[\d.]+\s*(?:차감|제외|공제)?/g, '')
       // -남은/잔여/예약금제외
       .replace(/[-－]\s*(?:남은|잔여|예약금제외)\S*/g, '')
+      // -3.3예약금 제외 / -예약금 / -예약금3.3 제외 등 (공백 허용)
+      .replace(/[-－]\s*[\d.]*\s*[mM만]?\s*예약금[^+,\n]*/gi, '')
       // -25할인, 추가1.9m할인 등 할인 패턴 제거
       .replace(/[-－]\s*[\d.]+\s*[mM만]?\s*할인/gi, '')
       .replace(/추가\s*[\d.]+\s*[mM만]?\s*할인/gi, '');
@@ -1119,54 +1170,8 @@ function extractTextPrices(raw, treatments){
     return prices.length>0 ? prices[prices.length-1] : null;
   }
 
-  // 시술 키워드 매칭
-  const KEYWORDS = {
-    'BBL(색소)':/bbl/i, 'BBL(여드름)':/bbl.*?여드름/i,
-    'BBL(스킨타이트닝)':/bbl.*?스킨타이트닝/i,
-    '울쎄라(100샷)':/울쎄라|울쎼라/i, '소프웨이브(50샷)':/소프/i,
-    '써마지300':/써마지.*?300/i, '써마지600':/써마지.*?600/i,
-    '써마지900샷':/써마지.*?900/i,
-    '아이써마지225':/아이써마지.*?225/i, '아이써마지450샷':/아이써마지.*?450/i,
-    '튠페이스':/튠페(?!이스.*라이너)/i, '튠라이너':/튠라이너/i,
-    '티타늄':/티타늄/i, '온다':/온다/i,
-    '티타튠max':/티타튠max/i, '티타튠':/티타튠(?!max)/i,
-    '리쥬란HB':/리쥬란\s*hb/i,
-    '리쥬란아이':/(?:아이리쥬란|리쥬란아이)/i,
-    '리쥬란':/(?<!아이)리쥬란(?!\s*hb|아이)/i,
-    '힐로웨이브':/힐로웨이브/i,
-    '미라젯쥬베룩':/미라젯쥬베룩/i,
-    '미라젯':/미라젯(?!쥬베룩|리쥬란|쥬브아셀|리투오)/i,
-    '쥬베룩볼륨':/쥬베룩(?!\s*아이)/i, '쥬베룩아이':/쥬베룩\s*아이/i,
-    '쥬브아셀':/쥬브아셀/i, '리투오':/리투오/i,
-    '엠페이스':/엠페(?:이스)?/i, '오푸스':/오푸스/i,
-    '포텐자(펌핑)':/포텐자.*?펌핑|펌핑팁|펌핑쥬베룩/i,
-    '포텐자(모공)':/포텐자.*?모공/i, '포텐자(기미)':/포텐자.*?기미/i,
-    '필러(수입)':/(?:수입.*?필러|필러.*?수입|턱끝[fF]|목필러)/i,
-    '필러(국산)':/(?:국산.*?필러|필러.*?국)/i,
-    '보톡스(국산)':/(?:보톡스.*?국|국산.*?b(?:톡스)?|b.*?국|국.*?보톡스)/i,
-    '보톡스(수입)':/(?:제오민|\(제\)|보톡스.*?수입)/i,
-    '듀얼피코':/듀얼피코|피코토닝|피코(?!슈어|웨이|포커스|토닝)/i, '피코슈어':/피코슈어|피코웨이/i,
-    'moxi':/moxi/i, 'LDM':/ldm/i, '플라즈마':/플라즈마(?!엑소)/i,
-    '라라필':/라라필/i, '수면비':/수면/i, '아이리프팅':/아이리프팅/i,
-    '코레지셀핏':/코레지셀핏/i, '아그네스':/아그네스/i,
-    '수액':/(?:폭탄수액|백옥슈팅|비타민수액)/i, 'NAD':/nad/i,
-    '알라딘필':/알라딘필/i, '문신제거':/문신제거/i,
-    '리쥬셀릭크림':/리쥬셀릭(?!앰플|선물)/i,
-    '리쥬셀릭앰플':/리쥬셀릭앰플/i,
-    '리쥬셀릭선물세트':/리쥬셀릭선물세트/i,
-    'VIP회원권':/vip/i, '상담만':/상담/i,
-    '아쿠아필':/아쿠아필/i,
-    '제네시스+PTT':/제네시스\s*\+?\s*ptt/i,
-    '제네시스':/제네시스(?!\s*\+?\s*ptt)/i,
-    'PDRN':/pdrn/i, '줄기세포':/줄기세포/i,
-    '히알라제':/히알라제/i, '새살주사':/새살주사/i,
-    '인텐스울트라':/인텐스울트라/i, '위고비':/위고비/i,
-    '스킨바이브':/스킨바이브/i, '하이쿡스':/하이쿡스/i,
-    '플라즈마엑소좀':/플라즈마엑소좀/i,
-    '피부관리':/진정(?:관리|팩)|피부관리/i,
-    '지정비용':/지정비용|지정\s*비/i,
-    '제품':/마스크팩|제품|크림\d*박스/i,
-  };
+  // 시술 키워드 매칭 (공유 상수 _ITEM_KEYWORDS 사용)
+  const KEYWORDS = _ITEM_KEYWORDS;
 
   const found={};        // item → price (확실한 가격)
   const foundParen={};   // item → price (괄호 안 참조가, 잔액으로 처리)
@@ -1827,19 +1832,23 @@ function localParse(raw){
   }
 
   // ── 온다 — KJ에 따라 가격 다름 (중복 언급 합산: 온다100kj 2회 + 온다80kj 1회 → 3회) ──
-  const ondaAll = [...raw.matchAll(/(?:바디)?온다\s*(\d+)\s*kj\s*(?:\([^)]*\))?\s*(?:(\d+)\s*회)/gi)];
-  const ondaSimple = /온다/i.test(raw) && ondaAll.length===0;
+  // 바디온다/팔온다/종아리온다/다리온다/복부온다 등 부위 접두어도 온다로 합산
+  const ondaWithRounds = [...raw.matchAll(/(?:바디|팔|종아리|다리|복부)?온다\s*(\d+)\s*kj\s*(?:\([^)]*\))?\s*(\d+)\s*회/gi)];
+  const ondaKjAll = [...raw.matchAll(/(?:바디|팔|종아리|다리|복부)?온다\s*(\d+)\s*kj/gi)];
+  const ondaAnyMention = /(?:바디|팔|종아리|다리|복부)?온다/i.test(raw);
   // 온다80KJ(121) → 괄호 안 가격 추출
-  const ondaParenPrice = raw.match(/온다\s*\d+\s*kj\s*\(\s*([\d.]+)\s*\)/i);
+  const ondaParenPrice = raw.match(/(?:바디|팔|종아리|다리|복부)?온다\s*\d+\s*kj\s*\(\s*([\d.]+)\s*\)/i);
   const ondaFixedAmt = ondaParenPrice ? parseFloat(ondaParenPrice[1]) : null;
-  if(ondaAll.length > 0){
-    const ondaTotalQty = ondaAll.reduce((s,m) => s + (m[2] ? parseInt(m[2]) : 1), 0);
+  if(ondaWithRounds.length > 0){
+    const ondaTotalQty = ondaWithRounds.reduce((s,m) => s + parseInt(m[2]), 0);
     results.push({item:'온다', qty: ondaTotalQty, ...(ondaFixedAmt?{_fixedAmt:ondaFixedAmt}:{})});
-  } else if(ondaSimple){
+  } else if(ondaKjAll.length > 0){
+    // 회차 없는 KJ만 있는 경우: 언급 횟수만큼 qty 누적 (e.g. 온다60kj + 팔온다150kj → qty 2)
+    results.push({item:'온다', qty: ondaKjAll.length, ...(ondaFixedAmt?{_fixedAmt:ondaFixedAmt}:{})});
+  } else if(ondaAnyMention){
     results.push({item:'온다', qty:1, ...(ondaFixedAmt?{_fixedAmt:ondaFixedAmt}:{})});
   }
   // KJ 추출 → 동적 가격 (여러 KJ가 있으면 가장 큰 값 기준)
-  const ondaKjAll = [...raw.matchAll(/온다\s*(\d+)\s*kj/gi)];
   if(ondaKjAll.length > 0){
     const maxKj = Math.max(...ondaKjAll.map(m=>parseInt(m[1])));
     window._ondaPrice = maxKj>=100?165 : maxKj>=80?132 : maxKj>=60?99 : 66;
@@ -2007,20 +2016,21 @@ function localParse(raw){
   const hasBblTight = /bbl.*?(?:스킨타이트닝)/i.test(raw);
   const hasBblAcne = /bbl.*?여드름/i.test(raw);
   // 각 서브타입별 회차 추출: "포에버영2회", "스킨타이트닝3회", "여드름2회" 등
-  const bblColorQtyM = raw.match(/(?:포에버영|색소|홍조|화이트닝|미백)\s*(\d+)\s*회(?!대체|대신)/i);
-  const bblColorQty = bblColorQtyM ? parseInt(bblColorQtyM[1]) : 1;
+  const bblColorQtyM = raw.match(/(?:포에버영|포영|색소|홍조|화이트닝|미백)\s*(\d+)\s*회(?!대체|대신)/i);
+  let bblColorQty = bblColorQtyM ? parseInt(bblColorQtyM[1]) : 1;
   // 스킨타이트닝 회차 추출 (BBL 전체 회차가 아닌 서브타입 회차)
   const bblTightQtyM = raw.match(/스킨타이트닝\s*(\d+)\s*회/i);
-  const bblTightQty = bblTightQtyM ? parseInt(bblTightQtyM[1]) : 1;
+  let bblTightQty = bblTightQtyM ? parseInt(bblTightQtyM[1]) : 1;
   const bblAcneQtyM = raw.match(/여드름\s*(\d+)\s*회/i);
-  const bblAcneQty = bblAcneQtyM ? parseInt(bblAcneQtyM[1]) : 1;
+  let bblAcneQty = bblAcneQtyM ? parseInt(bblAcneQtyM[1]) : 1;
   // 서브타입별 회차가 없고 BBL 전체에 회차가 있으면 공통 적용
   if(!bblColorQtyM && !bblTightQtyM && !bblAcneQtyM){
-    const bblGlobalQtyM = raw.match(/bbl\s*(?:\([^)]*\))?\s*(\d+)\s*회/i);
+    const bblGlobalQtyM = raw.match(/bbl[^+,\n]*?(\d+)\s*회/i);
     if(bblGlobalQtyM){
       const gq = parseInt(bblGlobalQtyM[1]);
-      if(hasBblColor && !bblColorQtyM) { /* bblColorQty already 1, override */ }
-      // 글로벌 회차는 이미 각 qty가 1이므로 override
+      if(hasBblColor) bblColorQty = gq;
+      if(hasBblTight) bblTightQty = gq;
+      if(hasBblAcne) bblAcneQty = gq;
     }
   }
   const bblTypeCount = (hasBblColor?1:0)+(hasBblAcne?1:0)+(hasBblTight?1:0);
@@ -2311,27 +2321,20 @@ function localParse(raw){
   else if(/co2/i.test(raw)) results.push({item:'CO2', qty:1});
   if(/좌측볼사마귀|사마귀|편사|점\s*\d+개/i.test(raw) && !/제거/i.test(raw)) {}
 
-  // SV(서비스/무료) 감지: "시술명SV" 또는 "시술명 SV" → 해당 항목 가격 0
+  // SV(서비스/무료) 감지: "시술명SV" 또는 "시술명 SV" → 해당 항목 가격 0, qty는 유지
   // 예: "얼전국산b(눈밑눈가메인)SV" → 보톡스(국산) _fixedAmt:0
-  const svPattern = /(?:^|[\n,+])([^,\n]+?)sv(?:\s|[=,\n+]|$)/gim;
+  // 캡처 시 `+` 경계를 넘지 않도록 [^,\n+]+?로 제한 (over-match 방지)
+  const svPattern = /(?:^|[\n,+])([^,\n+]+?)sv(?:\s|[=,\n+]|$)/gim;
   const svMatches = [..._origRaw.matchAll(svPattern)];
   if(svMatches.length > 0){
     results.forEach(r => {
       if(r._fixedAmt !== undefined) return; // 이미 고정가 있으면 스킵
-      // 해당 항목의 키워드가 SV 컨텍스트에 있는지 확인
+      // 공유 _ITEM_KEYWORDS 사용 → 모든 항목에 일관되게 적용
+      const kw = _ITEM_KEYWORDS[r.item];
+      if(!kw) return;
       svMatches.forEach(sm => {
         const svContext = sm[1] + 'sv';
-        const KEYWORDS = {
-          '울쎄라(100샷)':/울쎄라|울쎼라/i, '소프웨이브(50샷)':/소프/i,
-          '튠페이스':/튠페/i, '튠라이너':/튠라이너/i, '티타늄':/티타늄/i,
-          '온다':/온다/i, 'BBL(색소)':/bbl/i, '보톡스(국산)':/국산.*?b|b.*?국|국산.*?보톡스|보톡스.*?국/i,
-          '보톡스(수입)':/제오민|보톡스.*?수입/i, '필러(수입)':/수입.*?필러|필러.*?수입/i,
-          '필러(국산)':/국산.*?필러|필러.*?국/i, '엠페이스':/엠페/i,
-          '듀얼피코':/듀얼피코|피코/i, '리쥬란':/리쥬란/i, '힐로웨이브':/힐로웨이브/i,
-          '미라젯':/미라젯/i, '수면비':/수면/i, '피부관리':/진정|피부관리/i,
-        };
-        const kw = KEYWORDS[r.item];
-        if(kw && kw.test(svContext)) r._fixedAmt = 0;
+        if(kw.test(svContext)) r._fixedAmt = 0;
       });
     });
   }
@@ -2358,18 +2361,32 @@ function localParse(raw){
       const hoeM = t.match(/(\d+)\s*회/); if(hoeM) qty = parseInt(hoeM[1]);
       // kj는 수량 영향 거의 없음 (티타늄)
 
-      // 시술명 매핑 (우선순위 높은 것부터)
-      if(/소프웨이브/.test(t)) return {item:'소프웨이브(50샷)', qty};
-      if(/울쎄라/.test(t)) return {item:'울쎄라(100샷)', qty};
-      if(/티타늄/.test(t)) return {item:'티타늄', qty:1}; // 티타늄은 kj 단위라 qty 1 고정
-      if(/리쥬란/.test(t)) return {item:'리쥬란', qty};
-      if(/쥬베룩.*아이/.test(t)) return {item:'쥬베룩아이', qty:1};
-      if(/쥬베룩/.test(t)) return {item:'쥬베룩볼륨', qty:1};
-      if(/쥬브아셀/.test(t)) return {item:'쥬브아셀', qty};
-      if(/미라젯/.test(t)) return {item:'미라젯', qty};
-      if(/bbl.*미백|bbl.*색소|bbl.*홍조/.test(t) || /bbl/.test(t)) return {item:'BBL(색소)', qty:1};
-      if(/진정관리|진정팩|피부관리/.test(t)) return {item:'피부관리', qty:1};
-      if(/리투오/.test(t)) return {item:'리투오', qty};
+      // 시술명 매핑 — 배열 반환 (하나의 토큰이 여러 항목으로 분해될 수 있음)
+      // 미라젯 조합 우선 체크 (쥬베룩/리쥬란/쥬브아셀/리투오 보다 앞에)
+      if(/미라젯쥬베룩/.test(t)) return [{item:'미라젯쥬베룩', qty:1}];
+      if(/미라젯.*리쥬란\s*hb/.test(t)) return [{item:'미라젯', qty:1}, {item:'리쥬란HB', qty}];
+      if(/미라젯.*리쥬란|리쥬란.*미라젯/.test(t)){
+        // 미라젯리쥬란NCC → 미라젯 1 + 리쥬란 N/2
+        const ccM = t.match(/(\d+)\s*cc/);
+        const rjQty = ccM ? Math.max(1, Math.round(parseInt(ccM[1])/2)) : qty;
+        return [{item:'미라젯', qty:1}, {item:'리쥬란', qty: rjQty}];
+      }
+      if(/미라젯.*쥬브아셀|쥬브아셀.*미라젯/.test(t)) return [{item:'미라젯', qty:1}, {item:'쥬브아셀', qty}];
+      if(/미라젯.*리투오|리투오.*미라젯/.test(t)) return [{item:'미라젯', qty:1}, {item:'리투오', qty}];
+
+      // 일반 시술
+      if(/소프웨이브/.test(t)) return [{item:'소프웨이브(50샷)', qty}];
+      if(/울쎄라/.test(t)) return [{item:'울쎄라(100샷)', qty}];
+      if(/티타늄/.test(t)) return [{item:'티타늄', qty:1}];
+      if(/리쥬란\s*hb/.test(t)) return [{item:'리쥬란HB', qty}];
+      if(/리쥬란/.test(t)) return [{item:'리쥬란', qty}];
+      if(/쥬베룩.*아이/.test(t)) return [{item:'쥬베룩아이', qty:1}];
+      if(/쥬베룩/.test(t)) return [{item:'쥬베룩볼륨', qty:1}];
+      if(/쥬브아셀/.test(t)) return [{item:'쥬브아셀', qty}];
+      if(/미라젯/.test(t)) return [{item:'미라젯', qty}];
+      if(/bbl.*미백|bbl.*색소|bbl.*홍조|bbl.*포에버영|bbl.*포영/.test(t) || /bbl/.test(t)) return [{item:'BBL(색소)', qty}];
+      if(/진정관리|진정팩|피부관리/.test(t)) return [{item:'피부관리', qty:1}];
+      if(/리투오/.test(t)) return [{item:'리투오', qty}];
       return null;
     };
 
@@ -2379,16 +2396,19 @@ function localParse(raw){
       const parsed = [];
       const seenItems = new Set();
       tokens.forEach(tok => {
-        const m = mapEventItem(tok);
-        if(!m) return;
-        if(seenItems.has(m.item)){
-          // 이미 있으면 qty 합산
-          const existing = parsed.find(p=>p.item===m.item);
-          if(existing) existing.qty += m.qty;
-          return;
-        }
-        seenItems.add(m.item);
-        parsed.push(m);
+        const mapped = mapEventItem(tok);
+        if(!mapped) return;
+        // 배열이면 그대로, 객체면 배열로 래핑 (하위호환)
+        const list = Array.isArray(mapped) ? mapped : [mapped];
+        list.forEach(m => {
+          if(seenItems.has(m.item)){
+            const existing = parsed.find(p=>p.item===m.item);
+            if(existing) existing.qty += m.qty;
+            return;
+          }
+          seenItems.add(m.item);
+          parsed.push(m);
+        });
       });
       if(parsed.length === 0) return;
       // 단가 비례배분
