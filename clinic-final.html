@@ -206,6 +206,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <button class="btn btn-p btn-sm" onclick="loadAllDaily()">새로고침</button>
+        <button class="btn btn-o btn-sm" onclick="downloadDailyCSV()" style="font-size:11px;">⬇ CSV (계산 컬럼 포함)</button>
       </div>
     </div>
     <!-- 필터 바 -->
@@ -250,6 +251,8 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
     </div>
     <!-- 합계 요약 -->
     <div id="daily-totals" class="card" style="display:none;margin-bottom:10px;padding:14px 18px;"></div>
+    <!-- 믹스/기여도 분석 -->
+    <div id="daily-mix-analysis" class="card" style="display:none;margin-bottom:10px;padding:14px 18px;"></div>
     <!-- 수납 내역 테이블 -->
     <div class="card" style="overflow-x:auto;">
       <div id="daily-table-wrap"></div>
@@ -2097,6 +2100,271 @@ function renderDailyTotals(){
 
   el.innerHTML=h;
   el.style.display=cnt>0?'block':'none';
+  // 믹스/기여도 분석
+  renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2);
+}
+
+// ─────────────────────────────────────────────────────────
+// 실장별 시술 믹스 + 이익률 차이 원인 분해 분석
+// ─────────────────────────────────────────────────────────
+function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
+  var el=document.getElementById('daily-mix-analysis');
+  if(!el) return;
+  var staffKeys=Object.keys(byStaff||{}).filter(function(k){return k!=='미지정';});
+  if(staffKeys.length<1 || !_dailyFiltered.length){ el.style.display='none'; return; }
+
+  // 1) 실장별 × 시술별 집계 (건별 treatments flatten)
+  //    각 treatment의 매출 배분: 건 내부 treatments 단가합 기준 비율, 단가 없으면 균등배분
+  var mix={}; // {staff: {item: {cat, qty, amt, mat, cnt}}, _totals:{item:{...}}}
+  mix._totals={};
+  _dailyFiltered.forEach(function(it){
+    var staff=it.staff||'미지정';
+    if(!mix[staff]) mix[staff]={};
+    var amt=(parseFloat(it.amount)||0)*10000;
+    var txs=(it.treatments||[]).filter(function(t){return t && t.item;});
+    if(!txs.length){
+      // treatments 없음 → '미분류' 항목으로
+      var key='(시술미입력)';
+      if(!mix[staff][key]) mix[staff][key]={cat:'상담/부속', qty:0, amt:0, mat:0, cnt:0};
+      mix[staff][key].amt+=amt; mix[staff][key].cnt++;
+      if(!mix._totals[key]) mix._totals[key]={cat:'상담/부속', qty:0, amt:0, mat:0, cnt:0};
+      mix._totals[key].amt+=amt; mix._totals[key].cnt++;
+      return;
+    }
+    // 단가 기반 매출 배분 비율 계산
+    var unitSum=0, units=[];
+    txs.forEach(function(t){
+      var name=t.item; var qty=parseFloat(t.qty)||1;
+      var up=0;
+      if(cfg2.procedures[name]) up=parseFloat(cfg2.procedures[name].price)||0;
+      units.push({name:name, qty:qty, up:up, weight: up*qty});
+      unitSum+=up*qty;
+    });
+    units.forEach(function(u,i){
+      var w = unitSum>0 ? u.weight/unitSum : 1/units.length;
+      var allocAmt=amt*w;
+      var matCost=u.up*u.qty;
+      if(!mix[staff][u.name]) mix[staff][u.name]={cat:classifyTx(u.name), qty:0, amt:0, mat:0, cnt:0};
+      mix[staff][u.name].qty+=u.qty;
+      mix[staff][u.name].amt+=allocAmt;
+      mix[staff][u.name].mat+=matCost;
+      mix[staff][u.name].cnt++;
+      if(!mix._totals[u.name]) mix._totals[u.name]={cat:classifyTx(u.name), qty:0, amt:0, mat:0, cnt:0};
+      mix._totals[u.name].qty+=u.qty;
+      mix._totals[u.name].amt+=allocAmt;
+      mix._totals[u.name].mat+=matCost;
+      mix._totals[u.name].cnt++;
+    });
+  });
+
+  // 2) 실장 × 카테고리 비중 테이블
+  var cats=[];
+  TX_CATEGORY.forEach(function(c){cats.push(c.cat);});
+  cats.push('기타');
+  var staffCat={}; // {staff: {cat: amt}}
+  staffKeys.forEach(function(s){
+    staffCat[s]={_total:0};
+    cats.forEach(function(c){staffCat[s][c]=0;});
+    Object.keys(mix[s]||{}).forEach(function(item){
+      var m=mix[s][item];
+      staffCat[s][m.cat] = (staffCat[s][m.cat]||0) + m.amt;
+      staffCat[s]._total += m.amt;
+    });
+  });
+
+  var h='';
+  h+='<div style="font-size:13px;font-weight:700;margin-bottom:8px;">🔬 실장별 시술 믹스 & 이익률 원인 분해</div>';
+  h+='<div style="font-size:11px;color:#64748b;margin-bottom:12px;">건별 수납액을 시술 단가비율로 배분 → 카테고리/시술항목별 매출·재료비·이익률을 비교합니다.</div>';
+
+  // 카테고리 비중 표
+  h+='<details open style="margin-bottom:10px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">📊 실장 × 시술 카테고리 매출비중 (%)</summary>';
+  h+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:560px;">';
+  h+='<thead><tr style="background:#f1f5f9;"><th style="padding:6px 8px;text-align:left;color:#64748b;">실장</th>';
+  cats.forEach(function(c){h+='<th style="padding:6px 8px;text-align:right;color:#64748b;white-space:nowrap;">'+c+'</th>';});
+  h+='<th style="padding:6px 8px;text-align:right;color:#64748b;">총매출(만원)</th></tr></thead><tbody>';
+  staffKeys.forEach(function(s){
+    var total=staffCat[s]._total||0;
+    h+='<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:5px 8px;font-weight:600;">'+s+'</td>';
+    cats.forEach(function(c){
+      var v=staffCat[s][c]||0;
+      var pct=total>0? (v/total*100):0;
+      var shade = pct>=30?'#dcfce7': pct>=15?'#f0fdf4': pct>0?'#f8fafc':'transparent';
+      h+='<td style="padding:5px 8px;text-align:right;background:'+shade+';">'+(pct>0?pct.toFixed(1)+'%':'-')+'</td>';
+    });
+    h+='<td style="padding:5px 8px;text-align:right;color:#2563eb;font-weight:600;">'+formatW(total)+'</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div></details>';
+
+  // 실장 × 시술 TOP 이익 기여도
+  h+='<details open style="margin-bottom:10px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">💎 실장별 TOP 시술 (매출·마진·순이익 기여)</summary>';
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;">';
+  staffKeys.forEach(function(s){
+    var items=Object.keys(mix[s]||{}).map(function(name){
+      var m=mix[s][name]; var net=m.amt-m.mat;
+      var rate=m.amt>0?(net/m.amt*100):0;
+      return {name:name, cat:m.cat, qty:m.qty, amt:m.amt, mat:m.mat, net:net, rate:rate, cnt:m.cnt};
+    }).sort(function(a,b){return b.amt-a.amt;}).slice(0,8);
+    var sTotal=items.reduce(function(x,y){return x+y.amt;},0);
+    h+='<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">';
+    h+='<div style="font-size:12px;font-weight:700;margin-bottom:6px;color:#1e293b;">👤 '+s+' <span style="font-size:10px;color:#94a3b8;font-weight:400;">(상위 8개)</span></div>';
+    h+='<table style="width:100%;border-collapse:collapse;font-size:10.5px;">';
+    h+='<thead><tr style="color:#94a3b8;"><th style="text-align:left;padding:3px 4px;">시술</th><th style="text-align:right;padding:3px 4px;">매출</th><th style="text-align:right;padding:3px 4px;">비중</th><th style="text-align:right;padding:3px 4px;">이익률</th></tr></thead><tbody>';
+    items.forEach(function(x){
+      var pct=sTotal>0?(x.amt/sTotal*100).toFixed(1):'0';
+      var rateColor=x.rate>=60?'#15803d':x.rate>=40?'#0ea5e9':x.rate>=20?'#f59e0b':'#ef4444';
+      h+='<tr style="border-top:1px solid #f1f5f9;">';
+      h+='<td style="padding:3px 4px;color:#334155;" title="'+x.cat+'">'+x.name.slice(0,14)+'</td>';
+      h+='<td style="padding:3px 4px;text-align:right;color:#2563eb;">'+formatW(x.amt)+'</td>';
+      h+='<td style="padding:3px 4px;text-align:right;color:#64748b;">'+pct+'%</td>';
+      h+='<td style="padding:3px 4px;text-align:right;color:'+rateColor+';font-weight:600;">'+x.rate.toFixed(0)+'%</td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table></div>';
+  });
+  h+='</div></details>';
+
+  // 실장 A vs B 비교 (이익률 차이 분해: 믹스효과 + 마진효과)
+  if(staffKeys.length>=2){
+    if(!window._mixCmp) window._mixCmp={a:staffKeys[0], b:staffKeys[1]};
+    var A=window._mixCmp.a, B=window._mixCmp.b;
+    if(staffKeys.indexOf(A)<0) A=staffKeys[0];
+    if(staffKeys.indexOf(B)<0) B=staffKeys[1]||staffKeys[0];
+    window._mixCmp.a=A; window._mixCmp.b=B;
+
+    h+='<details open style="margin-bottom:4px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">🆚 두 실장 이익률 차이 분해 (믹스효과 vs 마진효과)</summary>';
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">';
+    h+='<span style="font-size:11px;color:#64748b;">비교 대상:</span>';
+    h+='<select onchange="window._mixCmp.a=this.value;renderDailyTotals()" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">';
+    staffKeys.forEach(function(s){h+='<option value="'+esc(s)+'"'+(s===A?' selected':'')+'>'+esc(s)+'</option>';});
+    h+='</select><span style="color:#94a3b8;">vs</span>';
+    h+='<select onchange="window._mixCmp.b=this.value;renderDailyTotals()" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">';
+    staffKeys.forEach(function(s){h+='<option value="'+esc(s)+'"'+(s===B?' selected':'')+'>'+esc(s)+'</option>';});
+    h+='</select></div>';
+
+    // 차이 분해 — 항목별 매출비중/이익률/기여도
+    var allItems={};
+    Object.keys(mix[A]||{}).forEach(function(k){allItems[k]=1;});
+    Object.keys(mix[B]||{}).forEach(function(k){allItems[k]=1;});
+    var Atotal=staffCat[A]._total||0, Btotal=staffCat[B]._total||0;
+    function rateOf(m){return m && m.amt>0 ? (m.amt-m.mat)/m.amt : 0;}
+    var rows=Object.keys(allItems).map(function(item){
+      var mA=mix[A][item]||{amt:0,mat:0,qty:0};
+      var mB=mix[B][item]||{amt:0,mat:0,qty:0};
+      var wA=Atotal>0?mA.amt/Atotal:0;
+      var wB=Btotal>0?mB.amt/Btotal:0;
+      var rA=rateOf(mA), rB=rateOf(mB);
+      // 공통 평균 이익률 (양쪽 합쳐서)
+      var combAmt=mA.amt+mB.amt, combMat=mA.mat+mB.mat;
+      var rBar=combAmt>0?(combAmt-combMat)/combAmt:0;
+      // 믹스효과: (wA-wB)*rBar — A가 이 항목 비중을 더 많이 가진 효과
+      var mixEff=(wA-wB)*rBar;
+      // 마진효과: ((wA+wB)/2)*(rA-rB) — A의 이 항목 마진이 더 높은 효과
+      var margEff=((wA+wB)/2)*(rA-rB);
+      return {item:item, cat:(mA.cat||mB.cat||classifyTx(item)),
+        wA:wA, wB:wB, rA:rA, rB:rB, mixEff:mixEff, margEff:margEff, totalEff:mixEff+margEff, amtA:mA.amt, amtB:mB.amt};
+    }).filter(function(r){return (r.amtA+r.amtB)>0;})
+      .sort(function(a,b){return Math.abs(b.totalEff)-Math.abs(a.totalEff);});
+
+    var netA = Object.keys(mix[A]||{}).reduce(function(s,k){return s + (mix[A][k].amt-mix[A][k].mat);},0);
+    var netB = Object.keys(mix[B]||{}).reduce(function(s,k){return s + (mix[B][k].amt-mix[B][k].mat);},0);
+    var rateAall=Atotal>0?netA/Atotal*100:0, rateBall=Btotal>0?netB/Btotal*100:0;
+    var diff=rateAall-rateBall;
+    h+='<div style="background:#f8fafc;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:11.5px;">';
+    h+='<b>'+esc(A)+'</b> 이익률 <span style="color:#16a34a;font-weight:700;">'+rateAall.toFixed(1)+'%</span>';
+    h+=' - <b>'+esc(B)+'</b> 이익률 <span style="color:#16a34a;font-weight:700;">'+rateBall.toFixed(1)+'%</span>';
+    h+=' = <span style="color:'+(diff>=0?'#16a34a':'#ef4444')+';font-weight:700;">'+(diff>=0?'+':'')+diff.toFixed(1)+'%p</span>';
+    h+='<div style="font-size:10px;color:#94a3b8;margin-top:4px;">아래 표에서 각 시술의 기여도(믹스효과+마진효과)를 합하면 위 차이값에 근사합니다.</div>';
+    h+='</div>';
+
+    h+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:620px;">';
+    h+='<thead><tr style="background:#f1f5f9;color:#64748b;">';
+    h+='<th style="padding:6px 8px;text-align:left;">시술</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">'+esc(A)+' 비중</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">'+esc(B)+' 비중</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">'+esc(A)+' 이익률</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">'+esc(B)+' 이익률</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">믹스효과</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">마진효과</th>';
+    h+='<th style="padding:6px 8px;text-align:right;font-weight:800;">총기여도(%p)</th>';
+    h+='</tr></thead><tbody>';
+    rows.slice(0,12).forEach(function(r){
+      var sign=function(v){return (v>=0?'+':'')+(v*100).toFixed(2);};
+      var totColor=r.totalEff>0?'#16a34a':r.totalEff<0?'#ef4444':'#64748b';
+      h+='<tr style="border-bottom:1px solid #e2e8f0;">';
+      h+='<td style="padding:5px 8px;"><span style="font-weight:600;color:#1e293b;">'+esc(r.item)+'</span> <span style="font-size:9.5px;color:#94a3b8;">'+esc(r.cat)+'</span></td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+(r.wA*100).toFixed(1)+'%</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+(r.wB*100).toFixed(1)+'%</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#0ea5e9;">'+(r.rA*100).toFixed(0)+'%</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#0ea5e9;">'+(r.rB*100).toFixed(0)+'%</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:'+(r.mixEff>=0?'#16a34a':'#ef4444')+';">'+sign(r.mixEff)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:'+(r.margEff>=0?'#16a34a':'#ef4444')+';">'+sign(r.margEff)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:'+totColor+';font-weight:700;">'+sign(r.totalEff)+'</td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table></div>';
+    h+='<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.5;">• <b>믹스효과</b>: A가 이 항목 매출비중을 더 가져서 생긴 차이 (비중차 × 공통평균이익률)<br>• <b>마진효과</b>: 이 항목에서 A가 B보다 이익률이 더 높아서 생긴 차이 (평균비중 × 이익률차)<br>• 양수면 A에게 유리, 음수면 B에게 유리</div>';
+    h+='</details>';
+  }
+
+  el.innerHTML=h;
+  el.style.display='block';
+}
+
+// 수납내역 필터링된 현 데이터 → 계산컬럼 포함 CSV 다운로드
+function downloadDailyCSV(){
+  if(!_dailyFiltered || !_dailyFiltered.length){alert('내보낼 데이터가 없습니다. 먼저 필터를 적용해주세요.');return;}
+  var cfg2=loadCfg();
+  var heads=['날짜','이름','내원경로','실장','의사','수납액(만원)','수수료(원)','재료비(원)','순이익(원)','이익률(%)','객당순이익(원)','건당시술수','시술목록','시술카테고리','결제수단','메모'];
+  var rows=[heads.join(',')];
+  _dailyFiltered.forEach(function(it){
+    var amt=(parseFloat(it.amount)||0)*10000;
+    var cat1=it.cat1||'';
+    var comm=calcCommission(cat1,amt,cfg2,true);
+    var mat=calcMaterialCost(it.treatments,cfg2);
+    var net=amt-comm-mat;
+    var rate=amt>0?(net/amt*100):0;
+    var txs=(it.treatments||[]).map(function(t){return (t.item||'')+(t.qty&&t.qty>1?'×'+t.qty:'');}).filter(Boolean);
+    var cats={}; (it.treatments||[]).forEach(function(t){if(t.item)cats[classifyTx(t.item)]=1;});
+    var row=[
+      it.date||'', it.name||'', cat1, it.staff||'', it.doctor||'',
+      (parseFloat(it.amount)||0).toFixed(1),
+      Math.round(comm), Math.round(mat), Math.round(net), rate.toFixed(1),
+      Math.round(net), txs.length, txs.join(' + '), Object.keys(cats).join(' | '),
+      it.pay||'', (it.memo||'').replace(/\n/g,' ')
+    ];
+    rows.push(row.map(function(v){
+      var s=String(v==null?'':v);
+      return s.includes(',')||s.includes('"')||s.includes('\n')?'"'+s.replace(/"/g,'""')+'"':s;
+    }).join(','));
+  });
+  var blob=new Blob(['\uFEFF'+rows.join('\n')],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  var now=new Date();
+  var ym=now.getFullYear()+String(now.getMonth()+1).padStart(2,'0')+String(now.getDate()).padStart(2,'0');
+  a.download='수납내역_분석_'+ym+'.csv';
+  a.click();
+}
+
+// 시술명 → 대분류 매핑 (이익률 분해 분석용)
+var TX_CATEGORY = [
+  { cat:'리프팅(HIFU/RF)', re:/울쎄라|써마지|소프웨이브|티타늄|튠라이너|튠페|온다|엠페|오푸스|덴서티/i },
+  { cat:'레이저/IPL',      re:/bbl|듀얼피코|피코|레이저|토닝|제네시스|브이빔|프락셀|프락쇼날|스펙트라|루트로/i },
+  { cat:'포텐자/MTS',      re:/포텐자|덴서티|다이아몬드|시크릿|mts|잘록|모공|미라젯/i },
+  { cat:'주사/볼륨',        re:/쥬베룩|리쥬란|쥬브아셀|리투오|스킨부스터|물광|백옥|스킨보톡스|필러|보톡스|더말|엑소좀/i },
+  { cat:'수액/영양',        re:/수액|주사|비타민|글루타치온|백옥(?!보톡스)|리커버리|마늘|감초|셀렌|푸르설|신데렐라/i },
+  { cat:'관리/팩',          re:[/피부관리|진정관리|진정팩|LDM|ldm|관리\b|재생팩|산소팩|수분팩|딥클렌징|각질/i] },
+  { cat:'상담/부속',        re:/vip|상담|양도|적립|할인|예약금|차감|이월/i }
+];
+function classifyTx(name){
+  if(!name) return '기타';
+  for(var i=0;i<TX_CATEGORY.length;i++){
+    var r=TX_CATEGORY[i].re;
+    if(Array.isArray(r)){ if(r.some(function(rx){return rx.test(name);})) return TX_CATEGORY[i].cat; }
+    else if(r.test(name)) return TX_CATEGORY[i].cat;
+  }
+  return '기타';
 }
 
 function calcMaterialCost(treatments, cfg2){
