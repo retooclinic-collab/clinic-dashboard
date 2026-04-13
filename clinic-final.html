@@ -2172,9 +2172,150 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     });
   });
 
+  // ── [ NEW ] 결제건 구성 패턴 분석: 총 결제액은 정확, 항목별 가격은 추정 ──
+  //    유사 결제금액대에서 시술 구성(품목수/카테고리수/조합)이 어떻게 다른지 비교
+  var buckets=[
+    {label:'~50만', min:0, max:500000},
+    {label:'50~100만', min:500000, max:1000000},
+    {label:'100~200만', min:1000000, max:2000000},
+    {label:'200~300만', min:2000000, max:3000000},
+    {label:'300~500만', min:3000000, max:5000000},
+    {label:'500만+', min:5000000, max:Infinity}
+  ];
+  var staffStats={}; // 실장별 기본 분해
+  var bucketGrid={}; // 실장 × 구간
+  var staffPairs={}; // 실장별 시술 쌍 공출현
+  var staffItemFreq={}; // 실장별 시술 등장 빈도
+  var gTotalTickets=0;
+  staffKeys.forEach(function(s){
+    staffStats[s]={cnt:0, totalAmt:0, itemsSum:0, uniqItemsSum:0, catsSum:0, emptyTxCnt:0};
+    bucketGrid[s]={}; buckets.forEach(function(b){bucketGrid[s][b.label]={cnt:0, amtSum:0, itemsSum:0, catsSum:0};});
+    staffPairs[s]={};
+    staffItemFreq[s]={};
+  });
+  _dailyFiltered.forEach(function(it){
+    var staff=it.staff||'미지정';
+    if(!staffStats[staff]) return;
+    var amt=(parseFloat(it.amount)||0)*10000;
+    var txs=(it.treatments||[]).filter(function(t){return t && t.item;});
+    var items=txs.map(function(t){return t.item;});
+    var uniq=[]; items.forEach(function(x){if(uniq.indexOf(x)<0)uniq.push(x);});
+    var catsArr=uniq.map(classifyTx);
+    var uniqCats=[]; catsArr.forEach(function(x){if(uniqCats.indexOf(x)<0)uniqCats.push(x);});
+    var qtySum=txs.reduce(function(s,t){return s+(parseFloat(t.qty)||1);},0);
+    staffStats[staff].cnt++;
+    staffStats[staff].totalAmt+=amt;
+    staffStats[staff].itemsSum+=qtySum;
+    staffStats[staff].uniqItemsSum+=uniq.length;
+    staffStats[staff].catsSum+=uniqCats.length;
+    if(!txs.length) staffStats[staff].emptyTxCnt++;
+    gTotalTickets++;
+    var b=null; for(var i=0;i<buckets.length;i++){ if(amt>=buckets[i].min && amt<buckets[i].max){ b=buckets[i]; break; } }
+    if(b){
+      var g=bucketGrid[staff][b.label];
+      g.cnt++; g.amtSum+=amt; g.itemsSum+=qtySum; g.catsSum+=uniqCats.length;
+    }
+    // 빈도 + 공출현
+    uniq.forEach(function(x){ staffItemFreq[staff][x]=(staffItemFreq[staff][x]||0)+1; });
+    var sorted=uniq.slice().sort();
+    for(var i=0;i<sorted.length;i++){
+      for(var j=i+1;j<sorted.length;j++){
+        var k=sorted[i]+' + '+sorted[j];
+        staffPairs[staff][k]=(staffPairs[staff][k]||0)+1;
+      }
+    }
+  });
+
   var h='';
-  h+='<div style="font-size:13px;font-weight:700;margin-bottom:8px;">🔬 실장별 시술 믹스 & 이익률 원인 분해</div>';
-  h+='<div style="font-size:11px;color:#64748b;margin-bottom:12px;">건별 수납액을 시술 단가비율로 배분 → 카테고리/시술항목별 매출·재료비·이익률을 비교합니다.</div>';
+  h+='<div style="font-size:13px;font-weight:700;margin-bottom:4px;">🧩 결제건 구성 패턴 분석 <span style="font-size:11px;font-weight:400;color:#64748b;">— 객단가 차이는 어디서?</span></div>';
+  h+='<div style="font-size:11px;color:#64748b;margin-bottom:12px;line-height:1.5;">건별 <b>총 결제금액은 정확한 값</b>이고, 각 건에 포함된 <b>시술 품목/개수/조합</b>을 실장별로 비교합니다. (항목별 원화 배분은 대략적 추정이라 이 섹션은 "가격 배분" 대신 "구성 다양성·조합 패턴"으로 객단가 차이를 설명합니다.)</div>';
+
+  // ─── ① 실장별 객단가 분해 카드 ───
+  h+='<details open style="margin-bottom:12px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">📇 실장별 객단가 분해 — 건수 · 평균 시술수 · 평균 카테고리 다양성</summary>';
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">';
+  staffKeys.forEach(function(s){
+    var st=staffStats[s]; if(!st.cnt) return;
+    var avgAmt=st.totalAmt/st.cnt;
+    var avgItems=st.itemsSum/st.cnt;
+    var avgUniq=st.uniqItemsSum/st.cnt;
+    var avgCats=st.catsSum/st.cnt;
+    h+='<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;background:linear-gradient(180deg,#fafbfc 0%,#ffffff 100%);">';
+    h+='<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#1e293b;">👤 '+esc(s)+' <span style="font-size:10px;color:#94a3b8;font-weight:400;">('+st.cnt+'건)</span></div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;">';
+    h+='<div><div style="color:#94a3b8;font-size:10px;">평균 객단가</div><div style="font-weight:700;color:#2563eb;">'+formatW(avgAmt)+'</div></div>';
+    h+='<div><div style="color:#94a3b8;font-size:10px;">총 매출</div><div style="font-weight:600;color:#1e293b;">'+formatW(st.totalAmt)+'</div></div>';
+    h+='<div><div style="color:#94a3b8;font-size:10px;">건당 시술수(qty)</div><div style="font-weight:700;color:#7c3aed;">'+avgItems.toFixed(1)+'개</div></div>';
+    h+='<div><div style="color:#94a3b8;font-size:10px;">건당 고유 품목수</div><div style="font-weight:700;color:#059669;">'+avgUniq.toFixed(1)+'종</div></div>';
+    h+='<div><div style="color:#94a3b8;font-size:10px;">건당 카테고리 다양성</div><div style="font-weight:700;color:#ea580c;">'+avgCats.toFixed(1)+'개</div></div>';
+    if(st.emptyTxCnt) h+='<div><div style="color:#94a3b8;font-size:10px;">시술미입력</div><div style="color:#94a3b8;">'+st.emptyTxCnt+'건</div></div>';
+    h+='</div></div>';
+  });
+  h+='</div>';
+  h+='<div style="font-size:10px;color:#94a3b8;margin-top:8px;line-height:1.5;">💡 <b>해석 힌트:</b> 객단가가 높은데 "건당 고유 품목수"도 함께 높으면 → 다양한 시술을 묶어서 객단을 끌어올린 케이스. 품목수는 비슷한데 객단가만 높으면 → 고가 단일 시술(리프팅/써마지 등) 위주로 구성한 케이스.</div>';
+  h+='</details>';
+
+  // ─── ② 수납액 구간 × 실장 교차표 (유사 금액대 비교용) ───
+  h+='<details open style="margin-bottom:12px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">📊 수납액 구간별 건수·평균시술수 (유사 금액대 비교)</summary>';
+  h+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:680px;">';
+  h+='<thead><tr style="background:#f1f5f9;"><th style="padding:6px 8px;text-align:left;color:#64748b;">실장</th>';
+  buckets.forEach(function(b){h+='<th style="padding:6px 8px;text-align:right;color:#64748b;white-space:nowrap;">'+b.label+'</th>';});
+  h+='<th style="padding:6px 8px;text-align:right;color:#64748b;">합계</th></tr></thead><tbody>';
+  staffKeys.forEach(function(s){
+    var st=staffStats[s]; if(!st.cnt) return;
+    h+='<tr style="border-bottom:1px solid #e2e8f0;"><td style="padding:5px 8px;font-weight:600;color:#1e293b;">'+esc(s)+'</td>';
+    buckets.forEach(function(b){
+      var g=bucketGrid[s][b.label];
+      if(!g.cnt){ h+='<td style="padding:5px 8px;text-align:right;color:#cbd5e1;">-</td>'; return; }
+      var avgIt=(g.itemsSum/g.cnt).toFixed(1);
+      var avgCat=(g.catsSum/g.cnt).toFixed(1);
+      var avgAmt=(g.amtSum/g.cnt);
+      var shade=g.cnt>=5?'#dcfce7':g.cnt>=3?'#ecfdf5':g.cnt>=1?'#f8fafc':'transparent';
+      h+='<td style="padding:4px 8px;text-align:right;background:'+shade+';line-height:1.3;">';
+      h+='<div style="font-weight:700;color:#1e293b;">'+g.cnt+'건</div>';
+      h+='<div style="font-size:9.5px;color:#64748b;">평균 '+formatW(avgAmt)+' · 시술 '+avgIt+'개 · 카테 '+avgCat+'</div>';
+      h+='</td>';
+    });
+    h+='<td style="padding:5px 8px;text-align:right;color:#2563eb;font-weight:700;">'+st.cnt+'건</td>';
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  h+='<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.5;">💡 같은 구간(예: 200~300만)에서 A실장의 "시술 N개 / 카테 M"가 B실장의 그것과 어떻게 다른지 비교하면, 동일 객단가에서도 구성 스타일 차이가 보입니다.</div>';
+  h+='</details>';
+
+  // ─── ③ 실장별 자주 함께 묶는 시술 조합 ───
+  h+='<details open style="margin-bottom:12px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">🧪 실장별 자주 묶는 시술 조합 (공출현 TOP)</summary>';
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;">';
+  staffKeys.forEach(function(s){
+    var pairs=staffPairs[s]||{};
+    var sortedPairs=Object.keys(pairs).map(function(k){return {pair:k, cnt:pairs[k]};}).sort(function(a,b){return b.cnt-a.cnt;}).slice(0,8);
+    var freqs=staffItemFreq[s]||{};
+    var sortedItems=Object.keys(freqs).map(function(k){return {name:k, cnt:freqs[k]};}).sort(function(a,b){return b.cnt-a.cnt;}).slice(0,6);
+    h+='<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">';
+    h+='<div style="font-size:12px;font-weight:700;margin-bottom:6px;color:#1e293b;">👤 '+esc(s)+'</div>';
+    h+='<div style="font-size:10.5px;color:#94a3b8;margin-bottom:4px;">🔸 단독 등장 TOP</div>';
+    if(sortedItems.length){
+      h+='<div style="font-size:11px;line-height:1.7;margin-bottom:10px;">';
+      sortedItems.forEach(function(x){
+        var cat=classifyTx(x.name);
+        h+='<div style="display:flex;justify-content:space-between;border-bottom:1px dotted #f1f5f9;padding:1px 0;"><span style="color:#334155;">'+esc(x.name)+' <span style="font-size:9.5px;color:#94a3b8;">·'+esc(cat)+'</span></span><b style="color:#2563eb;">'+x.cnt+'건</b></div>';
+      });
+      h+='</div>';
+    } else { h+='<div style="font-size:10.5px;color:#cbd5e1;margin-bottom:10px;">데이터 없음</div>'; }
+    h+='<div style="font-size:10.5px;color:#94a3b8;margin-bottom:4px;">🔹 함께 묶인 조합 TOP</div>';
+    if(sortedPairs.length){
+      h+='<div style="font-size:11px;line-height:1.6;">';
+      sortedPairs.forEach(function(x){
+        h+='<div style="display:flex;justify-content:space-between;gap:6px;border-bottom:1px dotted #f1f5f9;padding:1px 0;"><span style="color:#334155;">'+esc(x.pair)+'</span><b style="color:#16a34a;white-space:nowrap;">'+x.cnt+'회</b></div>';
+      });
+      h+='</div>';
+    } else { h+='<div style="font-size:10.5px;color:#cbd5e1;">2개 이상 시술로 구성된 건이 없음</div>'; }
+    h+='</div>';
+  });
+  h+='</div>';
+  h+='<div style="font-size:10px;color:#94a3b8;margin-top:8px;line-height:1.5;">💡 "단독 TOP"은 해당 시술이 몇 건에 등장했는지, "조합 TOP"은 두 시술이 같은 결제건에 함께 등장한 횟수입니다. 특정 실장의 조합 패턴이 고가 시술(리프팅 계열)과 묶이면 객단가 상승 요인으로 해석할 수 있습니다.</div>';
+  h+='</details>';
+
+  h+='<div style="font-size:11px;font-weight:700;margin:18px 0 6px 0;color:#475569;border-top:1px solid #e2e8f0;padding-top:14px;">── 참고 지표 (항목별 금액 배분은 추정치) ──</div>';
 
   // 카테고리 비중 표
   h+='<details open style="margin-bottom:10px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">📊 실장 × 시술 카테고리 매출비중 (%)</summary>';
