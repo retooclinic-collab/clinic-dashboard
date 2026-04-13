@@ -1415,10 +1415,11 @@ function distributePrices(treatments, total, rawText){
     }
   }
 
-  // 적립금 잔액 자동 조정: 적립금(_fixedAmt>0)은 total - 시술합으로 재계산
-  // VIP800에서 시술 748 차감 → 적립금 = 800-748 = 52 (원래 214.5는 누적 잔액이므로 무시)
+  // 적립금 잔액 자동 조정: VIP할인혜택이 없는 경우에만 total-시술합으로 재계산
+  // VIP할인혜택이 있으면 적립금은 원문 금액(남음) 그대로 유지
+  const hasVipDiscount = priced.some(t=>t.item==='VIP할인혜택');
   const creditRemainIdx = priced.findIndex(t=>t.item==='적립금' && t._fixedAmt!==undefined && t._fixedAmt > 0);
-  if(creditRemainIdx >= 0){
+  if(creditRemainIdx >= 0 && !hasVipDiscount){
     const otherSum2 = priced.reduce((s,t,i)=>i===creditRemainIdx?s:s+t.price, 0);
     const creditAmt = Math.round((total - otherSum2)*100)/100;
     priced[creditRemainIdx] = {...priced[creditRemainIdx], price: creditAmt > 0 ? creditAmt : 0};
@@ -1633,10 +1634,10 @@ function localParse(raw){
 
   // ── 전처리 ──
   let rawForParse = raw;
-  // 이벤트 그룹: 금액 부분만 제거, 시술명은 남겨서 개별 파싱되게 함
+  // 이벤트 그룹은 본문에서 완전 제거 (빈 공백) → 이벤트 외 시술 가격 추출 방해 방지
+  // 이벤트 그룹 내용은 아래에서 별도 파싱
   eventGroups.forEach(eg => {
-    // "4월e)소프웨이브150s+티타늄40KJ 209m" → ",소프웨이브150s+티타늄40KJ,"
-    rawForParse = rawForParse.replace(eg.fullMatch, ',' + eg.name + ',');
+    rawForParse = rawForParse.replace(eg.fullMatch, ' ');
   });
   const text = rawForParse
     .replace(/[=＝]\s*[\d.,]+\s*[mM].*$/gm, '')   // =결제금액 제거 (각 줄별)
@@ -2301,38 +2302,77 @@ function localParse(raw){
     });
   }
 
-  // ── 4월e) 이벤트 그룹 가격 비례배분 ──
-  // 이벤트 그룹에 속하는 시술들의 가격을 그룹 총액으로 비례배분
+  // ── 4월e) 이벤트 그룹 개별 파싱 + 단가 비례배분 ──
+  // 각 이벤트 그룹 내용에서 시술명 추출 → 단가 기준 비례배분 → 기존 results에 머지
   if(eventGroups.length > 0){
-    // 이벤트 그룹 내 시술명 매칭 → 해당 항목들에 _fixedAmt 설정
+    // 이벤트 그룹 내 시술명 → 표준항목명 매핑 헬퍼
+    const mapEventItem = (token) => {
+      const t = token.toLowerCase().replace(/\s+/g,'');
+      // 샷/회/cc/kj 등 숫자 수량 추출
+      let qty = 1;
+      const shotM = t.match(/(\d+)샷/); if(shotM){
+        const n = parseInt(shotM[1]);
+        if(/소프웨이브/.test(t)) qty = Math.max(1, Math.round(n/50));
+        else if(/울쎄라/.test(t)) qty = Math.max(1, Math.round(n/100));
+        else qty = Math.max(1, n);
+      }
+      const sM = t.match(/(\d+)s(?!\w)/); if(sM){
+        const n = parseInt(sM[1]);
+        if(/소프웨이브/.test(t)) qty = Math.max(1, Math.round(n/50));
+      }
+      const ccM = t.match(/(\d+)cc/); if(ccM) qty = Math.max(1, parseInt(ccM[1]));
+      const hoeM = t.match(/(\d+)\s*회/); if(hoeM) qty = parseInt(hoeM[1]);
+      // kj는 수량 영향 거의 없음 (티타늄)
+
+      // 시술명 매핑 (우선순위 높은 것부터)
+      if(/소프웨이브/.test(t)) return {item:'소프웨이브(50샷)', qty};
+      if(/울쎄라/.test(t)) return {item:'울쎄라(100샷)', qty};
+      if(/티타늄/.test(t)) return {item:'티타늄', qty:1}; // 티타늄은 kj 단위라 qty 1 고정
+      if(/리쥬란/.test(t)) return {item:'리쥬란', qty};
+      if(/쥬베룩.*아이/.test(t)) return {item:'쥬베룩아이', qty:1};
+      if(/쥬베룩/.test(t)) return {item:'쥬베룩볼륨', qty:1};
+      if(/쥬브아셀/.test(t)) return {item:'쥬브아셀', qty};
+      if(/미라젯/.test(t)) return {item:'미라젯', qty};
+      if(/bbl.*미백|bbl.*색소|bbl.*홍조/.test(t) || /bbl/.test(t)) return {item:'BBL(색소)', qty:1};
+      if(/진정관리|진정팩|피부관리/.test(t)) return {item:'피부관리', qty:1};
+      if(/리투오/.test(t)) return {item:'리투오', qty};
+      return null;
+    };
+
     eventGroups.forEach(eg => {
-      const parts = eg.name.split('+').map(s=>s.trim().toLowerCase());
-      // results에서 이벤트 그룹에 해당하는 항목 찾기
-      const matched = [];
-      parts.forEach(part => {
-        for(const r of results){
-          if(r._eventMatched) continue; // 이미 다른 그룹에 매칭됨
-          const rLow = r.item.toLowerCase();
-          // 시술명 매칭: 소프웨이브, 티타늄, 미라젯, 쥬베룩, 리쥬란 등
-          if(part.includes(rLow.slice(0,2)) || rLow.includes(part.slice(0,2))){
-            matched.push(r);
-            break;
-          }
+      const tokens = eg.name.split(/[+,]/).map(s=>s.trim()).filter(s=>s);
+      // 토큰별 시술 매핑 (진정관리/진정팩 중복은 피부관리로 합침 → 1개)
+      const parsed = [];
+      const seenItems = new Set();
+      tokens.forEach(tok => {
+        const m = mapEventItem(tok);
+        if(!m) return;
+        if(seenItems.has(m.item)){
+          // 이미 있으면 qty 합산
+          const existing = parsed.find(p=>p.item===m.item);
+          if(existing) existing.qty += m.qty;
+          return;
+        }
+        seenItems.add(m.item);
+        parsed.push(m);
+      });
+      if(parsed.length === 0) return;
+      // 단가 비례배분
+      const unitPrices = parsed.map(p => (CHARGE_PRICE[p.item]||1) * p.qty);
+      const sum = unitPrices.reduce((a,b)=>a+b, 0);
+      parsed.forEach((p, i) => {
+        const share = sum > 0
+          ? Math.round(eg.price * (unitPrices[i]/sum) * 10) / 10
+          : Math.round(eg.price / parsed.length * 10) / 10;
+        // 기존 results에 같은 item 있으면 qty+price 합산, 없으면 신규 추가
+        const existing = results.find(r => r.item === p.item);
+        if(existing){
+          existing.qty = (existing.qty||1) + p.qty;
+          existing._fixedAmt = (existing._fixedAmt||0) + share;
+        } else {
+          results.push({item: p.item, qty: p.qty, _fixedAmt: share});
         }
       });
-      if(matched.length > 0){
-        // 기존 단가 기준 비례배분
-        const defaultPrices = matched.map(r => (CHARGE_PRICE[r.item]||0)*r.qty);
-        const defaultSum = defaultPrices.reduce((a,b)=>a+b, 0);
-        matched.forEach((r, i) => {
-          if(defaultSum > 0){
-            r._fixedAmt = Math.round(eg.price * (defaultPrices[i]/defaultSum) * 10) / 10;
-          } else {
-            r._fixedAmt = Math.round(eg.price / matched.length * 10) / 10;
-          }
-          r._eventMatched = true;
-        });
-      }
     });
   }
 
@@ -2340,12 +2380,7 @@ function localParse(raw){
   if(transferAmt > 0){
     results.push({item: '양도', qty: 1, _deductAmt: -transferAmt});
   }
-
-  // ── VIP 잔여금 → 적립금 ──
-  if(remainAmt > 0 && /vip/i.test(_origRaw)){
-    results.push({item: '적립금', qty: 1, _fixedAmt: remainAmt});
-    notes.push(remainAmt + '만 잔여 → 적립금');
-  }
+  // 적립금은 위쪽 line ~2217의 remainAfterDeduct 로직에서 이미 처리됨 (중복 방지)
 
   // 중복 제거
   const seen = {};
@@ -3239,7 +3274,15 @@ function renderImportPreview(){
       try {
         var parsed = localParse(r.payText);
         r.treatments = distributePrices(parsed.treatments, r.amount, r.payText);
+        if(!r.doctor && parsed.doctor) r.doctor = parsed.doctor;
       } catch(e){ r.treatments = []; }
+    }
+    // 기존 treatments 있어도 doctor 없으면 재파싱해서 채움
+    if(!r.doctor){
+      try {
+        var p2 = localParse(r.payText);
+        if(p2.doctor) r.doctor = p2.doctor;
+      } catch(e){}
     }
   });
 
@@ -3250,14 +3293,15 @@ function renderImportPreview(){
   container.style.flexDirection = '';
 
   var html = '<table style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed">';
-  html += '<colgroup><col style="width:78px"><col style="width:80px"><col style="width:65px"><col><col style="width:58px"><col style="width:48px"><col style="width:52px"><col style="width:44px"></colgroup>';
+  html += '<colgroup><col style="width:78px"><col style="width:80px"><col style="width:60px"><col><col style="width:58px"><col style="width:48px"><col style="width:58px"><col style="width:48px"><col style="width:44px"></colgroup>';
   html += '<tr style="background:#0f172a;color:#64748b;font-size:11px">';
   html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155">날짜</th>';
   html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155">차트/이름</th>';
   html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155">분류</th>';
   html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155">결제내역</th>';
   html += '<th style="padding:6px;text-align:right;border-bottom:1px solid #334155">금액</th>';
-  html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155">상담자</th>';
+  html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155;white-space:nowrap">상담자</th>';
+  html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155;white-space:nowrap">시술의사</th>';
   html += '<th style="padding:6px;text-align:center;border-bottom:1px solid #334155">시술</th>';
   html += '<th style="padding:6px;border-bottom:1px solid #334155"></th>';
   html += '</tr>';
@@ -3321,14 +3365,15 @@ function renderImportPreview(){
     html += '<td style="padding:6px;color:#94a3b8;font-size:11px;word-break:break-all;line-height:1.4">' + r.payText + '</td>';
     var amtColor = r.amount < 0 ? '#ef4444' : '#38bdf8';
     html += '<td style="padding:6px;text-align:right;color:'+amtColor+';font-weight:700;font-size:11px">' + r.amount + '만</td>';
-    html += '<td style="padding:6px;color:#94a3b8;font-size:11px;overflow:hidden;text-overflow:ellipsis">' + r.staff + '</td>';
+    html += '<td style="padding:6px;color:#94a3b8;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (r.staff||'') + '</td>';
+    html += '<td style="padding:6px;color:#a5f3fc;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (r.doctor||'-') + '</td>';
     html += '<td style="padding:6px;text-align:center"><span style="font-size:10px;padding:2px 6px;border:1px solid '+badgeColor+';border-radius:10px;color:'+badgeColor+';cursor:pointer" onclick="toggleImportTreat('+i+')">' + treatCount + (sumOk?'✓':'⚠') + '</span></td>';
     html += '<td style="padding:6px;white-space:nowrap"><button onclick="openImportEditModal('+i+')" style="font-size:10px;padding:3px 7px;background:#38bdf8;color:#0f172a;border:none;border-radius:7px;cursor:pointer;font-weight:700">수정</button> <button onclick="deleteImportRow('+i+')" style="font-size:10px;padding:3px 7px;background:#ef4444;color:#fff;border:none;border-radius:7px;cursor:pointer;font-weight:700">삭제</button></td>';
     html += '</tr>';
 
     // 시술 펼침 행
     html += '<tr id="import-treat-'+i+'" style="display:none;background:#0a0f1a">';
-    html += '<td colspan="8" style="padding:8px 12px">';
+    html += '<td colspan="9" style="padding:8px 12px">';
     html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">';
     (r.treatments||[]).forEach(function(t){
       html += '<span style="background:#1e293b;border-radius:8px;padding:2px 8px;font-size:11px;color:#94a3b8">';
