@@ -443,9 +443,9 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
       <!-- 미니캘린더 -->
       <div id="mini-cal-wrap" style="margin-bottom:14px;background:#0a0f1a;border:1px solid var(--border);border-radius:12px;padding:14px 16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <button onclick="shiftCalMonth(-1)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 8px">◀</button>
+          <button id="mini-cal-prev" onclick="shiftCalMonth(-1)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 8px">◀</button>
           <div id="mini-cal-title" style="font-size:13px;font-weight:700;color:var(--text)"></div>
-          <button onclick="shiftCalMonth(1)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 8px">▶</button>
+          <button id="mini-cal-next" onclick="shiftCalMonth(1)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 8px">▶</button>
         </div>
         <div id="mini-cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center"></div>
         <div id="mini-cal-summary" style="margin-top:8px;font-size:11px;color:var(--muted);text-align:center"></div>
@@ -4602,10 +4602,23 @@ var _calYear = new Date().getFullYear();
 var _calMonth = new Date().getMonth(); // 0-based
 
 function shiftCalMonth(dir){
+  // 직원 계정: 월 이동 금지 (최근 3일만 열람 가능)
+  if(!window._isAdmin) return;
   _calMonth += dir;
   if(_calMonth < 0){ _calMonth = 11; _calYear--; }
   if(_calMonth > 11){ _calMonth = 0; _calYear++; }
   renderMiniCalendar();
+}
+
+// 직원 계정 기준 "클릭 허용" 날짜인지 판단 (최근 3일)
+function _isStaffAllowedDate(dateStr){
+  if(window._isAdmin) return true;
+  var today = new Date();
+  var limit = new Date();
+  limit.setDate(today.getDate() - 2); // 오늘 포함 3일
+  var limitStr = limit.getFullYear()+'-'+String(limit.getMonth()+1).padStart(2,'0')+'-'+String(limit.getDate()).padStart(2,'0');
+  var todayStr = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+  return dateStr >= limitStr && dateStr <= todayStr;
 }
 
 function renderMiniCalendar(){
@@ -4613,6 +4626,17 @@ function renderMiniCalendar(){
   var gridEl = document.getElementById('mini-cal-grid');
   var summEl = document.getElementById('mini-cal-summary');
   if(!titleEl || !gridEl) return;
+
+  // 직원 계정: 항상 현재 월 강제 + 월이동 버튼 숨김
+  if(!window._isAdmin){
+    var _now = new Date();
+    _calYear = _now.getFullYear();
+    _calMonth = _now.getMonth();
+    var _prevBtn = document.getElementById('mini-cal-prev');
+    var _nextBtn = document.getElementById('mini-cal-next');
+    if(_prevBtn) _prevBtn.style.visibility = 'hidden';
+    if(_nextBtn) _nextBtn.style.visibility = 'hidden';
+  }
 
   var y = _calYear, m = _calMonth;
   titleEl.textContent = y + '년 ' + (m+1) + '월';
@@ -4664,6 +4688,7 @@ function renderMiniCalendar(){
     var isToday = dateStr === todayStr;
     var isSelected = filterFrom && filterTo && filterFrom===dateStr && filterTo===dateStr;
     var isInRange = filterFrom && filterTo && dateStr>=filterFrom && dateStr<=filterTo;
+    var isAllowed = _isStaffAllowedDate(dateStr);
 
     var bg = 'transparent';
     var border = 'transparent';
@@ -4690,7 +4715,17 @@ function renderMiniCalendar(){
       badge = '<div style="font-size:8px;color:#4ade80;line-height:1">'+info.count+'</div>';
     }
 
-    html += '<div onclick="calDayClick(\''+dateStr+'\')" style="cursor:pointer;padding:3px 1px;border-radius:6px;background:'+bg+';border:1.5px solid '+border+';min-height:32px;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:background .15s">';
+    // 직원 계정: 허용 외 날짜는 비활성화 (클릭 불가 + 흐리게)
+    var cellCursor = 'pointer';
+    var cellOpacity = '1';
+    var cellClick = 'calDayClick(\''+dateStr+'\')';
+    if(!isAllowed){
+      cellCursor = 'not-allowed';
+      cellOpacity = '0.25';
+      cellClick = 'showToast(\'직원은 최근 3일만 조회 가능합니다\',\'error\')';
+    }
+
+    html += '<div onclick="'+cellClick+'" style="cursor:'+cellCursor+';opacity:'+cellOpacity+';padding:3px 1px;border-radius:6px;background:'+bg+';border:1.5px solid '+border+';min-height:32px;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:background .15s">';
     html += '<div style="font-size:11px;color:'+numColor+';font-weight:'+(info?'700':'400')+'">'+d+'</div>';
     html += badge;
     html += '</div>';
@@ -4705,6 +4740,11 @@ function renderMiniCalendar(){
 }
 
 function calDayClick(dateStr){
+  // 직원 계정 이중 검증: 최근 3일 외 날짜 클릭 차단
+  if(!_isStaffAllowedDate(dateStr)){
+    showToast('직원은 최근 3일만 조회 가능합니다','error');
+    return;
+  }
   var filterFrom = document.getElementById('filter-from');
   var filterTo = document.getElementById('filter-to');
   if(!filterFrom || !filterTo) return;
