@@ -1611,8 +1611,7 @@ function localParse(raw){
   }
 
   // ── 4월e) 이벤트 그룹 추출 (전처리 전에 먼저 파싱) ──
-  // "4월e)소프웨이브150s+티타늄40KJ 209m" → 하나의 묶음 시술 @ 209만
-  // "리쥬란e)미라젯리쥬란6CC+미라젯쥬베룩3CC+진정관리+진정팩 192.5m" → 묶음 @ 192.5만
+  // "4월e)소프웨이브150s+티타늄40KJ 209m" → 소프웨이브 + 티타늄 각각 파싱, 총액 209만 비례배분
   const eventGroups = [];
   const eventPattern = /(?:\d+월?|[가-힣]+)[eE]\)\s*([^=]*?)\s+([\d.]+)\s*[mM만]/g;
   let evMatch;
@@ -1634,8 +1633,11 @@ function localParse(raw){
 
   // ── 전처리 ──
   let rawForParse = raw;
-  // 이벤트 그룹 영역 제거 (개별 파싱 방지)
-  eventGroups.forEach(eg => { rawForParse = rawForParse.replace(eg.fullMatch, ','); });
+  // 이벤트 그룹: 금액 부분만 제거, 시술명은 남겨서 개별 파싱되게 함
+  eventGroups.forEach(eg => {
+    // "4월e)소프웨이브150s+티타늄40KJ 209m" → ",소프웨이브150s+티타늄40KJ,"
+    rawForParse = rawForParse.replace(eg.fullMatch, ',' + eg.name + ',');
+  });
   const text = rawForParse
     .replace(/[=＝]\s*[\d.,]+\s*[mM].*$/gm, '')   // =결제금액 제거 (각 줄별)
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '') // 예약금제외 제거
@@ -2299,18 +2301,40 @@ function localParse(raw){
     });
   }
 
-  // ── 4월e) 이벤트 그룹을 시술 항목으로 추가 ──
-  eventGroups.forEach(eg => {
-    // 그룹명에서 주요 시술 식별 (예: "소프웨이브150s+티타늄40KJ" → "이벤트:소프+티타늄")
-    const shortName = eg.name
-      .replace(/\d+\s*샷?s?/gi, '')
-      .replace(/\d+\s*kj/gi, '')
-      .replace(/\d+\s*cc/gi, '')
-      .replace(/\s+/g, '')
-      .split('+').map(s=>s.slice(0,4)).join('+');
-    const itemName = '이벤트(' + shortName + ')';
-    results.push({item: itemName, qty: 1, _fixedAmt: eg.price});
-  });
+  // ── 4월e) 이벤트 그룹 가격 비례배분 ──
+  // 이벤트 그룹에 속하는 시술들의 가격을 그룹 총액으로 비례배분
+  if(eventGroups.length > 0){
+    // 이벤트 그룹 내 시술명 매칭 → 해당 항목들에 _fixedAmt 설정
+    eventGroups.forEach(eg => {
+      const parts = eg.name.split('+').map(s=>s.trim().toLowerCase());
+      // results에서 이벤트 그룹에 해당하는 항목 찾기
+      const matched = [];
+      parts.forEach(part => {
+        for(const r of results){
+          if(r._eventMatched) continue; // 이미 다른 그룹에 매칭됨
+          const rLow = r.item.toLowerCase();
+          // 시술명 매칭: 소프웨이브, 티타늄, 미라젯, 쥬베룩, 리쥬란 등
+          if(part.includes(rLow.slice(0,2)) || rLow.includes(part.slice(0,2))){
+            matched.push(r);
+            break;
+          }
+        }
+      });
+      if(matched.length > 0){
+        // 기존 단가 기준 비례배분
+        const defaultPrices = matched.map(r => (CHARGE_PRICE[r.item]||0)*r.qty);
+        const defaultSum = defaultPrices.reduce((a,b)=>a+b, 0);
+        matched.forEach((r, i) => {
+          if(defaultSum > 0){
+            r._fixedAmt = Math.round(eg.price * (defaultPrices[i]/defaultSum) * 10) / 10;
+          } else {
+            r._fixedAmt = Math.round(eg.price / matched.length * 10) / 10;
+          }
+          r._eventMatched = true;
+        });
+      }
+    });
+  }
 
   // ── 양도 항목 추가 (음수) ──
   if(transferAmt > 0){
