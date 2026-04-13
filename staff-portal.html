@@ -1008,6 +1008,7 @@ function extractTextPrices(raw, treatments){
     .replace(/[=＝]\s*[\d.,]+\s*(?:차감|결제).*$/gim, '')  // =N차감, =N결제 제거
     .replace(/총\s*[\d.,]+\s*[mM만]?\s*$/gim, '')        // "총435.9" 잔여 제거
     .replace(/^\s*[-－]\s*/gm, '')                       // 줄 시작 - (리스트 마커) 제거
+    .replace(/(?:^|[\s,+])(\d+)\)\s*/g, '$1 ')            // "8) " 같은 번호 마커 제거 (e) 아닌 순수 숫자)
     .replace(/\d+월?[eE]\)?\s*/g, ',')                // 4월e) 3e) 등 → 콤마로 분리
     .replace(/[가-힣]+[eE]\)\s*/g, ',')              // 리쥬란e) 등 한글 이벤트 → 콤마로 분리
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '')    // -예약금제외 제거
@@ -1077,7 +1078,7 @@ function extractTextPrices(raw, treatments){
     for(let i=0;i<s.length;i++){
       const c=s[i];
       if(c==='(') depth++;
-      else if(c===')') depth--;
+      else if(c===')'){ if(depth>0) depth--; }
       else if((c==='+'||c===','||c==='\n')&&depth===0){
         // 천단위 콤마만 보호: N,NNN 패턴 (1,000 / 10,000)
         if(c===','&&i>0&&/\d/.test(s[i-1])){
@@ -1230,7 +1231,7 @@ function extractTextPrices(raw, treatments){
     for(let i=0;i<text.length;i++){
       const c=text[i];
       if(c==='(') depth++;
-      else if(c===')') depth--;
+      else if(c===')'){ if(depth>0) depth--; }
       else if((c===','||c==='\n')&&depth===0){ commaGroups.push(cur.trim()); cur=''; continue; }
       cur+=c;
     }
@@ -1398,31 +1399,63 @@ function distributePrices(treatments, total, rawText){
     return {...t, price: Math.round(unit*t.qty*100)/100, fromText:false};
   });
 
-  // VIP할인혜택 자동 추가: VIP회원권 있고 시술합 > total이면
-  // 차액을 "VIP할인혜택" 마이너스 항목으로 추가
-  // 예: 시술합 807.4, 예약금-3.3, VIP0, total 755.1 → VIP할인혜택 = -(807.4-3.3-755.1) = -49
+  // VIP할인혜택 자동 추가: VIP회원권 있으면
+  //  - 본문에 명시된 "-N할인"(현재 할인차감으로 파싱됨) → VIP할인혜택으로 승격
+  //  - 남은 차액(시술합 - total)은 할인차감으로 새로 추가
+  // 예) "소프462+써마275+...-49m할인-13m추가할인=850" (VIP700+차액150)
+  //     → VIP할인혜택 = -49 (명시된 할인), 할인차감 = -14 (차액 잔량)
   const hasVip = priced.some(t=>t.item==='VIP회원권');
   if(hasVip){
     // 적립금 라인에서 직접 추출: "1359.7+100=1459.7m 적립" → 100
     const creditLineM = rawText && rawText.match(/[\d.]+\s*\+\s*([\d.]+)\s*=\s*[\d.]+\s*[mM만]\s*적립/);
     const directCredit = creditLineM ? parseFloat(creditLineM[1]) : 0;
+
+    // 1) 기존 할인차감 항목이 있으면 VIP할인혜택으로 이름 변경 (본문 명시 할인)
+    const discountIdx = priced.findIndex(t=>t.item==='할인차감');
+    if(discountIdx >= 0){
+      priced[discountIdx] = {...priced[discountIdx], item:'VIP할인혜택'};
+    }
+
+    // 2) 적립금에 명시적 _fixedAmt(남음)이 있으면 그 값을 유지하여 시술합 계산에 포함
+    //    (creditRemainIdx 블록이 VIP할인혜택 존재 시 스킵되므로 명시값 보존)
     const treatmentSum = priced.reduce((s,t)=>s+t.price, 0);
     const diff = Math.round((treatmentSum - total)*100)/100;
-    // 적립금 직접 추출값이 있으면 우선 사용 (더 정확), 없으면 차액 계산
-    const vipDiscount = directCredit > 0.5 ? directCredit : diff;
-    if(vipDiscount > 0.5){
-      priced.push({item:'VIP할인혜택', qty:1, price: -vipDiscount, fromText:true, _deductAmt: -vipDiscount});
+
+    // 3) 차액 양수(시술합 > total) → 나머지를 할인차감으로 추가 (VIP의 추가 할인)
+    const vipDiscountExtra = directCredit > 0.5 ? directCredit : diff;
+    if(vipDiscountExtra > 0.5){
+      if(discountIdx >= 0){
+        // 이미 VIP할인혜택 생성됨 → 차액은 할인차감
+        priced.push({item:'할인차감', qty:1, price: -vipDiscountExtra, fromText:true, _deductAmt: -vipDiscountExtra});
+      } else {
+        // 명시 할인 없음 → 차액을 그대로 VIP할인혜택으로 (기존 동작 유지)
+        priced.push({item:'VIP할인혜택', qty:1, price: -vipDiscountExtra, fromText:true, _deductAmt: -vipDiscountExtra});
+      }
+    } else if(diff < -0.5){
+      // 시술합 < total → VIP 결제액이 남음 (적립금/양도로 처리)
+      // 적립금에 명시 _fixedAmt 없고 VIP할인혜택도 생성됐으면, 잔량을 VIP할인혜택에서 차감 방향으로 조정
+      // (아래 적립금 자동조정 블록에서 처리되므로 여기서는 별도 조치 없음)
     }
   }
 
-  // 적립금 잔액 자동 조정: VIP할인혜택이 없는 경우에만 total-시술합으로 재계산
-  // VIP할인혜택이 있으면 적립금은 원문 금액(남음) 그대로 유지
+  // 적립금 잔액 자동 조정:
+  //  - VIP할인혜택이 없는 경우: total-시술합으로 재계산 (기존 동작)
+  //  - VIP할인혜택이 있고 명시적 적립금(남음)이 있으면: 명시값 유지하고 차액은 VIP할인혜택으로 흡수
   const hasVipDiscount = priced.some(t=>t.item==='VIP할인혜택');
   const creditRemainIdx = priced.findIndex(t=>t.item==='적립금' && t._fixedAmt!==undefined && t._fixedAmt > 0);
   if(creditRemainIdx >= 0 && !hasVipDiscount){
     const otherSum2 = priced.reduce((s,t,i)=>i===creditRemainIdx?s:s+t.price, 0);
     const creditAmt = Math.round((total - otherSum2)*100)/100;
     priced[creditRemainIdx] = {...priced[creditRemainIdx], price: creditAmt > 0 ? creditAmt : 0};
+  } else if(creditRemainIdx >= 0 && hasVipDiscount && hasVip){
+    // VIP + 명시적 적립금: 시술합-total 차액을 VIP할인혜택에 흡수
+    const vipDiscIdx = priced.findIndex(t=>t.item==='VIP할인혜택');
+    const curSum = priced.reduce((s,t)=>s+t.price, 0);
+    const adjustDiff = Math.round((curSum - total)*100)/100;
+    if(vipDiscIdx >= 0 && Math.abs(adjustDiff) > 0.05){
+      const newVipPrice = Math.round((priced[vipDiscIdx].price - adjustDiff)*100)/100;
+      priced[vipDiscIdx] = {...priced[vipDiscIdx], price: newVipPrice, _deductAmt: newVipPrice};
+    }
   }
 
   // 합계 맞추기 — 0.01 이하 오차도 보정 후 반환
@@ -1627,6 +1660,8 @@ function localParse(raw){
   // ── 양도 금액 추출 ──
   const transferMatch = raw.match(/([\d.]+)\s*[mM만]?\s*\(?\s*양도\s*\)?/);
   const transferAmt = transferMatch ? parseFloat(transferMatch[1]) : 0;
+  // 양도 방향: "+N(양도)"는 양도 나감(지출, 양수), 기본(받음)은 음수
+  const transferIsOut = /\+\s*[\d.]+\s*[mM만]?\s*\(?\s*양도/.test(raw);
 
   // ── 잔여금액(남음) → 적립금 ──
   const remainMatch = raw.match(/([\d.]+)\s*[mM만]?\s*남음/);
@@ -2364,10 +2399,9 @@ function localParse(raw){
         const share = sum > 0
           ? Math.round(eg.price * (unitPrices[i]/sum) * 10) / 10
           : Math.round(eg.price / parsed.length * 10) / 10;
-        // 기존 results에 같은 item 있으면 qty+price 합산, 없으면 신규 추가
+        // 기존 results에 같은 item 있으면 _fixedAmt만 누적 (qty는 메인 파서가 이미 카운트함 → 이중카운트 방지)
         const existing = results.find(r => r.item === p.item);
         if(existing){
-          existing.qty = (existing.qty||1) + p.qty;
           existing._fixedAmt = (existing._fixedAmt||0) + share;
         } else {
           results.push({item: p.item, qty: p.qty, _fixedAmt: share});
@@ -2378,7 +2412,8 @@ function localParse(raw){
 
   // ── 양도 항목 추가 (음수) ──
   if(transferAmt > 0){
-    results.push({item: '양도', qty: 1, _deductAmt: -transferAmt});
+    // 양도 나감("+N(양도)") → 양수(지출), 양도 받음 → 음수(차감)
+    results.push({item: '양도', qty: 1, _deductAmt: transferIsOut ? transferAmt : -transferAmt});
   }
   // 적립금은 위쪽 line ~2217의 remainAfterDeduct 로직에서 이미 처리됨 (중복 방지)
 
