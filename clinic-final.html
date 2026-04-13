@@ -3241,6 +3241,7 @@ async function runAdminAggregation(){
     var totalAmt = 0;
     var byStaff = {};
     var byDoctor = {};
+    var byDoctorCat = {}; // 시술의사별 × 내원경로별 중첩
     var byCat1 = {};
     var byTreat = {};
     var byPayMethod = {};
@@ -3262,6 +3263,11 @@ async function runAdminAggregation(){
       // 분류1별
       var c1 = it.cat1||'미입력';
       byCat1[c1] = (byCat1[c1]||0)+amt;
+
+      // 시술의사 × 내원경로 중첩 집계
+      if(!byDoctorCat[d]) byDoctorCat[d] = {_total:0, _cats:{}};
+      byDoctorCat[d]._total += amt;
+      byDoctorCat[d]._cats[c1] = (byDoctorCat[d]._cats[c1]||0) + amt;
 
       // 시술별
       (it.treatments||[]).forEach(function(t){
@@ -3296,9 +3302,9 @@ async function runAdminAggregation(){
     html += '</div>';
 
     // 분류별 테이블들
-    html += aggTable('📍 내원경로별', byCat1, totalAmt);
-    html += aggTable('👩‍⚕️ 진료의사별', byDoctor, totalAmt);
     html += aggTable('👤 상담직원별', byStaff, totalAmt);
+    html += aggTable('📍 내원경로별', byCat1, totalAmt);
+    html += nestedDoctorCatTable('👩‍⚕️ 시술의사별 (내원경로 세부)', byDoctorCat, totalAmt);
     html += aggTable('💳 결제방식별', byPayMethod, totalAmt);
     html += treatTable(byTreat);
 
@@ -3333,6 +3339,55 @@ function aggTable(title, data, total){
   });
   html += '</tbody></table></div>';
   return html;
+}
+
+function nestedDoctorCatTable(title, data, total){
+  // data: {의사명: {_total: N, _cats: {경로: N}}}
+  var sorted = Object.entries(data).sort(function(a,b){return b[1]._total - a[1]._total;});
+  if(!sorted.length) return '';
+  var html = '<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">'+title+'</div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  html += '<thead><tr style="background:#f1f5f9;color:#475569;">'
+       +  '<th style="padding:7px 8px;text-align:left;">의사 / 내원경로</th>'
+       +  '<th style="padding:7px 8px;text-align:right;">금액</th>'
+       +  '<th style="padding:7px 8px;text-align:right;">비중</th>'
+       +  '</tr></thead><tbody>';
+  sorted.forEach(function(e, idx){
+    var doctor = e[0];
+    var docTotal = e[1]._total;
+    var docPct = total>0 ? Math.round(docTotal/total*1000)/10 : 0;
+    var rowId = 'doccat-'+idx+'-'+Date.now();
+    // 의사 요약 행 (클릭하면 세부 펼침)
+    html += '<tr style="border-bottom:1px solid #e2e8f0;background:#fafafa;cursor:pointer" onclick="toggleDocCat(\''+rowId+'\', this)">';
+    html += '<td style="padding:7px 8px;color:#1e293b;font-weight:700;"><span style="display:inline-block;width:12px;color:#64748b">▶</span> '+doctor+'</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#2563eb;font-weight:700;">'+Math.round(docTotal*10)/10+'만</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#64748b;">'+docPct+'%</td>';
+    html += '</tr>';
+    // 내원경로별 세부 (기본 숨김)
+    var cats = Object.entries(e[1]._cats).sort(function(a,b){return b[1]-a[1];});
+    cats.forEach(function(ce){
+      var catPct = docTotal>0 ? Math.round(ce[1]/docTotal*1000)/10 : 0;
+      html += '<tr class="'+rowId+'" style="border-bottom:1px solid #f1f5f9;background:#fcfcfc;display:none">';
+      html += '<td style="padding:6px 8px 6px 28px;color:#475569;font-size:11px;">└ '+ce[0]+'</td>';
+      html += '<td style="padding:6px 8px;text-align:right;color:#475569;font-size:11px;">'+Math.round(ce[1]*10)/10+'만</td>';
+      html += '<td style="padding:6px 8px;text-align:right;color:#94a3b8;font-size:11px;">'+catPct+'% (의사내)</td>';
+      html += '</tr>';
+    });
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function toggleDocCat(cls, headerRow){
+  var rows = document.getElementsByClassName(cls);
+  if(!rows.length) return;
+  var isHidden = rows[0].style.display === 'none';
+  for(var i=0; i<rows.length; i++){
+    rows[i].style.display = isHidden ? 'table-row' : 'none';
+  }
+  // 화살표 아이콘 업데이트
+  var arrow = headerRow.querySelector('span');
+  if(arrow) arrow.textContent = isHidden ? '▼' : '▶';
 }
 
 function treatTable(data){
