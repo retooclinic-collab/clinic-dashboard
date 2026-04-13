@@ -2527,6 +2527,11 @@ function removeTreatment(idx){
 
 /* ── 결제금액 추출 (m/M/만원/만 모두 처리) ── */
 function extractAmount(text){
+  // ── VIP 결제금액 우선: "vip700 = 700 (알리)", "VIP1500 = 1500(카)", "VIP700+차액150=850m(카)" ──
+  if(/vip\s*\d/i.test(text)){
+    const vipM = text.match(/vip\s*\d+\s*(?:\+[^=]*?)?[=＝]\s*([\d,.]+)\s*[mM만]?\s*\(/i);
+    if(vipM){ const v = parseFloat(vipM[1].replace(/,/g,'')); if(v>0) return v; }
+  }
   // → 숫자m 패턴 우선 (최종 결제금액): "= 264m(...) → 258.8m(알리)" → 258.8
   const arrow = text.match(/→\s*(-?[\d,]+\.?\d*)\s*(?:[mM만](?:원)?)/);
   if(arrow) return parseFloat(arrow[1].replace(/,/g,''));
