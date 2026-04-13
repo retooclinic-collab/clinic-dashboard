@@ -1660,8 +1660,7 @@ function localParse(raw){
   // ── 양도 금액 추출 ──
   const transferMatch = raw.match(/([\d.]+)\s*[mM만]?\s*\(?\s*양도\s*\)?/);
   const transferAmt = transferMatch ? parseFloat(transferMatch[1]) : 0;
-  // 양도 방향: "+N(양도)"는 양도 나감(지출, 양수), 기본(받음)은 음수
-  const transferIsOut = /\+\s*[\d.]+\s*[mM만]?\s*\(?\s*양도/.test(raw);
+  // 양도는 항상 지출(양수) — 양도받음 형태는 별도 라인아이템이 아닌 주석 처리됨
 
   // ── 잔여금액(남음) → 적립금 ──
   const remainMatch = raw.match(/([\d.]+)\s*[mM만]?\s*남음/);
@@ -2412,8 +2411,8 @@ function localParse(raw){
 
   // ── 양도 항목 추가 (음수) ──
   if(transferAmt > 0){
-    // 양도 나감("+N(양도)") → 양수(지출), 양도 받음 → 음수(차감)
-    results.push({item: '양도', qty: 1, _deductAmt: transferIsOut ? transferAmt : -transferAmt});
+    // 양도는 지출(양수) — 시술항목처럼 결제금 내역에 포함
+    results.push({item: '양도', qty: 1, _deductAmt: transferAmt});
   }
   // 적립금은 위쪽 line ~2217의 remainAfterDeduct 로직에서 이미 처리됨 (중복 방지)
 
