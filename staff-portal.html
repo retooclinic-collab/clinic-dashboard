@@ -2914,7 +2914,7 @@ function processImportText(text){
     if(/날짜|날파|차트번호|차트|이름|분류1|결제내역|date|chart|내원경로/.test(joined) &&
        !/\d{4}-\d{2}|\d+\/\d+/.test(cols[0])) return;
 
-    let date='', chart='', name='', cat1='', cat2='', payText='', amount=0, staffRaw='';
+    let date='', chart='', name='', cat1='', cat2='', payText='', amount=0, staffRaw='', doctorRaw='';
 
     // 컬럼 수와 관계없이 최대한 유연하게 파싱
     // 첫 컬럼이 날짜인지 (숫자/슬래시, 또는 빈칸)
@@ -2927,7 +2927,14 @@ function processImportText(text){
       name   = cols[2]||'';
       cat1   = cols[3]||'';
       // 5컬럼 이상: 분류2 있는지 확인 (분류2는 내원경로 서브카테고리)
-      if(cols.length >= 8){
+      if(cols.length >= 9){
+        // 9컬럼 이상: 분류2 + 상담자 + 시술의사
+        cat2     = cols[4]||'';
+        payText  = cols[5]||'';
+        amount   = cols[6]||'';
+        staffRaw = cols[7]||'';
+        doctorRaw= cols[8]||'';
+      } else if(cols.length >= 8){
         cat2    = cols[4]||'';
         payText = cols[5]||'';
         amount  = cols[6]||'';
@@ -2961,11 +2968,19 @@ function processImportText(text){
       chart  = cols[0]||'';
       name   = cols[1]||'';
       cat1   = cols[2]||'';
-      if(cols.length >= 8){
+      if(cols.length >= 9){
+        // 9컬럼 이상: 분류2 + 상담자 + 시술의사
+        cat2     = cols[3]||'';
+        payText  = cols[4]||'';
+        amount   = cols[5]||'';
+        staffRaw = cols[6]||'';
+        doctorRaw= cols[7]||'';
+      } else if(cols.length >= 8){
         cat2    = cols[3]||'';
         payText = cols[4]||'';
         amount  = cols[5]||'';
         staffRaw= cols[6]||'';
+        doctorRaw= cols[7]||'';
       } else if(cols.length === 7){
         // 7컬럼: 분류2 유무 감지
         var last7b = (cols[6]||'').trim();
@@ -3008,6 +3023,16 @@ function processImportText(text){
     // 결제내역 비어있으면 스킵 (1글자라도 결제방식일 수 있으므로 허용)
     if(!payText) return;
 
+    // 시술의사 정리: "예약금" 같은 잘못된 값 필터링
+    const doctorClean = (()=>{
+      const d = (doctorRaw||'').trim();
+      if(!d) return '';
+      // 예약금, 금액, 기타 숫자/특수문자로 시작하는 값은 의사명 아님
+      if(/예약금|잔여|잔액|미수|환불|양도/.test(d)) return '';
+      if(/^[\d.,=+\-()]/.test(d)) return '';
+      return d;
+    })();
+
     _importRows.push({
       date,
       chart: chart.trim(),
@@ -3019,6 +3044,7 @@ function processImportText(text){
       _origColAmt: amtNum,   // 원본 컬럼 금액 보존
       staff:  mapStaff(staffRaw.trim()),
       staffRaw: staffRaw.trim(),
+      doctor: doctorClean,
     });
   });
 
