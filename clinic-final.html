@@ -1958,8 +1958,8 @@ function renderDailyTotals(){
   }
 
   var tAmt=0, tComm=0, tMat=0, cnt=_dailyFiltered.length;
-  // 실장별/경로별 소계
-  var byStaff={}, byCat={};
+  // 실장별/경로별/의사별 소계
+  var byStaff={}, byCat={}, byDoc={};
   // 1차: percent 수수료만 건별 계산
   _dailyFiltered.forEach(function(it){
     var amt=(parseFloat(it.amount)||0)*10000;
@@ -1973,6 +1973,9 @@ function renderDailyTotals(){
     var ck=cat1||'미분류';
     if(!byCat[ck]) byCat[ck]={amt:0,comm:0,mat:0,cnt:0};
     byCat[ck].amt+=amt; byCat[ck].comm+=comm; byCat[ck].mat+=mat; byCat[ck].cnt++;
+    var dk=it.doctor||'미지정';
+    if(!byDoc[dk]) byDoc[dk]={amt:0,comm:0,mat:0,cnt:0};
+    byDoc[dk].amt+=amt; byDoc[dk].comm+=comm; byDoc[dk].mat+=mat; byDoc[dk].cnt++;
   });
   // 2차: 월별이면 fixed 수수료를 경로별 소계에 1회 추가
   if(isFullMonth){
@@ -2020,12 +2023,13 @@ function renderDailyTotals(){
     if(!window._subtotalSort) window._subtotalSort={};
     var ss=window._subtotalSort[id]||{col:'amt',asc:false};
     window._subtotalSort[id]=ss;
-    // 각 행 데이터 준비 (순이익, 이익률 포함)
+    // 각 행 데이터 준비 (순이익, 객당순이익, 이익률 포함)
     var rows=keys.map(function(k){
       var d=dataMap[k]; var net=d.amt-d.comm-d.mat;
       var rate=d.amt>0?Math.round(net/d.amt*1000)/10:0;
       var avg=d.cnt>0?d.amt/d.cnt:0;
-      return {key:k, cnt:d.cnt, avg:avg, amt:d.amt, comm:d.comm, mat:d.mat, net:net, rate:rate};
+      var netPer=d.cnt>0?net/d.cnt:0;
+      return {key:k, cnt:d.cnt, avg:avg, amt:d.amt, comm:d.comm, mat:d.mat, net:net, netPer:netPer, rate:rate};
     });
     // 정렬 적용
     rows.sort(function(a,b){
@@ -2041,6 +2045,7 @@ function renderDailyTotals(){
       {key:'comm',label:'수수료',align:'right'},
       {key:'mat',label:'재료비',align:'right'},
       {key:'net',label:'순이익',align:'right'},
+      {key:'netPer',label:'객당순이익',align:'right'},
       {key:'rate',label:'이익률',align:'right'}
     ];
     var th='';
@@ -2061,10 +2066,12 @@ function renderDailyTotals(){
       tb+='<td style="padding:5px 8px;text-align:right;color:#f97316;">'+formatW(r.comm)+'</td>';
       tb+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(r.mat)+'</td>';
       tb+='<td style="padding:5px 8px;text-align:right;color:'+(r.net>=0?'#16a34a':'#ef4444')+';font-weight:600;">'+formatW(r.net)+'</td>';
+      tb+='<td style="padding:5px 8px;text-align:right;color:'+(r.netPer>=0?'#15803d':'#ef4444')+';font-weight:600;">'+formatW(r.netPer)+'</td>';
       tb+='<td style="padding:5px 8px;text-align:right;color:#0ea5e9;font-weight:600;">'+r.rate+'%</td>';
       tb+='</tr>';
     });
-    var out='<details style="margin-bottom:8px;" open><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">'+emoji+' '+title+' ('+keys.length+(labelField==='실장'?'명':'개')+')</summary>';
+    var unitLabel=(labelField==='실장'||labelField==='의사')?'명':'개';
+    var out='<details style="margin-bottom:8px;" open><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">'+emoji+' '+title+' ('+keys.length+unitLabel+')</summary>';
     out+='<table style="width:100%;border-collapse:collapse;font-size:11px;">';
     out+='<thead><tr style="background:#f1f5f9;">'+th+'</tr></thead><tbody>'+tb+'</tbody></table></details>';
     return out;
@@ -2084,6 +2091,9 @@ function renderDailyTotals(){
 
   // 내원경로별 소계 테이블
   h+=buildSortableTable('cat','내원경로별 소계','🔀',byCat,'경로');
+
+  // 의사별 소계 테이블
+  h+=buildSortableTable('doc','시술의사별 소계','👩‍⚕️',byDoc,'의사');
 
   el.innerHTML=h;
   el.style.display=cnt>0?'block':'none';
