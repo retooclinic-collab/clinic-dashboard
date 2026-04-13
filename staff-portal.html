@@ -955,7 +955,7 @@ let TREATMENT_ITEMS = [
   'NAD','미라젯쥬베룩','알라딘필','문신제거',
   '피부관리',
   '적립금차감','선납금차감','상품권차감','할인차감','적립금',
-  '예약금','예약금제외','환불','위약금','제품','지정비용','점,편사제거','차액결제'
+  '예약금','예약금제외','환불','위약금','제품','지정비용','점,편사제거','차액결제','양도'
 ];
 
 /* ══════════════════════════════════════════════
@@ -1464,7 +1464,7 @@ function distributePrices(treatments, total, rawText){
       if(hasBalDeduct){
         // _balanceDeduct 항목이 있으면 명시가 유지 (잔액계산에서 처리됨)
       } else if(Math.abs(sum - total) > 0.05){
-        const deductSet2 = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','VIP할인혜택','위약금','지정비용','제품']);
+        const deductSet2 = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','VIP할인혜택','위약금','지정비용','제품','양도']);
         const fixedItems2 = priced.filter(t=>deductSet2.has(t.item));
         const scaleItems2 = priced.filter(t=>!deductSet2.has(t.item));
         const fixedTotal2 = fixedItems2.reduce((s,t)=>s+t.price, 0);
@@ -1515,7 +1515,7 @@ function distributePrices(treatments, total, rawText){
       const hasBalDeduct3 = priced.some(t=>t._balanceDeduct);
       if(!hasBalDeduct3){
         // 차감/고정 항목은 스케일링 제외 → 나머지만 스케일
-        const deductSet = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','VIP할인혜택','위약금','지정비용','제품']);
+        const deductSet = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','VIP할인혜택','위약금','지정비용','제품','양도']);
         const fixedItems = priced.filter(t=>deductSet.has(t.item));
         const scaleItems = priced.filter(t=>!deductSet.has(t.item));
         const fixedTotal = fixedItems.reduce((s,t)=>s+t.price, 0);
@@ -1551,7 +1551,7 @@ function distributePrices(treatments, total, rawText){
   }
 
   // 마이너스 가격 방지 (차감/환불/위약금/예약금/VIP할인 항목 제외) — 예약금 체크보다 먼저
-  const deductItems = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP할인혜택','지정비용','제품']);
+  const deductItems = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP할인혜택','지정비용','제품','양도']);
   priced = priced.map(t=>{
     if(deductItems.has(t.item)) return t; // 차감항목은 음수 허용
     if(t.price < 0) return {...t, price: 0};
@@ -1610,12 +1610,37 @@ function localParse(raw){
     }
   }
 
+  // ── 4월e) 이벤트 그룹 추출 (전처리 전에 먼저 파싱) ──
+  // "4월e)소프웨이브150s+티타늄40KJ 209m" → 하나의 묶음 시술 @ 209만
+  // "리쥬란e)미라젯리쥬란6CC+미라젯쥬베룩3CC+진정관리+진정팩 192.5m" → 묶음 @ 192.5만
+  const eventGroups = [];
+  const eventPattern = /(?:\d+월?|[가-힣]+)[eE]\)\s*([^=]*?)\s+([\d.]+)\s*[mM만]/g;
+  let evMatch;
+  while((evMatch = eventPattern.exec(raw)) !== null){
+    const groupName = evMatch[1].replace(/\+/g,'+').trim();
+    const groupPrice = parseFloat(evMatch[2]);
+    if(groupName && groupPrice > 0){
+      eventGroups.push({name: groupName, price: groupPrice, fullMatch: evMatch[0]});
+    }
+  }
+
+  // ── 양도 금액 추출 ──
+  const transferMatch = raw.match(/([\d.]+)\s*[mM만]?\s*\(?\s*양도\s*\)?/);
+  const transferAmt = transferMatch ? parseFloat(transferMatch[1]) : 0;
+
+  // ── 잔여금액(남음) → 적립금 ──
+  const remainMatch = raw.match(/([\d.]+)\s*[mM만]?\s*남음/);
+  const remainAmt = remainMatch ? parseFloat(remainMatch[1]) : 0;
+
   // ── 전처리 ──
-  const text = raw
+  let rawForParse = raw;
+  // 이벤트 그룹 영역 제거 (개별 파싱 방지)
+  eventGroups.forEach(eg => { rawForParse = rawForParse.replace(eg.fullMatch, ','); });
+  const text = rawForParse
     .replace(/[=＝]\s*[\d.,]+\s*[mM].*$/gm, '')   // =결제금액 제거 (각 줄별)
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '') // 예약금제외 제거
-    .replace(/\d+월?[eE]\)?\s*/g, ',')             // 2e) 3월e) 이벤트 → 콤마로 분리
-    .replace(/[가-힣]+[eE]\)\s*/g, ',')            // 리쥬란e) 등 한글 이벤트 → 콤마로 분리
+    .replace(/\d+월?[eE]\)?\s*/g, ',')             // 남은 이벤트 태그 → 콤마
+    .replace(/[가-힣]+[eE]\)\s*/g, ',')            // 리쥬란e) 등 한글 이벤트 → 콤마
     .replace(/sv|s\.v|SV/gi, '')                   // sv 제거
     .toLowerCase();
 
@@ -2274,6 +2299,30 @@ function localParse(raw){
     });
   }
 
+  // ── 4월e) 이벤트 그룹을 시술 항목으로 추가 ──
+  eventGroups.forEach(eg => {
+    // 그룹명에서 주요 시술 식별 (예: "소프웨이브150s+티타늄40KJ" → "이벤트:소프+티타늄")
+    const shortName = eg.name
+      .replace(/\d+\s*샷?s?/gi, '')
+      .replace(/\d+\s*kj/gi, '')
+      .replace(/\d+\s*cc/gi, '')
+      .replace(/\s+/g, '')
+      .split('+').map(s=>s.slice(0,4)).join('+');
+    const itemName = '이벤트(' + shortName + ')';
+    results.push({item: itemName, qty: 1, _fixedAmt: eg.price});
+  });
+
+  // ── 양도 항목 추가 (음수) ──
+  if(transferAmt > 0){
+    results.push({item: '양도', qty: 1, _deductAmt: -transferAmt});
+  }
+
+  // ── VIP 잔여금 → 적립금 ──
+  if(remainAmt > 0 && /vip/i.test(_origRaw)){
+    results.push({item: '적립금', qty: 1, _fixedAmt: remainAmt});
+    notes.push(remainAmt + '만 잔여 → 적립금');
+  }
+
   // 중복 제거
   const seen = {};
   const deduped = [];
@@ -2282,7 +2331,20 @@ function localParse(raw){
     else { seen[r.item]=r; deduped.push(r); }
   });
 
-  return {treatments: deduped, notes: notes.join(', ')};
+  // ── 시술의사 추출: "/ 도은" → 상담직원, 결제내역 끝부분 "도김재림" → 시술의사 ──
+  const DOCTOR_NAMES = ['김재림','김선민','윤규성','송승아','장명선'];
+  let doctor = '';
+  // 패턴1: 텍스트 내 "도[의사이름]" (일괄입력 포맷)
+  for(const dn of DOCTOR_NAMES){
+    if(new RegExp('도' + dn).test(_origRaw)){ doctor = dn; break; }
+  }
+  // 패턴2: "시술: 김재림", "의사: 김재림" 등
+  if(!doctor){
+    const docM = _origRaw.match(/(?:시술|의사|Dr|dr)[:\s]*([가-힣]{2,4})/);
+    if(docM && DOCTOR_NAMES.includes(docM[1])) doctor = docM[1];
+  }
+
+  return {treatments: deduped, notes: notes.join(', '), doctor};
 }
 
 /* ── 파싱 실행 ── */
@@ -2296,6 +2358,11 @@ async function parsePayment(){
 
   try {
     const parsed = localParse(text);
+    // ── 시술의사 자동 세팅 ──
+    if(parsed.doctor){
+      const docSel = document.getElementById('f-doctor');
+      if(docSel) docSel.value = parsed.doctor;
+    }
     // ── 적립금차감 전액결제 감지 → 결제금액 0 자동 세팅 ──
     const hasCreditPayAll = parsed.treatments?.some(t=>t._creditPayAll);
     const amountInput = document.getElementById('f-amount');
@@ -2470,11 +2537,27 @@ function extractPayment(text){
     const amt = refM ? -parseFloat(refM[1].replace(/,/g,'')) : 0;
     return { methods: ['이체(현영)'], splitDetails: [{method:'이체(현영)', amt}] };
   }
+  // ── VIP 결제방식 우선 추출: vip1500 = 1500 (카), vip700 = 700(알리) ──
+  if(/vip\s*\d/i.test(text)){
+    const vipPayM = text.match(/vip\s*\d+\s*(?:\+[^=]*)?[=＝]\s*([\d,.]+)\s*[mM만]?\s*\(([^)]+)\)/i);
+    if(vipPayM){
+      const method = normalizePayMethod(vipPayM[2]);
+      if(method){
+        const amt = parseFloat(vipPayM[1].replace(/,/g,''))||0;
+        return { methods: [method], splitDetails: [{method, amt}] };
+      }
+    }
+  }
   // 금액m(결제방식) 패턴: =855.2m(위챗), →258.8m(알리), =170.5m(120현금자진+50.5카)
   // "=697.4중 647.9m(카)+49.5미수" → "N중" 부분 제거하여 "647.9m(카)+49.5미수" 매칭 가능하게
   const payText2 = text.replace(/[=＝]\s*[\d,.]+\s*중\s*/g, '');
   const amtPayPattern = /(?:→|[=＝])?\s*([\d,.]+)\s*[mM만]?\s*\(([^)]+)\)?/g;
-  const amtPayMatches = [...payText2.matchAll(amtPayPattern)];
+  const amtPayMatches = [...payText2.matchAll(amtPayPattern)].filter(m => {
+    // 양도/이중턱/팔자 등 시술 관련 괄호는 결제방식이 아니므로 제외
+    const inner = (m[2]||'').trim();
+    if(/양도|이중턱|팔자|심부|얼굴|이마|포함|설명|국|회차/.test(inner)) return false;
+    return true;
+  });
 
   let methods = [];
   let splitDetails = [];
