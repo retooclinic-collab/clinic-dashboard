@@ -2378,7 +2378,7 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     if(staffKeys.indexOf(B)<0) B=staffKeys[1]||staffKeys[0];
     window._mixCmp.a=A; window._mixCmp.b=B;
 
-    h+='<details open style="margin-bottom:4px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">🆚 두 실장 이익률 차이 분해 (믹스효과 vs 마진효과)</summary>';
+    h+='<details open style="margin-bottom:4px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">🆚 두 실장 이익률 차이 분해 — 재료비 구조 기반 (정확한 값)</summary>';
     h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">';
     h+='<span style="font-size:11px;color:#64748b;">비교 대상:</span>';
     h+='<select onchange="window._mixCmp.a=this.value;renderDailyTotals()" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:11px;">';
@@ -2388,68 +2388,112 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     staffKeys.forEach(function(s){h+='<option value="'+esc(s)+'"'+(s===B?' selected':'')+'>'+esc(s)+'</option>';});
     h+='</select></div>';
 
-    // 차이 분해 — 항목별 매출비중/이익률/기여도
-    var allItems={};
-    Object.keys(mix[A]||{}).forEach(function(k){allItems[k]=1;});
-    Object.keys(mix[B]||{}).forEach(function(k){allItems[k]=1;});
-    var Atotal=staffCat[A]._total||0, Btotal=staffCat[B]._total||0;
-    function rateOf(m){return m && m.amt>0 ? (m.amt-(m.comm||0)-m.mat)/m.amt : 0;}
-    var rows=Object.keys(allItems).map(function(item){
-      var mA=mix[A][item]||{amt:0,mat:0,qty:0};
-      var mB=mix[B][item]||{amt:0,mat:0,qty:0};
-      var wA=Atotal>0?mA.amt/Atotal:0;
-      var wB=Btotal>0?mB.amt/Btotal:0;
-      var rA=rateOf(mA), rB=rateOf(mB);
-      // 공통 평균 이익률 (양쪽 합쳐서)
-      var combAmt=mA.amt+mB.amt, combMat=mA.mat+mB.mat;
-      var rBar=combAmt>0?(combAmt-combMat)/combAmt:0;
-      // 믹스효과: (wA-wB)*rBar — A가 이 항목 비중을 더 많이 가진 효과
-      var mixEff=(wA-wB)*rBar;
-      // 마진효과: ((wA+wB)/2)*(rA-rB) — A의 이 항목 마진이 더 높은 효과
-      var margEff=((wA+wB)/2)*(rA-rB);
-      return {item:item, cat:(mA.cat||mB.cat||classifyTx(item)),
-        wA:wA, wB:wB, rA:rA, rB:rB, mixEff:mixEff, margEff:margEff, totalEff:mixEff+margEff, amtA:mA.amt, amtB:mB.amt};
-    }).filter(function(r){return (r.amtA+r.amtB)>0;})
-      .sort(function(a,b){return Math.abs(b.totalEff)-Math.abs(a.totalEff);});
+    // ── 정확한 값 기반 분해 ──
+    // 이익률 = 1 − 수수료율 − 재료비율
+    // 수수료율: 경로별 percent (정확), 재료비율: 시술구성 × 단가 (정확)
+    // 건별 집계 (모든 값 정확)
+    var sA={cnt:0,amt:0,comm:0,mat:0,txMat:{}};
+    var sB={cnt:0,amt:0,comm:0,mat:0,txMat:{}};
+    _dailyFiltered.forEach(function(it){
+      var staff=it.staff||'미지정';
+      var s=(staff===A)?sA:(staff===B)?sB:null;
+      if(!s) return;
+      var amt=(parseFloat(it.amount)||0)*10000;
+      var cat1=it.cat1||'';
+      var comm=calcCommission(cat1,amt,cfg2,true);
+      var txs=(it.treatments||[]).filter(function(t){return t && t.item;});
+      var mat=calcMaterialCost(txs,cfg2);
+      s.cnt++; s.amt+=amt; s.comm+=comm; s.mat+=mat;
+      // 시술별 재료비 집계 (건수·qty·재료비 모두 정확)
+      txs.forEach(function(t){
+        var name=t.item||''; var qty=parseFloat(t.qty)||1;
+        var up=0;
+        if(cfg2.procedures[name]) up=parseFloat(cfg2.procedures[name].price)||0;
+        if(!s.txMat[name]) s.txMat[name]={qty:0,mat:0,cnt:0};
+        s.txMat[name].qty+=qty; s.txMat[name].mat+=up*qty; s.txMat[name].cnt++;
+      });
+    });
+    var commRateA=sA.amt>0?sA.comm/sA.amt:0, commRateB=sB.amt>0?sB.comm/sB.amt:0;
+    var matRateA=sA.amt>0?sA.mat/sA.amt:0, matRateB=sB.amt>0?sB.mat/sB.amt:0;
+    var profitRateA=1-commRateA-matRateA, profitRateB=1-commRateB-matRateB;
+    var rateDiff=(profitRateA-profitRateB)*100;
+    var commDiff=(commRateB-commRateA)*100; // B수수료가 높으면 A에게 유리 → 양수
+    var matDiff=(matRateB-matRateA)*100; // B재료비율이 높으면 A에게 유리 → 양수
 
-    var netA = Object.keys(mix[A]||{}).reduce(function(s,k){var m=mix[A][k];return s + (m.amt-(m.comm||0)-m.mat);},0);
-    var netB = Object.keys(mix[B]||{}).reduce(function(s,k){var m=mix[B][k];return s + (m.amt-(m.comm||0)-m.mat);},0);
-    var rateAall=Atotal>0?netA/Atotal*100:0, rateBall=Btotal>0?netB/Btotal*100:0;
-    var diff=rateAall-rateBall;
-    h+='<div style="background:#f8fafc;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:11.5px;">';
-    h+='<b>'+esc(A)+'</b> 이익률 <span style="color:#16a34a;font-weight:700;">'+rateAall.toFixed(1)+'%</span>';
-    h+=' - <b>'+esc(B)+'</b> 이익률 <span style="color:#16a34a;font-weight:700;">'+rateBall.toFixed(1)+'%</span>';
-    h+=' = <span style="color:'+(diff>=0?'#16a34a':'#ef4444')+';font-weight:700;">'+(diff>=0?'+':'')+diff.toFixed(1)+'%p</span>';
-    h+='<div style="font-size:10px;color:#94a3b8;margin-top:4px;">아래 표에서 각 시술의 기여도(믹스효과+마진효과)를 합하면 위 차이값에 근사합니다.</div>';
+    // 요약 카드
+    h+='<div style="background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:12px;">';
+    h+='<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:#1e293b;">';
+    h+='<b>'+esc(A)+'</b> 이익률 <span style="color:#16a34a;font-weight:700;">'+(profitRateA*100).toFixed(1)+'%</span>';
+    h+=' − <b>'+esc(B)+'</b> 이익률 <span style="color:#16a34a;font-weight:700;">'+(profitRateB*100).toFixed(1)+'%</span>';
+    h+=' = <span style="color:'+(rateDiff>=0?'#16a34a':'#ef4444')+';font-weight:700;">'+(rateDiff>=0?'+':'')+rateDiff.toFixed(1)+'%p</span></div>';
+    h+='<div style="font-size:11px;color:#475569;line-height:1.8;">';
+    h+='이익률 = 1 − 수수료율 − 재료비율 이므로:<br>';
+    h+='&nbsp;&nbsp;├ <b>수수료율 차이</b> (경로 구성): '+esc(A)+' '+(commRateA*100).toFixed(1)+'% vs '+esc(B)+' '+(commRateB*100).toFixed(1)+'%';
+    h+=' → <span style="color:'+(commDiff>=0?'#16a34a':'#ef4444')+';font-weight:600;">'+(commDiff>=0?'+':'')+commDiff.toFixed(1)+'%p</span><br>';
+    h+='&nbsp;&nbsp;└ <b>재료비율 차이</b> (시술 구성): '+esc(A)+' '+(matRateA*100).toFixed(1)+'% vs '+esc(B)+' '+(matRateB*100).toFixed(1)+'%';
+    h+=' → <span style="color:'+(matDiff>=0?'#16a34a':'#ef4444')+';font-weight:600;">'+(matDiff>=0?'+':'')+matDiff.toFixed(1)+'%p</span>';
+    h+='</div>';
+    h+='<div style="font-size:10px;color:#94a3b8;margin-top:6px;">* 수수료율은 고객 내원경로에 의해 결정 (고정 수수료 제외). 재료비율은 시술 구성에 의해 결정 — 아래 표에서 시술별로 분해합니다.</div>';
     h+='</div>';
 
-    h+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:620px;">';
+    // 시술별 재료비 기여도 분해 테이블 (모두 정확한 값)
+    // 건당평균재료비 = 해당 시술 총재료비 / 실장 총건수
+    var allTx={};
+    Object.keys(sA.txMat).forEach(function(k){allTx[k]=1;});
+    Object.keys(sB.txMat).forEach(function(k){allTx[k]=1;});
+    var matRows=Object.keys(allTx).map(function(name){
+      var mA=sA.txMat[name]||{qty:0,mat:0,cnt:0};
+      var mB=sB.txMat[name]||{qty:0,mat:0,cnt:0};
+      var perA=sA.cnt>0?mA.mat/sA.cnt:0; // 건당평균재료비
+      var perB=sB.cnt>0?mB.mat/sB.cnt:0;
+      var diff=perA-perB; // 양수면 A가 더 많이 씀
+      // 재료비율 기여: diff / 각자의 총수납 → %p 환산
+      var avgAmt=(sA.amt/sA.cnt + sB.amt/sB.cnt)/2 || 1;
+      var contrib=diff/avgAmt*100; // 양수면 A에게 불리 (재료비 더 씀)
+      var freqA=sA.cnt>0?(mA.cnt/sA.cnt*100):0;
+      var freqB=sB.cnt>0?(mB.cnt/sB.cnt*100):0;
+      var qtyPerA=mA.cnt>0?(mA.qty/mA.cnt):0;
+      var qtyPerB=mB.cnt>0?(mB.qty/mB.cnt):0;
+      return {name:name, cat:classifyTx(name),
+        freqA:freqA, freqB:freqB, qtyPerA:qtyPerA, qtyPerB:qtyPerB,
+        perA:perA, perB:perB, diff:diff, contrib:contrib,
+        total:mA.mat+mB.mat};
+    }).filter(function(r){return r.total>0;})
+      .sort(function(a,b){return Math.abs(b.contrib)-Math.abs(a.contrib);});
+
+    h+='<div style="font-size:11.5px;font-weight:700;margin-bottom:6px;color:#1e293b;">시술별 재료비 기여도 (모두 정확한 값)</div>';
+    h+='<div style="font-size:10px;color:#94a3b8;margin-bottom:8px;line-height:1.4;">각 시술의 "건당 평균 재료비"를 비교합니다. 양수 기여도(%p) = A가 이 시술에 재료비를 더 쓰므로 A에게 불리.</div>';
+    h+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">';
     h+='<thead><tr style="background:#f1f5f9;color:#64748b;">';
     h+='<th style="padding:6px 8px;text-align:left;">시술</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">'+esc(A)+' 비중</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">'+esc(B)+' 비중</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">'+esc(A)+' 이익률</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">'+esc(B)+' 이익률</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">믹스효과</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">마진효과</th>';
-    h+='<th style="padding:6px 8px;text-align:right;font-weight:800;">총기여도(%p)</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">'+esc(A)+' 출현율</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">'+esc(B)+' 출현율</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">'+esc(A)+' 건당qty</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">'+esc(B)+' 건당qty</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">'+esc(A)+' 건당재료비</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">'+esc(B)+' 건당재료비</th>';
+    h+='<th style="padding:6px 8px;text-align:right;font-weight:800;">기여도(%p)</th>';
     h+='</tr></thead><tbody>';
-    rows.slice(0,12).forEach(function(r){
-      var sign=function(v){return (v>=0?'+':'')+(v*100).toFixed(2);};
-      var totColor=r.totalEff>0?'#16a34a':r.totalEff<0?'#ef4444':'#64748b';
+    matRows.slice(0,15).forEach(function(r){
+      var color=r.contrib>0.1?'#ef4444':r.contrib<-0.1?'#16a34a':'#64748b';
       h+='<tr style="border-bottom:1px solid #e2e8f0;">';
-      h+='<td style="padding:5px 8px;"><span style="font-weight:600;color:#1e293b;">'+esc(r.item)+'</span> <span style="font-size:9.5px;color:#94a3b8;">'+esc(r.cat)+'</span></td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+(r.wA*100).toFixed(1)+'%</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+(r.wB*100).toFixed(1)+'%</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#0ea5e9;">'+(r.rA*100).toFixed(0)+'%</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#0ea5e9;">'+(r.rB*100).toFixed(0)+'%</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:'+(r.mixEff>=0?'#16a34a':'#ef4444')+';">'+sign(r.mixEff)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:'+(r.margEff>=0?'#16a34a':'#ef4444')+';">'+sign(r.margEff)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:'+totColor+';font-weight:700;">'+sign(r.totalEff)+'</td>';
+      h+='<td style="padding:5px 8px;"><span style="font-weight:600;color:#1e293b;">'+esc(r.name)+'</span> <span style="font-size:9.5px;color:#94a3b8;">'+esc(r.cat)+'</span></td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+r.freqA.toFixed(0)+'%</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+r.freqB.toFixed(0)+'%</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#7c3aed;">'+r.qtyPerA.toFixed(1)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#7c3aed;">'+r.qtyPerB.toFixed(1)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(r.perA)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(r.perB)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:'+color+';font-weight:700;">'+(r.contrib>=0?'+':'')+r.contrib.toFixed(2)+'</td>';
       h+='</tr>';
     });
     h+='</tbody></table></div>';
-    h+='<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.5;">• <b>믹스효과</b>: A가 이 항목 매출비중을 더 가져서 생긴 차이 (비중차 × 공통평균이익률)<br>• <b>마진효과</b>: 이 항목에서 A가 B보다 이익률이 더 높아서 생긴 차이 (평균비중 × 이익률차)<br>• 양수면 A에게 유리, 음수면 B에게 유리</div>';
+    h+='<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.5;">';
+    h+='• <b>출현율</b>: 전체 건 중 이 시술이 포함된 비율 (더 자주 시술하면 높음)<br>';
+    h+='• <b>건당qty</b>: 해당 시술이 있을 때 평균 수량 (울쎄라 6샷 → 6)<br>';
+    h+='• <b>건당재료비</b>: 전체 건수로 나눈 이 시술의 건당 평균 재료비 (출현율 × qty × 단가)<br>';
+    h+='• <b style="color:#ef4444;">기여도 양수</b>: A가 이 시술에 재료비를 더 쓰므로 A의 이익률을 깎는 방향<br>';
+    h+='• <b style="color:#16a34a;">기여도 음수</b>: A가 이 시술에 재료비를 덜 쓰므로 A의 이익률에 유리</div>';
     h+='</details>';
   }
 
