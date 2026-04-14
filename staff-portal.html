@@ -2228,15 +2228,21 @@ function localParse(raw){
   // "예약금 3.3m" (금액+m/만 있으면 제외 없어도 예약금제외로 인식)
   // VIP 멀티라인에서 "총...예약금3.3" 줄이 필터될 수 있으므로 _origRaw도 체크
   const ybCheckRaw = /예약금/i.test(raw) ? raw : _origRaw;
-  if(/예약금\s*(?:[\d.]+\s*[mM만]?\s*)?제외|예약금\s*없|-\s*예약금|예약금\s*[\d.]+\s*[mM만]/i.test(ybCheckRaw)){
-    const ybM = ybCheckRaw.match(/예약금\s*([\d.]+)\s*[mM만]?\s*(?:제외|없)?/i);
+  // 예약금 차감/제외 패턴:
+  // "- 3.3 예약금 차감", "- 예약금 3.3 제외", "예약금 3.3m 제외", "예약금없", "-예약금"
+  const ybDeductPat = /예약금\s*(?:[\d.]+\s*[mM만]?\s*)?(?:제외|차감)|예약금\s*없|-\s*예약금|예약금\s*[\d.]+\s*[mM만]|-\s*[\d.]+\s*[mM만]?\s*예약금|[\d.]+\s*[mM만]?\s*예약금\s*(?:제외|차감)/i;
+  if(ybDeductPat.test(ybCheckRaw)){
+    // 금액 추출: "예약금 3.3" 또는 "3.3 예약금" 또는 "-3.3예약금"
+    const ybM = ybCheckRaw.match(/예약금\s*([\d.]+)\s*[mM만]?/i)
+             || ybCheckRaw.match(/([\d.]+)\s*[mM만]?\s*예약금/i);
     const ybAmt = ybM ? parseFloat(ybM[1]) : 3.3;
     results.push({item:'예약금제외', qty:1, _fixedAmt: -ybAmt});
   }
-  // 예약금: "예약금=110m" 또는 단독 "예약금" 결제 (제외 아닌 경우)
+  // 예약금: "예약금=110m" 또는 단독 "예약금" 결제 (제외/차감 아닌 경우)
   else if(/예약금/i.test(ybCheckRaw)){
     // 예약금3.3, 예약금총합 52.8m, 예약금 3.3m 등에서 금액 추출
-    const ybAmtM = ybCheckRaw.match(/예약금[^\d=]*?([\d.]+)\s*[mM만]?/i);
+    const ybAmtM = ybCheckRaw.match(/예약금\s*=?\s*([\d.]+)\s*[mM만]?/i)
+               || ybCheckRaw.match(/([\d.]+)\s*[mM만]?\s*예약금/i);
     const ybTotal = ybAmtM ? parseFloat(ybAmtM[1]) : (extractAmount(raw) || 0);
     results.push({item:'예약금', qty:1, _fixedAmt: ybTotal||0});
   }
