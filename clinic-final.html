@@ -2121,14 +2121,16 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     var staff=it.staff||'미지정';
     if(!mix[staff]) mix[staff]={};
     var amt=(parseFloat(it.amount)||0)*10000;
+    var cat1=it.cat1||'';
+    // percent 수수료만 (고정값 경로 제외 — 일본(통) 등)
+    var comm=calcCommission(cat1,amt,cfg2,true);
     var txs=(it.treatments||[]).filter(function(t){return t && t.item;});
     if(!txs.length){
-      // treatments 없음 → '미분류' 항목으로
       var key='(시술미입력)';
-      if(!mix[staff][key]) mix[staff][key]={cat:'상담/부속', qty:0, amt:0, mat:0, cnt:0};
-      mix[staff][key].amt+=amt; mix[staff][key].cnt++;
-      if(!mix._totals[key]) mix._totals[key]={cat:'상담/부속', qty:0, amt:0, mat:0, cnt:0};
-      mix._totals[key].amt+=amt; mix._totals[key].cnt++;
+      if(!mix[staff][key]) mix[staff][key]={cat:'상담/부속', qty:0, amt:0, mat:0, comm:0, cnt:0};
+      mix[staff][key].amt+=amt; mix[staff][key].comm+=comm; mix[staff][key].cnt++;
+      if(!mix._totals[key]) mix._totals[key]={cat:'상담/부속', qty:0, amt:0, mat:0, comm:0, cnt:0};
+      mix._totals[key].amt+=amt; mix._totals[key].comm+=comm; mix._totals[key].cnt++;
       return;
     }
     // 단가 기반 매출 배분 비율 계산
@@ -2143,15 +2145,18 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     units.forEach(function(u,i){
       var w = unitSum>0 ? u.weight/unitSum : 1/units.length;
       var allocAmt=amt*w;
+      var allocComm=comm*w;
       var matCost=u.up*u.qty;
-      if(!mix[staff][u.name]) mix[staff][u.name]={cat:classifyTx(u.name), qty:0, amt:0, mat:0, cnt:0};
+      if(!mix[staff][u.name]) mix[staff][u.name]={cat:classifyTx(u.name), qty:0, amt:0, mat:0, comm:0, cnt:0};
       mix[staff][u.name].qty+=u.qty;
       mix[staff][u.name].amt+=allocAmt;
+      mix[staff][u.name].comm+=allocComm;
       mix[staff][u.name].mat+=matCost;
       mix[staff][u.name].cnt++;
-      if(!mix._totals[u.name]) mix._totals[u.name]={cat:classifyTx(u.name), qty:0, amt:0, mat:0, cnt:0};
+      if(!mix._totals[u.name]) mix._totals[u.name]={cat:classifyTx(u.name), qty:0, amt:0, mat:0, comm:0, cnt:0};
       mix._totals[u.name].qty+=u.qty;
       mix._totals[u.name].amt+=allocAmt;
+      mix._totals[u.name].comm+=allocComm;
       mix._totals[u.name].mat+=matCost;
       mix._totals[u.name].cnt++;
     });
@@ -2342,7 +2347,7 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;">';
   staffKeys.forEach(function(s){
     var items=Object.keys(mix[s]||{}).map(function(name){
-      var m=mix[s][name]; var net=m.amt-m.mat;
+      var m=mix[s][name]; var net=m.amt-m.comm-m.mat;
       var rate=m.amt>0?(net/m.amt*100):0;
       return {name:name, cat:m.cat, qty:m.qty, amt:m.amt, mat:m.mat, net:net, rate:rate, cnt:m.cnt};
     }).sort(function(a,b){return b.amt-a.amt;}).slice(0,8);
@@ -2388,7 +2393,7 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     Object.keys(mix[A]||{}).forEach(function(k){allItems[k]=1;});
     Object.keys(mix[B]||{}).forEach(function(k){allItems[k]=1;});
     var Atotal=staffCat[A]._total||0, Btotal=staffCat[B]._total||0;
-    function rateOf(m){return m && m.amt>0 ? (m.amt-m.mat)/m.amt : 0;}
+    function rateOf(m){return m && m.amt>0 ? (m.amt-(m.comm||0)-m.mat)/m.amt : 0;}
     var rows=Object.keys(allItems).map(function(item){
       var mA=mix[A][item]||{amt:0,mat:0,qty:0};
       var mB=mix[B][item]||{amt:0,mat:0,qty:0};
@@ -2407,8 +2412,8 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     }).filter(function(r){return (r.amtA+r.amtB)>0;})
       .sort(function(a,b){return Math.abs(b.totalEff)-Math.abs(a.totalEff);});
 
-    var netA = Object.keys(mix[A]||{}).reduce(function(s,k){return s + (mix[A][k].amt-mix[A][k].mat);},0);
-    var netB = Object.keys(mix[B]||{}).reduce(function(s,k){return s + (mix[B][k].amt-mix[B][k].mat);},0);
+    var netA = Object.keys(mix[A]||{}).reduce(function(s,k){var m=mix[A][k];return s + (m.amt-(m.comm||0)-m.mat);},0);
+    var netB = Object.keys(mix[B]||{}).reduce(function(s,k){var m=mix[B][k];return s + (m.amt-(m.comm||0)-m.mat);},0);
     var rateAall=Atotal>0?netA/Atotal*100:0, rateBall=Btotal>0?netB/Btotal*100:0;
     var diff=rateAall-rateBall;
     h+='<div style="background:#f8fafc;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:11.5px;">';
