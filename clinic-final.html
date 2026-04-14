@@ -2461,39 +2461,51 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     }).filter(function(r){return r.total>0;})
       .sort(function(a,b){return Math.abs(b.contrib)-Math.abs(a.contrib);});
 
-    h+='<div style="font-size:11.5px;font-weight:700;margin-bottom:6px;color:#1e293b;">시술별 재료비 기여도 (모두 정확한 값)</div>';
-    h+='<div style="font-size:10px;color:#94a3b8;margin-bottom:8px;line-height:1.4;">각 시술의 "건당 평균 재료비"를 비교합니다. 양수 기여도(%p) = A가 이 시술에 재료비를 더 쓰므로 A에게 불리.</div>';
-    h+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:700px;">';
+    h+='<div style="font-size:11.5px;font-weight:700;margin-bottom:6px;color:#1e293b;">시술별 재료비 기여도 — 어떤 시술을 더 자주·더 많이 해서 재료비가 올랐나?</div>';
+    h+='<div style="font-size:10px;color:#94a3b8;margin-bottom:8px;line-height:1.4;">재료비 단가는 같으므로 차이는 <b>얼마나 자주(빈도) × 몇 개씩(qty)</b>에서 발생합니다.</div>';
+    h+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;min-width:620px;">';
     h+='<thead><tr style="background:#f1f5f9;color:#64748b;">';
     h+='<th style="padding:6px 8px;text-align:left;">시술</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">'+esc(A)+' 출현율</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">'+esc(B)+' 출현율</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">'+esc(A)+' 건당qty</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">'+esc(B)+' 건당qty</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">'+esc(A)+' 건당재료비</th>';
-    h+='<th style="padding:6px 8px;text-align:right;">'+esc(B)+' 건당재료비</th>';
+    h+='<th style="padding:6px 8px;text-align:right;">단가(동일)</th>';
+    h+='<th style="padding:6px 8px;text-align:center;" colspan="2">빈도 (건 중 %)</th>';
+    h+='<th style="padding:6px 8px;text-align:center;" colspan="2">평균qty</th>';
     h+='<th style="padding:6px 8px;text-align:right;font-weight:800;">기여도(%p)</th>';
-    h+='</tr></thead><tbody>';
+    h+='</tr><tr style="background:#f8fafc;color:#94a3b8;font-size:10px;">';
+    h+='<th></th><th></th>';
+    h+='<th style="padding:2px 8px;text-align:right;">'+esc(A)+'</th>';
+    h+='<th style="padding:2px 8px;text-align:right;">'+esc(B)+'</th>';
+    h+='<th style="padding:2px 8px;text-align:right;">'+esc(A)+'</th>';
+    h+='<th style="padding:2px 8px;text-align:right;">'+esc(B)+'</th>';
+    h+='<th></th></tr></thead><tbody>';
     matRows.slice(0,15).forEach(function(r){
       var color=r.contrib>0.1?'#ef4444':r.contrib<-0.1?'#16a34a':'#64748b';
+      // 단가 구하기: 시술이 있는 쪽에서 mat/qty
+      var uA=r.qtyPerA>0&&sA.txMat[r.name]?(sA.txMat[r.name].mat/sA.txMat[r.name].qty):0;
+      var uB=r.qtyPerB>0&&sB.txMat[r.name]?(sB.txMat[r.name].mat/sB.txMat[r.name].qty):0;
+      var unitP=uA||uB||0;
+      // 빈도 차이 하이라이트
+      var freqDiff=r.freqA-r.freqB;
+      var freqAcol=freqDiff>5?'#ef4444':freqDiff<-5?'#16a34a':'#475569';
+      var freqBcol=freqDiff<-5?'#ef4444':freqDiff>5?'#16a34a':'#475569';
+      var qtyDiff=r.qtyPerA-r.qtyPerB;
+      var qtyAcol=qtyDiff>0.5?'#ef4444':qtyDiff<-0.5?'#16a34a':'#7c3aed';
+      var qtyBcol=qtyDiff<-0.5?'#ef4444':qtyDiff>0.5?'#16a34a':'#7c3aed';
       h+='<tr style="border-bottom:1px solid #e2e8f0;">';
       h+='<td style="padding:5px 8px;"><span style="font-weight:600;color:#1e293b;">'+esc(r.name)+'</span> <span style="font-size:9.5px;color:#94a3b8;">'+esc(r.cat)+'</span></td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+r.freqA.toFixed(0)+'%</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+r.freqB.toFixed(0)+'%</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#7c3aed;">'+r.qtyPerA.toFixed(1)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#7c3aed;">'+r.qtyPerB.toFixed(1)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(r.perA)+'</td>';
-      h+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(r.perB)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#94a3b8;font-size:10px;">'+(unitP>=10000?formatW(unitP):Math.round(unitP).toLocaleString()+'원')+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:'+freqAcol+';font-weight:'+(Math.abs(freqDiff)>5?'700':'400')+';">'+r.freqA.toFixed(0)+'%</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:'+freqBcol+';font-weight:'+(Math.abs(freqDiff)>5?'700':'400')+';">'+r.freqB.toFixed(0)+'%</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:'+qtyAcol+';">'+r.qtyPerA.toFixed(1)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:'+qtyBcol+';">'+r.qtyPerB.toFixed(1)+'</td>';
       h+='<td style="padding:5px 8px;text-align:right;color:'+color+';font-weight:700;">'+(r.contrib>=0?'+':'')+r.contrib.toFixed(2)+'</td>';
       h+='</tr>';
     });
     h+='</tbody></table></div>';
     h+='<div style="font-size:10px;color:#94a3b8;margin-top:6px;line-height:1.5;">';
-    h+='• <b>출현율</b>: 전체 건 중 이 시술이 포함된 비율 (더 자주 시술하면 높음)<br>';
-    h+='• <b>건당qty</b>: 해당 시술이 있을 때 평균 수량 (울쎄라 6샷 → 6)<br>';
-    h+='• <b>건당재료비</b>: 전체 건수로 나눈 이 시술의 건당 평균 재료비 (출현율 × qty × 단가)<br>';
-    h+='• <b style="color:#ef4444;">기여도 양수</b>: A가 이 시술에 재료비를 더 쓰므로 A의 이익률을 깎는 방향<br>';
-    h+='• <b style="color:#16a34a;">기여도 음수</b>: A가 이 시술에 재료비를 덜 쓰므로 A의 이익률에 유리</div>';
+    h+='• <b>단가</b>: 시술 1회 재료비 (양쪽 동일)<br>';
+    h+='• <b>빈도</b>: 전체 건 중 이 시술이 포함된 비율. <span style="color:#ef4444;">빨간 굵은 글씨</span> = 상대보다 5%p 이상 높음<br>';
+    h+='• <b>평균qty</b>: 시술이 있을 때 평균 수량 (울쎄라 6샷 → qty 6)<br>';
+    h+='• <b>기여도</b>: (A빈도×A qty − B빈도×B qty) × 단가 ÷ 평균객단가. <span style="color:#ef4444;">양수 = A가 이 시술을 더 해서 재료비↑ → A 이익률↓</span></div>';
     h+='</details>';
   }
 
