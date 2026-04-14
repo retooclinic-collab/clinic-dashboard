@@ -1984,12 +1984,12 @@ function localParse(raw){
   // 미라젯 콤보에서 이미 처리된 경우 스킵
   var hasMjFromJba = false;
   if(!hasMjJba){
-    const jbaM = raw.match(/(?:커스텀)?쥬브아셀\s*(?:\d+%?)?\s*(\d+)\s*[병회]/i);
-    if(jbaM){
-      const jbaQty = parseInt(jbaM[1]);
+    const jbaAll = [...raw.matchAll(/(?:커스텀)?쥬브아셀\s*(?:\d+%?)?\s*(\d+)\s*[병회]/gi)];
+    if(jbaAll.length > 0){
+      const jbaQty = jbaAll.reduce((s,m) => s + parseInt(m[1]), 0);
       results.push({item:'쥬브아셀', qty: jbaQty});
       // 쥬브아셀N병(...미라젯...) 패턴 → 미라젯 수량은 괄호 안 명시 or 1개
-      const jbaBundleMj = raw.match(/쥬브아셀[^,+\n]*?\(.*?(\d+)?[^\S\n]*병?[^\S\n]*미라젯.*?\)/i)
+      const jbaBundleMj = raw.match(/쥬브아셀[^,+\n]*?\([^)]*(\d+)?[^\S\n]*병?[^\S\n]*미라젯[^)]*\)/i)
                        || raw.match(/쥬브아셀[^,+\n]*?(\d+)?[^\S\n]*병?[^\S\n]*미라젯/i);
       if(jbaBundleMj && !hasMjLto && !hasMjRj && !hasMjRjHB && !hasMjJbv){
         const mjQtyFromJba = jbaBundleMj[1] ? parseInt(jbaBundleMj[1]) : 1;
