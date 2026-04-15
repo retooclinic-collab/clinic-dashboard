@@ -1984,7 +1984,7 @@ function localParse(raw){
   // 미라젯 콤보에서 이미 처리된 경우 스킵
   var hasMjFromJba = false;
   if(!hasMjJba){
-    const jbaAll = [...raw.matchAll(/(?:커스텀)?쥬브아셀\s*(?:\d+%?)?\s*(\d+)\s*[병회]/gi)];
+    const jbaAll = [...raw.matchAll(/(?:커스텀)?쥬브아셀\s*(?:\d+%?)?\s*(?:\([^)]*\))?\s*(\d+)\s*[병회]/gi)];
     if(jbaAll.length > 0){
       const jbaQty = jbaAll.reduce((s,m) => s + parseInt(m[1]), 0);
       results.push({item:'쥬브아셀', qty: jbaQty});
