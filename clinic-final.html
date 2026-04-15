@@ -2517,7 +2517,7 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
 function downloadDailyCSV(){
   if(!_dailyFiltered || !_dailyFiltered.length){alert('내보낼 데이터가 없습니다. 먼저 필터를 적용해주세요.');return;}
   var cfg2=loadCfg();
-  var heads=['날짜','이름','내원경로','실장','의사','수납액(만원)','수수료(원)','재료비(원)','순이익(원)','이익률(%)','객당순이익(원)','건당시술수','시술목록','시술카테고리','결제수단','메모'];
+  var heads=['날짜','이름','내원경로','분류2','실장','의사','수납액(만원)','수수료(원)','재료비(원)','순이익(원)','이익률(%)','객당순이익(원)','건당시술수','시술목록','시술카테고리','결제수단','메모'];
   var rows=[heads.join(',')];
   _dailyFiltered.forEach(function(it){
     var amt=(parseFloat(it.amount)||0)*10000;
@@ -2529,7 +2529,7 @@ function downloadDailyCSV(){
     var txs=(it.treatments||[]).map(function(t){return (t.item||'')+(t.qty&&t.qty>1?'×'+t.qty:'');}).filter(Boolean);
     var cats={}; (it.treatments||[]).forEach(function(t){if(t.item)cats[classifyTx(t.item)]=1;});
     var row=[
-      it.date||'', it.name||'', cat1, it.staff||'', it.doctor||'',
+      it.date||'', it.name||'', cat1, it.cat2||'', it.staff||'', it.doctor||'',
       (parseFloat(it.amount)||0).toFixed(1),
       Math.round(comm), Math.round(mat), Math.round(net), rate.toFixed(1),
       Math.round(net), txs.length, txs.join(' + '), Object.keys(cats).join(' | '),
@@ -2652,7 +2652,7 @@ function renderDailyPage(){
   // 테이블
   var html='<table style="width:100%;border-collapse:collapse;font-size:12px;">';
   html+='<thead><tr style="border-bottom:2px solid #cbd5e1;">';
-  ['날짜','이름','분류','수납액','수수료','재료비','순이익','이익률','시술항목','실장','의사','결제'].forEach(function(h){
+  ['날짜','이름','분류1','분류2','수납액','수수료','재료비','순이익','이익률','시술항목','실장','의사','결제'].forEach(function(h){
     var align=(['수납액','수수료','재료비','순이익','이익률'].indexOf(h)>=0)?'right':'left';
     html+='<th style="padding:8px 6px;text-align:'+align+';color:#64748b;font-weight:600;white-space:nowrap;font-size:11px;">'+h+'</th>';
   });
@@ -2665,13 +2665,13 @@ function renderDailyPage(){
     var dayNet=dayAmt-dayComm-dayMat;
     var dayRate=dayAmt>0?Math.round(dayNet/dayAmt*1000)/10:0;
     var r='<tr style="background:#f1f5f9;border-bottom:2px solid #cbd5e1;">';
-    r+='<td style="padding:6px;font-size:11px;color:#475569;font-weight:700;" colspan="3">소계 '+dayCount+'건</td>';
+    r+='<td style="padding:6px;font-size:11px;color:#475569;font-weight:700;" colspan="4">소계 '+dayCount+'건</td>';
     r+='<td style="padding:6px;text-align:right;color:#2563eb;font-weight:700;font-size:12px;">'+formatW(dayAmt)+'</td>';
     r+='<td style="padding:6px;text-align:right;color:#ea580c;font-weight:600;font-size:11px;">'+(dayComm>0?formatW(dayComm):'-')+'</td>';
     r+='<td style="padding:6px;text-align:right;color:#7c3aed;font-weight:600;font-size:11px;">'+(dayMat>0?formatW(dayMat):'-')+'</td>';
     r+='<td style="padding:6px;text-align:right;color:'+(dayNet>=0?'#16a34a':'#ef4444')+';font-weight:700;font-size:12px;">'+formatW(dayNet)+'</td>';
     r+='<td style="padding:6px;text-align:right;color:#0ea5e9;font-weight:600;font-size:11px;">'+dayRate+'%</td>';
-    r+='<td colspan="4"></td></tr>';
+    r+='<td colspan="5"></td></tr>';
     dayAmt=0;dayComm=0;dayMat=0;dayCount=0;
     return r;
   }
@@ -2701,6 +2701,7 @@ function renderDailyPage(){
     html+='<td style="padding:7px 6px;color:'+(showDate?'#1e293b':'#94a3b8')+';font-weight:'+(showDate?'700':'400')+';white-space:nowrap;font-size:12px;">'+(showDate?d:'')+'</td>';
     html+='<td style="padding:7px 6px;color:#1e293b;white-space:nowrap;">'+((it.name||'-'))+'</td>';
     html+='<td style="padding:7px 6px;color:'+(comm>0?'#ea580c':'#64748b')+';white-space:nowrap;font-size:11px;">'+(it.cat1||'-')+'</td>';
+    html+='<td style="padding:7px 6px;color:#64748b;white-space:nowrap;font-size:11px;">'+(it.cat2||'')+'</td>';
     html+='<td style="padding:7px 6px;text-align:right;color:#2563eb;font-weight:600;white-space:nowrap;">'+formatW(amt)+'</td>';
     html+='<td style="padding:7px 6px;text-align:right;color:#ea580c;white-space:nowrap;">'+(comm>0?formatW(comm):'-')+'</td>';
     html+='<td style="padding:7px 6px;text-align:right;color:#7c3aed;white-space:nowrap;">'+(mat>0?formatW(mat):'-')+'</td>';

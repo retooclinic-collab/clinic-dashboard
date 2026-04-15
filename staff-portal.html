@@ -1855,7 +1855,7 @@ function localParse(raw){
   } else { window._ondaPrice = null; }
 
   // ── 엠페이스 ──
-  const empeM = raw.match(/엠페(?:이스)?\s*(?:\d+분)?\s*(\d+)?\s*회/i);
+  const empeM = raw.match(/엠페(?:이스)?\s*\(?\d+\s*분\)?\s*(\d+)?\s*회/i);
   const empeMin = raw.match(/엠페(?:이스)?\s*\(?(\d+)\s*분\)?/i);
   const empeS = /엠페(?:이스)?/i.test(raw) && !empeM;
   if(empeM) results.push({item:'엠페이스', qty: empeM[1]?parseInt(empeM[1]):1});
@@ -2025,7 +2025,8 @@ function localParse(raw){
   let bblAcneQty = bblAcneQtyM ? parseInt(bblAcneQtyM[1]) : 1;
   // 서브타입별 회차가 없고 BBL 전체에 회차가 있으면 공통 적용
   if(!bblColorQtyM && !bblTightQtyM && !bblAcneQtyM){
-    const bblGlobalQtyM = raw.match(/bbl[^+,\n]*?(\d+)\s*회/i);
+    const bblGlobalQtyM = raw.match(/bbl\s*\([^)]*\)\s*(\d+)\s*회/i)
+                      || raw.match(/bbl[^+,\n]*?(\d+)\s*회/i);
     if(bblGlobalQtyM){
       const gq = parseInt(bblGlobalQtyM[1]);
       if(hasBblColor) bblColorQty = gq;
