@@ -1025,7 +1025,7 @@ const _ITEM_KEYWORDS = {
   '코레지셀핏':/코레지셀핏/i, '아그네스':/아그네스/i,
   '수액':/(?:폭탄수액|백옥슈팅|비타민수액|리커버리수액|리바이탈수액|수액)/i, 'NAD':/nad/i,
   '알라딘필':/알라딘필/i, '문신제거':/문신제거/i,
-  '리쥬셀릭크림':/리쥬셀릭(?!앰플|선물)/i,
+  '리쥬셀릭크림':/리쥬셀릭\s*크림|^크림[\d.]*$/i,
   '리쥬셀릭앰플':/리쥬셀릭앰플/i,
   '리쥬셀릭선물세트':/리쥬셀릭선물세트/i,
   'VIP회원권':/vip/i, '상담만':/상담/i,
@@ -1300,7 +1300,7 @@ function extractTextPrices(raw, treatments){
     let prevItem = null;
     treatments.forEach(t=>{
       const kw = KEYWORDS[t.item];
-      if(kw && kw.test(prevOuter) && prevSegPrice===null) prevItem = t;
+      if(kw && kw.test(prevOuter) && prevSegPrice===null && t._fixedAmt===undefined) prevItem = t;
     });
     if(!prevItem) continue;
     // 이전 세그먼트에서 해당 부분의 수량 추출 (소프150샷 → 3, 울쎄라200샷 → 2 등)
@@ -1659,6 +1659,19 @@ function localParse(raw){
     const groupPrice = parseFloat(evMatch[2]);
     if(groupName && groupPrice > 0){
       eventGroups.push({name: groupName, price: groupPrice, fullMatch: evMatch[0]});
+    }
+  }
+
+  // 이벤트 그룹 가격이 괄호 안에 있는 경우: "4월e) 소프300샷+티타늄40KJ(374)"
+  const eventPatternParen = /(?:\d+월?|[가-힣]+)[eE]\)\s*([^=]*?)\(([\d.]+)\)\s*(?=[,\n+\-=]|$)/g;
+  let evMatch2;
+  while((evMatch2 = eventPatternParen.exec(raw)) !== null){
+    const groupName = evMatch2[1].replace(/\+/g,'+').trim();
+    const groupPrice = parseFloat(evMatch2[2]);
+    // 이미 같은 위치에서 매칭된 이벤트 그룹이 있으면 스킵
+    const alreadyFound = eventGroups.some(eg => eg.fullMatch === evMatch2[0] || eg.name === groupName);
+    if(groupName && groupPrice > 0 && !alreadyFound){
+      eventGroups.push({name: groupName, price: groupPrice, fullMatch: evMatch2[0]});
     }
   }
 
@@ -2089,7 +2102,14 @@ function localParse(raw){
     const cntM = rjcRaw.match(/리쥬셀릭.*?앰플\s*(\d+)\s*개/i);
     results.push({item:'리쥬셀릭앰플', qty: cntM?parseInt(cntM[1]):1, ...(rjcIsSv?{_fixedAmt:0}:{})});
   }
-  if(/리쥬셀릭(?!.*?선물세트)(?!.*?앰플)/i.test(rjcRaw)){
+  // 크림: 리쥬셀릭크림 또는 리쥬셀릭앰플 뒤의 +크림 형태
+  if(/리쥬셀릭\s*크림|리쥬셀릭앰플[\d.]*\+\s*크림/i.test(rjcRaw)){
+    // 개수 명시 시만, 없으면 1 (4.2는 가격)
+    const cntM = rjcRaw.match(/리쥬셀릭(?:크림|재생크림|앰플[^크]*크림)?\s*(\d+)\s*개/i);
+    results.push({item:'리쥬셀릭크림', qty: cntM?parseInt(cntM[1]):1, ...(rjcIsSv?{_fixedAmt:0}:{})});
+  }
+  // 만약 선물세트도 함께 있는데 앰플/크림 없으면 또다른 리쥬셀릭
+  if(/리쥬셀릭(?!.*?선물세트)(?!.*?앰플)(?!.*?크림)/i.test(rjcRaw)){
     // 크림: 개수 명시 시만, 없으면 1 (4.2는 가격)
     const cntM = rjcRaw.match(/리쥬셀릭(?:크림|재생크림)?\s*(\d+)\s*개/i);
     results.push({item:'리쥬셀릭크림', qty: cntM?parseInt(cntM[1]):1, ...(rjcIsSv?{_fixedAmt:0}:{})});
@@ -2356,13 +2376,13 @@ function localParse(raw){
       let qty = 1;
       const shotM = t.match(/(\d+)샷/); if(shotM){
         const n = parseInt(shotM[1]);
-        if(/소프웨이브/.test(t)) qty = Math.max(1, Math.round(n/50));
-        else if(/울쎄라/.test(t)) qty = Math.max(1, Math.round(n/100));
+        if(/소프(?:웨이브)?/.test(t)) qty = Math.max(1, Math.round(n/50));
+        else if(/울쎄라|울쎼라/.test(t)) qty = Math.max(1, Math.round(n/100));
         else qty = Math.max(1, n);
       }
       const sM = t.match(/(\d+)s(?!\w)/); if(sM){
         const n = parseInt(sM[1]);
-        if(/소프웨이브/.test(t)) qty = Math.max(1, Math.round(n/50));
+        if(/소프(?:웨이브)?/.test(t)) qty = Math.max(1, Math.round(n/50));
       }
       const ccM = t.match(/(\d+)cc/); if(ccM) qty = Math.max(1, parseInt(ccM[1]));
       const hoeM = t.match(/(\d+)\s*회/); if(hoeM) qty = parseInt(hoeM[1]);
@@ -2382,8 +2402,8 @@ function localParse(raw){
       if(/미라젯.*리투오|리투오.*미라젯/.test(t)) return [{item:'미라젯', qty:1}, {item:'리투오', qty}];
 
       // 일반 시술
-      if(/소프웨이브/.test(t)) return [{item:'소프웨이브(50샷)', qty}];
-      if(/울쎄라/.test(t)) return [{item:'울쎄라(100샷)', qty}];
+      if(/소프(?:웨이브)?/.test(t)) return [{item:'소프웨이브(50샷)', qty}];
+      if(/울쎄라|울쎼라/.test(t)) return [{item:'울쎄라(100샷)', qty}];
       if(/티타늄/.test(t)) return [{item:'티타늄', qty:1}];
       if(/리쥬란\s*hb/.test(t)) return [{item:'리쥬란HB', qty}];
       if(/리쥬란/.test(t)) return [{item:'리쥬란', qty}];
