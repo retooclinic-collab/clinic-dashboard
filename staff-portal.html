@@ -1032,7 +1032,10 @@ const _ITEM_KEYWORDS = {
   '아쿠아필':/아쿠아필/i,
   '제네시스+PTT':/제네시스\s*\+?\s*ptt/i,
   '제네시스':/제네시스(?!\s*\+?\s*ptt)/i,
-  'PDRN':/pdrn/i, '줄기세포':/줄기세포/i,
+  'PDRN':/pdrn/i,
+  '줄기세포240cc':/줄기세포\s*240/i, '줄기세포120cc':/줄기세포\s*120/i,
+  '줄기세포60cc':/줄기세포\s*60/i, '줄기세포30cc':/줄기세포\s*30/i,
+  '줄기세포':/줄기세포/i,
   '히알라제':/히알라제/i, '새살주사':/새살주사/i,
   '인텐스울트라':/인텐스울트라/i, '위고비':/위고비/i,
   '스킨바이브':/스킨바이브/i, '하이쿡스':/하이쿡스/i,
@@ -1060,7 +1063,7 @@ function extractTextPrices(raw, treatments){
     .replace(/^\s*[-－]\s*/gm, '')                       // 줄 시작 - (리스트 마커) 제거
     .replace(/(?:^|[\s,+])(\d+)\)\s*/g, '$1 ')            // "8) " 같은 번호 마커 제거 (e) 아닌 순수 숫자)
     .replace(/\d+월?[eE]\)?\s*/g, ',')                // 4월e) 3e) 등 → 콤마로 분리
-    .replace(/[가-힣]+[eE]\)\s*/g, ',')              // 리쥬란e) 등 한글 이벤트 → 콤마로 분리
+    .replace(/[가-힣]+[eE][가-힣]*\)\s*/g, ',')      // 리쥬란e) 이전e적용) 등 한글 이벤트 → 콤마로 분리
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '')    // -예약금제외 제거
     .replace(/[-－\s]*\d+\s*[mM만]?\s*(?:적립금|추가)?할인/gi, '')  // -25적립금할인, -49할인, -4m추가할인 등 제거
     .replace(/[-－\s]*\d+\s*[mM만]?\s*(?:적립금|선납금|금액|잔액|포인트)\s*(?:차감|제외|사용)/gi, '') // -N적립금차감 제거
@@ -1191,6 +1194,8 @@ function extractTextPrices(raw, treatments){
       if(!kw) return;
       // _fixedAmt가 이미 있는 항목은 텍스트 가격 추출 스킵
       if(t._fixedAmt !== undefined) return;
+      // BBL은 bblPriceMap에서 이미 가격 설정됨 → 세그먼트 중복 추출 방지
+      if(bblPriceMap[t.item] !== undefined) return;
 
       // 외부(top-level)에서 먼저 가격 추출 → 확실한 가격
       // 같은 항목이 여러 세그먼트에 나오면 (보톡스 등) 가격 합산
@@ -1279,8 +1284,9 @@ function extractTextPrices(raw, treatments){
   });
 
   // 인접 세그먼트 쌍 복합소계 감지:
-  // "소프150샷+티타늄40kj 209m+소프50샷 60.5m" → 티타늄 209가 소프+티타 묶음가
-  // 세그먼트 순서대로 검사: 가격없는 세그먼트 바로 뒤에 가격>2x인 세그먼트가 오면 묶음
+  // "소프150샷+티타늄40kj 209m" → 209가 소프+티타 묶음가
+  // "울쎄라300샷+소프200샷350" → 350이 울쎄라+소프 묶음가
+  // 판단: 개별가격 비율 vs 묶음가 비율 비교 → 묶음이 더 설명력 있으면 복합소계
   for(let i=1; i<segments.length; i++){
     const prevSeg = segments[i-1];
     const curSeg = segments[i];
@@ -1294,7 +1300,7 @@ function extractTextPrices(raw, treatments){
     if(!curItem) continue;
     const p = found[curItem.item];
     const curStd = (CHARGE_PRICE[curItem.item]??0)*curItem.qty;
-    if(curStd<=0 || p <= curStd*2) continue; // 2배 이하면 개별가격으로 판단
+    if(curStd<=0) continue;
     // 이전 세그먼트에서 해당 세그먼트 내에 가격이 없는 항목 찾기
     const prevOuter = prevSeg.replace(/\([^)]*\)/g,' ').trim();
     const prevSegPrice = getPrice(prevOuter);
@@ -1306,13 +1312,16 @@ function extractTextPrices(raw, treatments){
     if(!prevItem) continue;
     // 이전 세그먼트에서 해당 부분의 수량 추출 (소프150샷 → 3, 울쎄라200샷 → 2 등)
     const prevShotM = prevOuter.match(/(\d+)\s*샷/i);
-    const prevSegQty = prevShotM ? Math.round(parseInt(prevShotM[1])/50) : prevItem.qty;
     // 소프/울쎄라는 50/100샷 단위
     const unitSize = /울쎄라/i.test(prevItem.item) ? 100 : 50;
     const adjPrevQty = prevShotM ? Math.round(parseInt(prevShotM[1])/unitSize) : prevItem.qty;
     const prevStd = (CHARGE_PRICE[prevItem.item]??0)*adjPrevQty;
     const pairStdSum = curStd + prevStd;
-    if(pairStdSum>0 && p >= pairStdSum*0.4 && p <= pairStdSum*2){
+    if(pairStdSum<=0) continue;
+    // 개별가격 비율 vs 묶음가 비율 비교: 묶음이 더 합리적이면 복합소계
+    const ratioIndiv = Math.abs(p/curStd - 1);   // 개별: 1에서 얼마나 벗어나는지
+    const ratioCompo = Math.abs(p/pairStdSum - 1); // 묶음: 1에서 얼마나 벗어나는지
+    if(ratioCompo < ratioIndiv && p >= pairStdSum*0.3 && p <= pairStdSum*2){
       // 묶음가 → 비율 분배 (반올림 오차 보정: 한쪽 계산 후 나머지로 차감)
       const curShare = Math.round(p * curStd / pairStdSum * 10)/10;
       const prevShare = Math.round((p - curShare)*10)/10;
@@ -1653,7 +1662,7 @@ function localParse(raw){
   // ── 4월e) 이벤트 그룹 추출 (전처리 전에 먼저 파싱) ──
   // "4월e)소프웨이브150s+티타늄40KJ 209m" → 소프웨이브 + 티타늄 각각 파싱, 총액 209만 비례배분
   const eventGroups = [];
-  const eventPattern = /(?:\d+월?|[가-힣]+)[eE]\)\s*([^=]*?)\s+([\d.]+)\s*[mM만]/g;
+  const eventPattern = /(?:\d+월?|[가-힣]+)[eE][가-힣]*\)\s*([^=]*?)\s+([\d.]+)\s*[mM만]/g;
   let evMatch;
   while((evMatch = eventPattern.exec(raw)) !== null){
     const groupName = evMatch[1].replace(/\+/g,'+').trim();
@@ -1664,7 +1673,7 @@ function localParse(raw){
   }
 
   // 이벤트 그룹 가격이 괄호 안에 있는 경우: "4월e) 소프300샷+티타늄40KJ(374)"
-  const eventPatternParen = /(?:\d+월?|[가-힣]+)[eE]\)\s*([^=]*?)\(([\d.]+)\)\s*(?=[,\n+\-=]|$)/g;
+  const eventPatternParen = /(?:\d+월?|[가-힣]+)[eE][가-힣]*\)\s*([^=]*?)\(([\d.]+)\)\s*(?=[,\n+\-=]|$)/g;
   let evMatch2;
   while((evMatch2 = eventPatternParen.exec(raw)) !== null){
     const groupName = evMatch2[1].replace(/\+/g,'+').trim();
@@ -1696,7 +1705,7 @@ function localParse(raw){
     .replace(/[=＝]\s*[\d.,]+\s*[mM]?.*$/gm, '')   // =결제금액 제거 (각 줄별, m 없어도 제거)
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '') // 예약금제외 제거
     .replace(/\d+월?[eE]\)?\s*/g, ',')             // 남은 이벤트 태그 → 콤마
-    .replace(/[가-힣]+[eE]\)\s*/g, ',')            // 리쥬란e) 등 한글 이벤트 → 콤마
+    .replace(/[가-힣]+[eE][가-힣]*\)\s*/g, ',')    // 리쥬란e) 이전e적용) 등 한글 이벤트 → 콤마
     .replace(/sv|s\.v|SV/gi, '')                   // sv 제거
     .toLowerCase();
 
@@ -1880,11 +1889,26 @@ function localParse(raw){
   }
   else if(empeS) results.push({item:'엠페이스', qty:1});
 
-  // ── 오푸스 ──
+  // ── 오푸스 (N회+M회SV 분할 지원: "오푸스5회225+3회sv" → qty=8, 5회=유료, 3회=SV) ──
   const opusM = raw.match(/오푸스\s*(?:타이트닝|디톡스|리프팅)?\s*(\d+)?\s*회/i);
   const opusS = /오푸스/i.test(raw) && !opusM;
-  if(opusM) results.push({item:'오푸스', qty: opusM[1]?parseInt(opusM[1]):1});
-  else if(opusS) results.push({item:'오푸스', qty:1});
+  if(opusM){
+    let opusQty = opusM[1]?parseInt(opusM[1]):1;
+    // "오푸스N회...+M회sv" → M회 SV 추가 (가격=0으로 처리하되 qty 합산)
+    const opusSvM = raw.match(/오푸스[^,\n]*?\+\s*(\d+)\s*회\s*sv/i);
+    let opusSvQty = 0;
+    if(opusSvM){
+      opusSvQty = parseInt(opusSvM[1]);
+      opusQty += opusSvQty;
+    }
+    // "오푸스N회[가격]+M회sv" → 유료 N회의 가격을 명시가로 고정
+    const opusPaidPriceM = raw.match(/오푸스\s*(?:타이트닝|디톡스|리프팅)?\s*\d+\s*회\s*([\d.]+)/i);
+    if(opusPaidPriceM && opusSvQty > 0){
+      results.push({item:'오푸스', qty: opusQty, _fixedAmt: parseFloat(opusPaidPriceM[1])});
+    } else {
+      results.push({item:'오푸스', qty: opusQty});
+    }
+  } else if(opusS) results.push({item:'오푸스', qty:1});
 
   // ── 리쥬란 (HB, 아이, 일반) ──
   const rjHB = raw.match(/리쥬란\s*hb\s*(\d+)\s*cc/i);
@@ -2001,7 +2025,7 @@ function localParse(raw){
   // 미라젯 콤보에서 이미 처리된 경우 스킵
   var hasMjFromJba = false;
   if(!hasMjJba){
-    const jbaAll = [...raw.matchAll(/(?:커스텀)?쥬브아셀\s*(?:\d+%?)?\s*(?:\([^)]*\))?\s*(\d+)\s*[병회]/gi)];
+    const jbaAll = [...raw.matchAll(/(?:커스텀)?쥬브아셀\s*V?\s*(?:\d+%?)?\s*(?:\([^)]*\))?\s*(\d+)\s*[병회]/gi)];
     if(jbaAll.length > 0){
       const jbaQty = jbaAll.reduce((s,m) => s + parseInt(m[1]), 0);
       results.push({item:'쥬브아셀', qty: jbaQty});
@@ -2249,10 +2273,9 @@ function localParse(raw){
     }
   }
   if(/상담비|상담만/i.test(raw)) results.push({item:'상담만', qty:1});
-  // ── 고압산소 ──
+  // ── 고압산소 (항상 qty=1, 분수는 무시) ──
   if(/고압산소/i.test(raw)){
-    const goQtyM = raw.match(/고압산소.*?(\d+)\s*회/i);
-    results.push({item:'고압산소', qty: goQtyM ? parseInt(goQtyM[1]) : 1});
+    results.push({item:'고압산소', qty:1});
   }
   // 예약금제외: 금액 명시 시 해당 금액, 미명시 시 -3.3 기본값
   // "예약금 3.3m" (금액+m/만 있으면 제외 없어도 예약금제외로 인식)
