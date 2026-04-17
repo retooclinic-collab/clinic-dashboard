@@ -1061,7 +1061,7 @@ function extractTextPrices(raw, treatments){
     .replace(/\d+월?[eE]\)?\s*/g, ',')                // 4월e) 3e) 등 → 콤마로 분리
     .replace(/[가-힣]+[eE]\)\s*/g, ',')              // 리쥬란e) 등 한글 이벤트 → 콤마로 분리
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '')    // -예약금제외 제거
-    .replace(/[-－\s]*\d+\s*[mM만]?\s*(?:적립금)?할인/gi, '')  // -25적립금할인, -49할인 등 제거
+    .replace(/[-－\s]*\d+\s*[mM만]?\s*(?:적립금|추가)?할인/gi, '')  // -25적립금할인, -49할인, -4m추가할인 등 제거
     .replace(/[-－\s]*\d+\s*[mM만]?\s*(?:적립금|선납금|금액|잔액|포인트)\s*(?:차감|제외|사용)/gi, '') // -N적립금차감 제거
     .replace(/\+\s*,/g, ',').replace(/,\s*\+/g, ',')   // +, 또는 ,+ 정리
     .replace(/,,+/g, ',').replace(/^[,\s]+|[,\s]+$/gm, ''); // 연속 콤마·공백 정리
@@ -1155,8 +1155,8 @@ function extractTextPrices(raw, treatments){
       .replace(/[-－]\s*(?:남은|잔여|예약금제외)\S*/g, '')
       // -3.3예약금 제외 / -예약금 / -예약금3.3 제외 등 (공백 허용)
       .replace(/[-－]\s*[\d.]*\s*[mM만]?\s*예약금[^+,\n]*/gi, '')
-      // -25할인, 추가1.9m할인 등 할인 패턴 제거
-      .replace(/[-－]\s*[\d.]+\s*[mM만]?\s*할인/gi, '')
+      // -25할인, 추가1.9m할인, -4m추가할인 등 할인 패턴 제거
+      .replace(/[-－]\s*[\d.]+\s*[mM만]?\s*(?:추가)?할인/gi, '')
       .replace(/추가\s*[\d.]+\s*[mM만]?\s*할인/gi, '');
     // /숫자 형식 (예: 울쎄라300/191.4)
     const slashPrice = seg2.match(/\/\s*([\d]+\.?\d*)/);
@@ -1734,7 +1734,7 @@ function localParse(raw){
 
   // ── -N할인 패턴 (예: -25할인, -25적립금할인) ──
   // -N할인, -Nm할인, 추가Nm할인, -N적립금할인 모두 매칭
-  const discountMatches = [...raw.matchAll(/(?:[-－]|추가)\s*([\d.]+)\s*[mM만]?\s*(?:적립금)?할인/gi)];
+  const discountMatches = [...raw.matchAll(/(?:[-－]|추가)\s*([\d.]+)\s*[mM만]?\s*(?:적립금|추가)?할인/gi)];
   let totalDiscount = 0;
   discountMatches.forEach(m=>{
     // 기존 차감패턴과 겹치지 않는 경우만
