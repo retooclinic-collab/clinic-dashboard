@@ -953,7 +953,7 @@ let TREATMENT_ITEMS = [
   '티타튠','티타튠max',
   '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트',
   'NAD','미라젯쥬베룩','알라딘필','문신제거',
-  '피부관리',
+  '피부관리','고압산소',
   '적립금차감','선납금차감','상품권차감','할인차감','적립금',
   '예약금','예약금제외','환불','위약금','제품','지정비용','점,편사제거','차액결제','양도'
 ];
@@ -988,7 +988,7 @@ const CHARGE_PRICE = {
   '리쥬셀릭선물세트':12.5, 'VIP회원권':0, '상담만':2.2,
   '예약금':0, '하이쿡스':5.5, '플라즈마엑소좀':55,
   '새살주사':27.5, '인텐스울트라':27.5, '히알라제':16.5,
-  '피부관리':16.5,
+  '피부관리':16.5, '고압산소':11,
   '적립금차감':0, '선납금차감':0, '상품권차감':0, '할인차감':0, '적립금':0,
   '예약금':0, '예약금제외':0, '환불':0, '위약금':0, '제품':0, '지정비용':0, '점,편사제거':0, '차액결제':0,
 };
@@ -1038,6 +1038,7 @@ const _ITEM_KEYWORDS = {
   '스킨바이브':/스킨바이브/i, '하이쿡스':/하이쿡스/i,
   '플라즈마엑소좀':/플라즈마엑소좀/i,
   '피부관리':/진정(?:관리|팩)|피부관리/i,
+  '고압산소':/고압산소/i,
   '지정비용':/지정비용|지정\s*비/i,
   '제품':/마스크팩|제품|크림\d*박스/i,
 };
@@ -1053,7 +1054,7 @@ function extractTextPrices(raw, treatments){
     .replace(/^.*남은\s*적립금\s*없음.*$/gim, '')         // 남은적립금없음 메모줄 제거
     .replace(/^.*남은\s*금액\s*[x×X].*$/gim, '')         // 남은 금액x 메모줄 제거
     .replace(/^.*총\s*[\d.,]+\s*차감.*$/gim, '')         // 총1131.9 차감 후... 메모줄 제거
-    .replace(/[=＝]\s*[\d.,]+\s*[mM만].*$/gim, '')    // =결제금액 제거 (각 줄별)
+    .replace(/[=＝]\s*[\d.,]+\s*[mM만]?.*$/gim, '')   // =결제금액 제거 (각 줄별, m 없어도 제거)
     .replace(/[=＝]\s*[\d.,]+\s*(?:차감|결제).*$/gim, '')  // =N차감, =N결제 제거
     .replace(/총\s*[\d.,]+\s*[mM만]?\s*$/gim, '')        // "총435.9" 잔여 제거
     .replace(/^\s*[-－]\s*/gm, '')                       // 줄 시작 - (리스트 마커) 제거
@@ -1692,7 +1693,7 @@ function localParse(raw){
     rawForParse = rawForParse.replace(eg.fullMatch, ' ');
   });
   const text = rawForParse
-    .replace(/[=＝]\s*[\d.,]+\s*[mM].*$/gm, '')   // =결제금액 제거 (각 줄별)
+    .replace(/[=＝]\s*[\d.,]+\s*[mM]?.*$/gm, '')   // =결제금액 제거 (각 줄별, m 없어도 제거)
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '') // 예약금제외 제거
     .replace(/\d+월?[eE]\)?\s*/g, ',')             // 남은 이벤트 태그 → 콤마
     .replace(/[가-힣]+[eE]\)\s*/g, ',')            // 리쥬란e) 등 한글 이벤트 → 콤마
@@ -1971,11 +1972,14 @@ function localParse(raw){
   }
 
   // ── 쥬베룩볼륨 (띄어쓰기 허용: "쥬베룩 볼륨") ──
+  // "변경/대체/교체/전환" 맥락이면 메모로 간주 → 쥬베룩 감지 스킵
+  const jbvChangeContext = /\([^)]*쥬베룩[^)]*(?:변경|대체|교체|전환)[^)]*\)/i.test(raw)
+                        || /\([^)]*(?:변경|대체|교체|전환)[^)]*쥬베룩[^)]*\)/i.test(raw);
   const jbvM = raw.match(/쥬베룩\s*볼륨.*?(\d+)\s*회/i);
   const jbvB = raw.match(/쥬베룩\s*볼륨.*?(\d+)\s*병/i);
-  if(jbvM) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvM[1])});
-  else if(jbvB) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvB[1])});
-  else if(/쥬베룩\s*볼륨/i.test(raw)) results.push({item:'쥬베룩볼륨', qty:1});
+  if(!jbvChangeContext && jbvM) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvM[1])});
+  else if(!jbvChangeContext && jbvB) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvB[1])});
+  else if(!jbvChangeContext && /쥬베룩\s*볼륨/i.test(raw)) results.push({item:'쥬베룩볼륨', qty:1});
 
   // ── 쥬베룩아이 (띄어쓰기 허용: "쥬베룩 아이") ──
   const jbeyeM = raw.match(/쥬베룩\s*아이.*?(\d+)\s*회/i);
@@ -1983,7 +1987,7 @@ function localParse(raw){
   else if(/쥬베룩\s*아이/i.test(raw)) results.push({item:'쥬베룩아이', qty:1});
 
   // ── 쥬베룩 (단독, 볼륨/아이가 아닌 일반 쥬베룩) ──
-  if(!(/쥬베룩\s*볼륨/i.test(raw)) && !(/쥬베룩\s*아이/i.test(raw)) && !hasMjJbv){
+  if(!jbvChangeContext && !(/쥬베룩\s*볼륨/i.test(raw)) && !(/쥬베룩\s*아이/i.test(raw)) && !hasMjJbv){
     const jbCc = raw.match(/쥬베룩\s*(\d+)\s*cc/i);
     const jbBottle = raw.match(/쥬베룩\s*(\d+)\s*병/i);
     const jbQtyM = raw.match(/쥬베룩\s*(\d+)\s*회/i);
@@ -2245,6 +2249,11 @@ function localParse(raw){
     }
   }
   if(/상담비|상담만/i.test(raw)) results.push({item:'상담만', qty:1});
+  // ── 고압산소 ──
+  if(/고압산소/i.test(raw)){
+    const goQtyM = raw.match(/고압산소.*?(\d+)\s*회/i);
+    results.push({item:'고압산소', qty: goQtyM ? parseInt(goQtyM[1]) : 1});
+  }
   // 예약금제외: 금액 명시 시 해당 금액, 미명시 시 -3.3 기본값
   // "예약금 3.3m" (금액+m/만 있으면 제외 없어도 예약금제외로 인식)
   // VIP 멀티라인에서 "총...예약금3.3" 줄이 필터될 수 있으므로 _origRaw도 체크
@@ -2261,11 +2270,16 @@ function localParse(raw){
   }
   // 예약금: "예약금=110m" 또는 단독 "예약금" 결제 (제외/차감 아닌 경우)
   else if(/예약금/i.test(ybCheckRaw)){
-    // 예약금3.3, 예약금총합 52.8m, 예약금 3.3m 등에서 금액 추출
-    const ybAmtM = ybCheckRaw.match(/예약금\s*=?\s*([\d.]+)\s*[mM만]?/i)
-               || ybCheckRaw.match(/([\d.]+)\s*[mM만]?\s*예약금/i);
+    // 예약금N건: "예약금10건=33m" → qty=10, price=33
+    const ybGeonM = ybCheckRaw.match(/예약금\s*(\d+)\s*건/i);
+    const ybQty = ybGeonM ? parseInt(ybGeonM[1]) : 1;
+    // 금액 추출: "=33m" 총액 우선, 그 외 "예약금3.3" 등
+    const ybEqM = ybCheckRaw.match(/예약금[^=]*[=＝]\s*([\d.]+)\s*[mM만]?/i);
+    const ybAmtM = ybEqM
+               || ybCheckRaw.match(/예약금\s*(?:\d+\s*건\s*)?=?\s*([\d.]+)\s*[mM만]/i)
+               || ybCheckRaw.match(/([\d.]+)\s*[mM만]\s*예약금/i);
     const ybTotal = ybAmtM ? parseFloat(ybAmtM[1]) : (extractAmount(raw) || 0);
-    results.push({item:'예약금', qty:1, _fixedAmt: ybTotal||0});
+    results.push({item:'예약금', qty: ybQty, _fixedAmt: ybTotal||0});
   }
   // 적립금 잔액: "442.2m 남음", "64.1m (남음)", "남은 금액 528.5m" 등
   // "차감 후 남은 금액 N" 패턴 우선 → 없으면 일반 "Nm 남음" / "남은 금액 N" 사용
@@ -2351,7 +2365,7 @@ function localParse(raw){
   // SV(서비스/무료) 감지: "시술명SV" 또는 "시술명 SV" → 해당 항목 가격 0, qty는 유지
   // 예: "얼전국산b(눈밑눈가메인)SV" → 보톡스(국산) _fixedAmt:0
   // 캡처 시 `+` 경계를 넘지 않도록 [^,\n+]+?로 제한 (over-match 방지)
-  const svPattern = /(?:^|[\n,+])([^,\n+]+?)sv(?:\s|[=,\n+]|$)/gim;
+  const svPattern = /(?:^|[\n,+])([^,\n+]+?)sv(?:\s|[=,\n+(]|$)/gim;
   const svMatches = [..._origRaw.matchAll(svPattern)];
   if(svMatches.length > 0){
     results.forEach(r => {
