@@ -2743,11 +2743,14 @@ function extractPayment(text){
   if(/vip\s*\d/i.test(text)){
     const vipPayM = text.match(/vip\s*\d+\s*(?:\+[^=]*)?[=＝]\s*([\d,.]+)\s*[mM만]?\s*\(([^)]+)\)/i);
     if(vipPayM){
-      const method = normalizePayMethod(vipPayM[2]);
-      if(method){
+      const vipInner = vipPayM[2];
+      const singleMethod = normalizePayMethod(vipInner);
+      if(singleMethod && !/[+,\/]/.test(vipInner)){
+        // 단일 결제방식 (카, 알리 등)
         const amt = parseFloat(vipPayM[1].replace(/,/g,''))||0;
-        return { methods: [method], splitDetails: [{method, amt}] };
+        return { methods: [singleMethod], splitDetails: [{method: singleMethod, amt}] };
       }
+      // 분할결제: (500m카/216.6m알리) → 일반 분기로 넘김 (아래에서 처리)
     }
   }
   // 금액m(결제방식) 패턴: =855.2m(위챗), →258.8m(알리), =170.5m(120현금자진+50.5카)
