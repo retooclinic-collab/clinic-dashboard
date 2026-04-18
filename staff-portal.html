@@ -1662,7 +1662,7 @@ function localParse(raw){
   // ── 4월e) 이벤트 그룹 추출 (전처리 전에 먼저 파싱) ──
   // "4월e)소프웨이브150s+티타늄40KJ 209m" → 소프웨이브 + 티타늄 각각 파싱, 총액 209만 비례배분
   const eventGroups = [];
-  const eventPattern = /(?:\d+월?|[가-힣]+)[eE][가-힣]*\)\s*([^=]*?)\s+([\d.]+)\s*[mM만]/g;
+  const eventPattern = /(?:\d+월?|[가-힣]+)[eE][가-힣]*\)\s*([^=]*?)\s*([\d.]+)\s*[mM만]/g;
   let evMatch;
   while((evMatch = eventPattern.exec(raw)) !== null){
     const groupName = evMatch[1].replace(/\+/g,'+').trim();
@@ -1936,7 +1936,8 @@ function localParse(raw){
 
   // ── 미라젯 조합 시술 (순서 중요: 조합 먼저 체크) ──
   const hasMjRjHB = /미라젯\s*리쥬란\s*hb/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*hb/i.test(raw);
-  const hasMjRj = (/미라젯\s*리쥬란(?!\s*hb)/i.test(raw) || /미라젯\s*\([^)]*리쥬란(?!\s*hb)/i.test(raw) || /리쥬란\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw)) && !hasMjRjHB;
+  const hasMjRjEye = /미라젯\s*리쥬란\s*아이/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*아이/i.test(raw);
+  const hasMjRj = (/미라젯\s*리쥬란(?!\s*(?:hb|아이))/i.test(raw) || /미라젯\s*\([^)]*리쥬란(?!\s*(?:hb|아이))/i.test(raw) || /리쥬란\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw)) && !hasMjRjHB && !hasMjRjEye;
   const hasMjJbv = /미라젯\s*쥬베룩/i.test(raw) || /미라젯\s*\([^)]*쥬베룩/i.test(raw) || /쥬베룩\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw);
   const hasMjJba = /미라젯\s*쥬브아셀/i.test(raw) || /미라젯\s*\([^)]*쥬브아셀/i.test(raw);
   const hasMjLto = /미라젯\s*리투오/i.test(raw) || /미라젯\s*\([^)]*리투오/i.test(raw);
@@ -1945,6 +1946,10 @@ function localParse(raw){
     results.push({item:'미라젯', qty:1});
     const cc = raw.match(/미라젯\s*리쥬란\s*hb\s*(\d+)\s*cc/i) || raw.match(/미라젯\s*\([^)]*리쥬란\s*hb\s*(\d+)\s*cc/i);
     results.push({item:'리쥬란HB', qty: cc?parseInt(cc[1]):1});
+  }
+  if(hasMjRjEye){
+    // 미라젯리쥬란아이 → 미라젯1 + 리쥬란아이는 rjEye에서 이미 처리됨
+    results.push({item:'미라젯', qty:1});
   }
   if(hasMjRj){
     results.push({item:'미라젯', qty:1});
@@ -1981,7 +1986,7 @@ function localParse(raw){
   // 단독 미라젯 (조합 없이) - N회 수량 인식
   // 쥬브아셀 안에 미라젯이 포함된 경우도 스킵 (아래 쥬브아셀 블록에서 처리)
   const hasMjInJba = /쥬브아셀[^,+\n]*미라젯/i.test(raw) || /쥬브아셀[^,+\n]*\([^)]*미라젯/i.test(raw);
-  const hasAnyMjCombo = hasMjRjHB || hasMjRj || hasMjJbv || hasMjJba || hasMjLto || hasMjFromJba || hasMjInJba;
+  const hasAnyMjCombo = hasMjRjHB || hasMjRjEye || hasMjRj || hasMjJbv || hasMjJba || hasMjLto || hasMjFromJba || hasMjInJba;
   // 콤보 미라젯 외에 단독 미라젯 언급이 있는지 확인
   // "미라젯38.5" 또는 "-미라젯38.5" 같은 별도 라인/세그먼트
   const standaloneMjPattern = /(?:^|[\n,+\-－])[\s\-－]*미라젯(?!\s*(?:쥬베룩|쥬브아셀|리투오|리쥬란))\s*(?:(\d+)\s*회\s*)?/gim;
@@ -2191,13 +2196,16 @@ function localParse(raw){
   else if(/보톡스.*?국산|국산.*?보톡스|\(국\)|\(국산\)|국산\s*b(?!\s*\(제오민\))/i.test(raw)) results.push({item:'보톡스(국산)', qty:1});
 
   // ── 보톡스 수입/제오민 (입꼬리제오민, 사각턱제오민 등 모두 포함) ──
-  const btxImpParts = raw.match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑)\s*(?:보톡스\s*)?b(?:tx)?\s*\(?제(?:오민)?\)?/gi)||[];
-  const btxImpCombo = raw.match(/(?:이마|미간|눈가|턱|입꼬리)[,+·\s]+(?:이마|미간|눈가|턱|입꼬리)[^)]*\(?제(?:오민)?\)?/gi)||[];
+  // "대체/교체/대신" 맥락 괄호 안 제오민 언급은 제외 (예: "아쿠아필(눈가제오민b대체)")
+  const btxSubstContext = /\([^)]*(?:제오민|보톡스)[^)]*(?:대체|교체|대신)[^)]*\)/i.test(raw)
+                       || /\([^)]*(?:대체|교체|대신)[^)]*(?:제오민|보톡스)[^)]*\)/i.test(raw);
+  const btxImpParts = btxSubstContext ? [] : (raw.match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑)\s*(?:보톡스\s*)?b(?:tx)?\s*\(?제(?:오민)?\)?/gi)||[]);
+  const btxImpCombo = btxSubstContext ? [] : (raw.match(/(?:이마|미간|눈가|턱|입꼬리)[,+·\s]+(?:이마|미간|눈가|턱|입꼬리)[^)]*\(?제(?:오민)?\)?/gi)||[]);
   const btxImpQty = btxImpParts.length > 0 ? btxImpParts.length
     : btxImpCombo.length > 0 ? (btxImpCombo[0].match(/(?:이마|미간|눈가|턱|입꼬리)/gi)||[]).length
     : 0;
   if(btxImpQty>0) results.push({item:'보톡스(수입)', qty: btxImpQty});
-  else if(/\(제(?:오민)?\)|제오민|보톡스.*?수입/i.test(raw)) results.push({item:'보톡스(수입)', qty:1});
+  else if(!btxSubstContext && /\(제(?:오민)?\)|제오민|보톡스.*?수입/i.test(raw)) results.push({item:'보톡스(수입)', qty:1});
 
   // ── 줄기세포 ──
   if(/줄기세포\s*240/i.test(raw)) results.push({item:'줄기세포240cc', qty:1});
@@ -2429,6 +2437,12 @@ function localParse(raw){
       // 미라젯 조합 우선 체크 (쥬베룩/리쥬란/쥬브아셀/리투오 보다 앞에)
       if(/미라젯쥬베룩/.test(t)) return [{item:'미라젯쥬베룩', qty:1}];
       if(/미라젯.*리쥬란\s*hb/.test(t)) return [{item:'미라젯', qty:1}, {item:'리쥬란HB', qty}];
+      // 미라젯리쥬란아이 → 미라젯1 + 리쥬란아이(cc기반 qty)
+      if(/미라젯.*리쥬란\s*아이|미라젯.*아이리쥬란/.test(t)){
+        const ccM = t.match(/(\d+)\s*cc/);
+        const eyeQty = ccM ? parseInt(ccM[1]) : qty;
+        return [{item:'미라젯', qty:1}, {item:'리쥬란아이', qty: eyeQty}];
+      }
       if(/미라젯.*리쥬란|리쥬란.*미라젯/.test(t)){
         // 미라젯리쥬란NCC → 미라젯 1 + 리쥬란 N/2
         const ccM = t.match(/(\d+)\s*cc/);
@@ -2451,6 +2465,12 @@ function localParse(raw){
       if(/bbl.*미백|bbl.*색소|bbl.*홍조|bbl.*포에버영|bbl.*포영/.test(t) || /bbl/.test(t)) return [{item:'BBL(색소)', qty}];
       if(/진정관리|진정팩|피부관리/.test(t)) return [{item:'피부관리', qty:1}];
       if(/리투오/.test(t)) return [{item:'리투오', qty}];
+      if(/아쿠아필/.test(t)) return [{item:'아쿠아필', qty:1}];
+      if(/엠페이스/.test(t)) return [{item:'엠페이스', qty:1}];
+      if(/리쥬란\s*아이|아이리쥬란/.test(t)){
+        const ccM = t.match(/(\d+)\s*cc/);
+        return [{item:'리쥬란아이', qty: ccM ? parseInt(ccM[1]) : qty}];
+      }
       return null;
     };
 
