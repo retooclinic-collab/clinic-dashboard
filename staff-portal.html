@@ -973,7 +973,7 @@ const CHARGE_PRICE = {
   '쥬브아셀':88, '리투오':88,
   '엠페이스':88, '오푸스':55,
   '포텐자(펌핑)':71.5, '포텐자(모공)':44, '포텐자(기미)':44,
-  'BBL(색소)':22, 'BBL(여드름)':49.5, 'BBL(스킨타이트닝)':71.5,
+  'BBL(색소)':22, 'BBL(포에버영)':16.5, 'BBL(여드름)':49.5, 'BBL(스킨타이트닝)':71.5,
   '필러(수입)':55, '필러(국산)':33,
   '보톡스(국산)':11, '보톡스(수입)':22,
   '듀얼피코':33, '피코슈어':33, 'moxi':66, 'MOXI':66,
@@ -995,6 +995,7 @@ const CHARGE_PRICE = {
 
 /* ── 공통: 항목명 → 원문 매칭용 정규식 사전 (extractTextPrices + SV 감지 공유) ── */
 const _ITEM_KEYWORDS = {
+  'BBL(포에버영)':/bbl.*?(?:포에버영|포영)/i,
   'BBL(색소)':/bbl/i, 'BBL(여드름)':/bbl.*?여드름/i,
   'BBL(스킨타이트닝)':/bbl.*?스킨타이트닝/i,
   '울쎄라(100샷)':/울쎄라|울쎼라/i, '소프웨이브(50샷)':/소프/i,
@@ -1073,20 +1074,31 @@ function extractTextPrices(raw, treatments){
   // BBL 가격 직접 추출 (세그먼트 분리 전)
   // 서브타입별 개별 가격 추출: "포에버영2회99+스킨타이트닝3회198" → 각각 99, 198
   const bblPriceMap = {};
-  const hasBblColorText = /bbl.*?(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))/i.test(raw);
+  const hasBblForeverText = /bbl.*?(?:포에버영|포영)/i.test(raw);
+  const hasBblColorText = /bbl.*?(?:색소|홍조|화이트닝|미백|스킨(?!타이트))/i.test(raw);
   const hasBblAcneText = /bbl.*?여드름/i.test(raw);
   const hasBblTightText = /bbl.*?스킨타이트닝/i.test(raw);
-  const bblTypeCountText = (hasBblColorText?1:0)+(hasBblAcneText?1:0)+(hasBblTightText?1:0);
+  // 포에버영은 색소/홍조 프로그램 포함 → 중복 카운트 방지
+  const bblHasColorText = hasBblForeverText ? false : hasBblColorText;
+  const bblTypeCountText = (hasBblForeverText?1:0)+(bblHasColorText?1:0)+(hasBblAcneText?1:0)+(hasBblTightText?1:0);
   // 서브타입별 개별 가격 추출 시도
-  const bblColorPriceM = raw.match(/(?:포에버영|색소|홍조|화이트닝|미백)(?:\s*\d+\s*회)?[\s만]*([\d.]+)(?!\s*회)/i);
+  const bblForeverPriceM = raw.match(/(?:포에버영|포영)(?:\s*\d+\s*회)?[\s만]*([\d.]+)(?!\s*회)/i);
+  const bblColorPriceM = raw.match(/(?:색소|홍조|화이트닝|미백)(?:\s*\d+\s*회)?[\s만]*([\d.]+)(?!\s*회)/i);
   const bblTightPriceM = raw.match(/스킨타이트닝(?:\s*\d+\s*회)?\s*([\d.]+)(?!\s*회)/i);
   const bblAcnePriceM = raw.match(/여드름(?:\s*\d+\s*회)?\s*([\d.]+)(?!\s*회)/i);
-  const hasSubPrices = bblColorPriceM || bblTightPriceM || bblAcnePriceM;
+  const hasSubPrices = bblForeverPriceM || bblColorPriceM || bblTightPriceM || bblAcnePriceM;
   if(hasSubPrices){
     // 서브타입별 가격 추출 → 마지막 숫자가 BBL 소계일 수 있음
     // "포에버영2회99+스킨타이트닝3회198" → 99는 포에버영, 198은 BBL소계(스킨타이트닝=198-99=99)
     const subPrices = [];
-    if(bblColorPriceM && hasBblColorText) subPrices.push({key:'BBL(색소)', price:parseFloat(bblColorPriceM[1])});
+    // 포에버영은 색소/홍조 프로그램 포함 → 포에버영+색소 동시면 색소가격을 포에버영에 사용
+    if(hasBblForeverText){
+      const fPrice = bblForeverPriceM ? parseFloat(bblForeverPriceM[1])
+                   : (bblColorPriceM ? parseFloat(bblColorPriceM[1]) : null);
+      if(fPrice) subPrices.push({key:'BBL(포에버영)', price:fPrice});
+    } else if(bblColorPriceM && hasBblColorText){
+      subPrices.push({key:'BBL(색소)', price:parseFloat(bblColorPriceM[1])});
+    }
     if(bblTightPriceM && hasBblTightText) subPrices.push({key:'BBL(스킨타이트닝)', price:parseFloat(bblTightPriceM[1])});
     if(bblAcnePriceM && hasBblAcneText) subPrices.push({key:'BBL(여드름)', price:parseFloat(bblAcnePriceM[1])});
     if(subPrices.length >= 2){
@@ -1108,17 +1120,19 @@ function extractTextPrices(raw, treatments){
     }
   } else {
     // 서브타입별 가격 없으면 기존 로직: BBL 전체 가격 → 균등분할
-    const bblRe = /bbl\s*(?:\([^)]*\))?\s*(?:(?:포에버영|색소|홍조|화이트닝|미백|여드름|스킨타이트닝)\s*\+?\s*)*(?:[\d.]+\s*회\s*)?([\d.]+)(?!\s*회)/gi;
+    const bblRe = /bbl\s*(?:\([^)]*\))?\s*(?:(?:포에버영|포영|색소|홍조|화이트닝|미백|여드름|스킨타이트닝)\s*[+,]?\s*)*(?:[\d.]+\s*회\s*)?([\d.]+)(?!\s*회)/gi;
     for(const m of raw.matchAll(bblRe)){
       const price = parseFloat(m[1]);
       if(price >= 1 && price < 2000){
         if(bblTypeCountText > 1){
           const eachPrice = Math.round(price/bblTypeCountText*100)/100;
-          if(hasBblColorText) bblPriceMap['BBL(색소)'] = eachPrice;
+          if(hasBblForeverText) bblPriceMap['BBL(포에버영)'] = eachPrice;
+          else if(hasBblColorText) bblPriceMap['BBL(색소)'] = eachPrice;
           if(hasBblAcneText) bblPriceMap['BBL(여드름)'] = eachPrice;
           if(hasBblTightText) bblPriceMap['BBL(스킨타이트닝)'] = eachPrice;
         } else {
           if(/여드름/i.test(m[0])) bblPriceMap['BBL(여드름)'] = price;
+          else if(hasBblForeverText) bblPriceMap['BBL(포에버영)'] = price;
           else bblPriceMap['BBL(색소)'] = price;
         }
       }
@@ -1644,6 +1658,7 @@ function distributePrices(treatments, total, rawText){
 
 
 function localParse(raw){
+  const _eventGroupRawTokens = []; // 이벤트 그룹에서 처리된 원본 토큰 (중복감지 방지용)
   // ── VIP 멀티라인 처리: VIP 헤더줄 제거, 주석줄 제거 후 내역만 파싱 ──
   const _origRaw = raw; // VIP 체크용 원본 보존
   if(/vip/i.test(raw) && raw.includes('\n')){
@@ -2074,11 +2089,14 @@ function localParse(raw){
 
   // ── BBL ──
   // bbl(포에버영2회99+스킨타이트닝3회198) 등 서브타입별 회차·가격 파싱
-  const hasBblColor = /bbl.*?(?:포에버영|색소|홍조|화이트닝|미백|스킨(?!타이트))/i.test(raw);
+  const hasBblForever = /bbl.*?(?:포에버영|포영)/i.test(raw);
+  const hasBblColor = /bbl.*?(?:색소|홍조|화이트닝|미백|스킨(?!타이트))/i.test(raw);
   const hasBblTight = /bbl.*?(?:스킨타이트닝)/i.test(raw);
   const hasBblAcne = /bbl.*?여드름/i.test(raw);
   // 각 서브타입별 회차 추출: "포에버영2회", "스킨타이트닝3회", "여드름2회" 등
-  const bblColorQtyM = raw.match(/(?:포에버영|포영|색소|홍조|화이트닝|미백)\s*(\d+)\s*회(?!대체|대신)/i);
+  const bblForeverQtyM = raw.match(/(?:포에버영|포영)\s*(\d+)\s*회(?!대체|대신)/i);
+  let bblForeverQty = bblForeverQtyM ? parseInt(bblForeverQtyM[1]) : 1;
+  const bblColorQtyM = raw.match(/(?:색소|홍조|화이트닝|미백)\s*(\d+)\s*회(?!대체|대신)/i);
   let bblColorQty = bblColorQtyM ? parseInt(bblColorQtyM[1]) : 1;
   // 스킨타이트닝 회차 추출 (BBL 전체 회차가 아닌 서브타입 회차)
   const bblTightQtyM = raw.match(/스킨타이트닝\s*(\d+)\s*회/i);
@@ -2086,18 +2104,22 @@ function localParse(raw){
   const bblAcneQtyM = raw.match(/여드름\s*(\d+)\s*회/i);
   let bblAcneQty = bblAcneQtyM ? parseInt(bblAcneQtyM[1]) : 1;
   // 서브타입별 회차가 없고 BBL 전체에 회차가 있으면 공통 적용
-  if(!bblColorQtyM && !bblTightQtyM && !bblAcneQtyM){
+  if(!bblForeverQtyM && !bblColorQtyM && !bblTightQtyM && !bblAcneQtyM){
     const bblGlobalQtyM = raw.match(/bbl\s*\([^)]*\)\s*(\d+)\s*회/i)
                       || raw.match(/bbl[^+,\n]*?(\d+)\s*회/i);
     if(bblGlobalQtyM){
       const gq = parseInt(bblGlobalQtyM[1]);
+      if(hasBblForever) bblForeverQty = gq;
       if(hasBblColor) bblColorQty = gq;
       if(hasBblTight) bblTightQty = gq;
       if(hasBblAcne) bblAcneQty = gq;
     }
   }
-  const bblTypeCount = (hasBblColor?1:0)+(hasBblAcne?1:0)+(hasBblTight?1:0);
-  if(hasBblColor) results.push({item:'BBL(색소)', qty:bblColorQty, _bblGroup:bblTypeCount>1});
+  // 포에버영은 색소/홍조 프로그램을 포함 → 포에버영+색소 동시면 포에버영만
+  const bblHasColor = hasBblForever ? false : hasBblColor;
+  const bblTypeCount = (hasBblForever?1:0)+(bblHasColor?1:0)+(hasBblAcne?1:0)+(hasBblTight?1:0);
+  if(hasBblForever) results.push({item:'BBL(포에버영)', qty:bblForeverQty, _bblGroup:bblTypeCount>1});
+  if(bblHasColor) results.push({item:'BBL(색소)', qty:bblColorQty, _bblGroup:bblTypeCount>1});
   if(hasBblTight) results.push({item:'BBL(스킨타이트닝)', qty:bblTightQty, _bblGroup:bblTypeCount>1});
   if(hasBblAcne) results.push({item:'BBL(여드름)', qty:bblAcneQty, _bblGroup:bblTypeCount>1});
 
@@ -2168,7 +2190,7 @@ function localParse(raw){
   if(/알라딘필/i.test(raw)) results.push({item:'알라딘필', qty:1});
 
   // ── 피부관리 (진정관리 + 진정팩 통합) ──
-  if(/진정관리|진정팩|피부관리/i.test(raw)) results.push({item:'피부관리', qty:1});
+  if(/진정관리|진정팩|피부관리|힐라이트/i.test(raw)) results.push({item:'피부관리', qty:1});
 
   // ── 제품 (마스크팩 등) ──
   if(/마스크팩|마스크\s*팩/i.test(raw)){
@@ -2487,8 +2509,9 @@ function localParse(raw){
       if(/쥬베룩/.test(t)) return [{item:'쥬베룩볼륨', qty:1}];
       if(/쥬브아셀/.test(t)) return [{item:'쥬브아셀', qty}];
       if(/미라젯/.test(t)) return [{item:'미라젯', qty}];
-      if(/bbl.*미백|bbl.*색소|bbl.*홍조|bbl.*포에버영|bbl.*포영/.test(t) || /bbl/.test(t)) return [{item:'BBL(색소)', qty}];
-      if(/진정관리|진정팩|피부관리/.test(t)) return [{item:'피부관리', qty:1}];
+      if(/bbl.*포에버영|bbl.*포영/.test(t)) return [{item:'BBL(포에버영)', qty}];
+      if(/bbl.*미백|bbl.*색소|bbl.*홍조/.test(t) || /bbl/.test(t)) return [{item:'BBL(색소)', qty}];
+      if(/진정관리|진정팩|피부관리|ldm|엘디엠|힐라이트/i.test(t)) return [{item:'피부관리', qty:1}];
       if(/리투오/.test(t)) return [{item:'리투오', qty}];
       if(/아쿠아필/.test(t)) return [{item:'아쿠아필', qty:1}];
       if(/엠페이스/.test(t)) return [{item:'엠페이스', qty:1}];
@@ -2518,10 +2541,13 @@ function localParse(raw){
       tokens.forEach(tok => {
         const mapped = mapEventItem(tok);
         if(!mapped) return;
+        _eventGroupRawTokens.push(tok.toLowerCase());
         // 배열이면 그대로, 객체면 배열로 래핑 (하위호환)
         const list = Array.isArray(mapped) ? mapped : [mapped];
         list.forEach(m => {
           if(seenItems.has(m.item)){
+            // 피부관리는 qty 누적 안 함 (진정관리+진정팩+LDM 등 통합 시 비례배분 비중 최소화)
+            if(m.item === '피부관리') return;
             const existing = parsed.find(p=>p.item===m.item);
             if(existing) existing.qty += m.qty;
             return;
@@ -2554,6 +2580,17 @@ function localParse(raw){
         }
       });
     });
+    // 이벤트 그룹에서 피부관리로 흡수된 항목(LDM, 아쿠아필 등)이 메인 파서에서도 별도 감지된 경우 제거
+    if(_eventGroupRawTokens.length > 0){
+      const egAbsorbed = ['LDM','아쿠아필'];
+      egAbsorbed.forEach(itemName => {
+        const pattern = itemName === 'LDM' ? /ldm/i : new RegExp(itemName, 'i');
+        if(_eventGroupRawTokens.some(t => pattern.test(t))){
+          const idx = results.findIndex(r => r.item === itemName && !r._fixedAmt);
+          if(idx >= 0) results.splice(idx, 1);
+        }
+      });
+    }
   }
 
   // ── 양도 항목 추가 (음수) ──
