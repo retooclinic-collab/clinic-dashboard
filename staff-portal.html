@@ -2516,7 +2516,13 @@ function localParse(raw){
       // 일반 시술
       if(/소프(?:웨이브)?/.test(t)) return [{item:'소프웨이브(50샷)', qty}];
       if(/울쎄라|울쎼라/.test(t)) return [{item:'울쎄라(100샷)', qty}];
-      if(/티타늄/.test(t)) return [{item:'티타늄', qty:1}];
+      if(/티타늄/.test(t)){
+        // KJ 기반 단가 힌트: 비례배분 정확도 개선
+        const kjM = t.match(/(\d+)\s*kj/i);
+        const kj = kjM ? parseInt(kjM[1]) : 60;
+        const tjPrice = kj>=100?165 : kj>=80?132 : kj>=60?99 : kj>=40?66 : 99;
+        return [{item:'티타늄', qty:1, _unitPrice: tjPrice}];
+      }
       if(/리쥬란\s*hb/.test(t)) return [{item:'리쥬란HB', qty}];
       if(/리쥬란/.test(t)) return [{item:'리쥬란', qty}];
       if(/쥬베룩.*아이/.test(t)) return [{item:'쥬베룩아이', qty:1}];
@@ -2573,7 +2579,7 @@ function localParse(raw){
       });
       if(parsed.length === 0) return;
       // 단가 비례배분 (자연수 위주, 마지막 항목에서 오차 보정)
-      const unitPrices = parsed.map(p => (CHARGE_PRICE[p.item]||1) * p.qty);
+      const unitPrices = parsed.map(p => (p._unitPrice || CHARGE_PRICE[p.item]||1) * p.qty);
       const sum = unitPrices.reduce((a,b)=>a+b, 0);
       const shares = parsed.map((p, i) => {
         return sum > 0
