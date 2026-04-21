@@ -1678,7 +1678,7 @@ function localParse(raw){
   // ── 4월e) 이벤트 그룹 추출 (전처리 전에 먼저 파싱) ──
   // "4월e)소프웨이브150s+티타늄40KJ 209m" → 소프웨이브 + 티타늄 각각 파싱, 총액 209만 비례배분
   const eventGroups = [];
-  const eventPattern = /(?:\d+월?|[가-힣]+)[eE][가-힣]*\)\s*([^=]*?)\s*([\d.]+)\s*[mM만]/g;
+  const eventPattern = /(?:\d+월?|[가-힣]+)[eE][가-힣]*\)\s*([^=]*?)\s*([\d.]+)\s*(?:[mM만]|(?=[-－,\n+]|$))/g;
   let evMatch;
   while((evMatch = eventPattern.exec(raw)) !== null){
     const groupName = evMatch[1].replace(/\+/g,'+').trim();
@@ -2462,6 +2462,12 @@ function localParse(raw){
         const eyeQty = ccM ? parseInt(ccM[1]) : qty;
         return [{item:'미라젯', qty:1}, {item:'리쥬란아이', qty: eyeQty}];
       }
+      // 미라젯(리쥬란+쥬베룩) 복합: 리쥬란Ncc + 쥬베룩Mcc 둘 다 포함
+      if(/미라젯/.test(t) && /리쥬란/.test(t) && /쥬베룩/.test(t)){
+        const rjCc = t.match(/리쥬란\s*(\d+)\s*cc/);
+        const rjQty = rjCc ? Math.max(1, Math.round(parseInt(rjCc[1])/2)) : 1;
+        return [{item:'미라젯', qty:1}, {item:'리쥬란', qty: rjQty}, {item:'미라젯쥬베룩', qty: 1}];
+      }
       if(/미라젯.*리쥬란|리쥬란.*미라젯/.test(t)){
         // 미라젯리쥬란NCC → 미라젯 1 + 리쥬란 N/2
         const ccM = t.match(/(\d+)\s*cc/);
@@ -2494,7 +2500,18 @@ function localParse(raw){
     };
 
     eventGroups.forEach(eg => {
-      const tokens = eg.name.split(/[+,]/).map(s=>s.trim()).filter(s=>s);
+      // 괄호 안 +,를 보호하며 분리 (splitTopLevel 인라인)
+      const tokens = [];
+      { let d=0, c2='';
+        for(let i=0;i<eg.name.length;i++){
+          const ch=eg.name[i];
+          if(ch==='(') d++;
+          else if(ch===')'){ if(d>0) d--; }
+          else if((ch==='+'||ch===',')&&d===0){ tokens.push(c2.trim()); c2=''; continue; }
+          c2+=ch;
+        }
+        if(c2.trim()) tokens.push(c2.trim());
+      }
       // 토큰별 시술 매핑 (진정관리/진정팩 중복은 피부관리로 합침 → 1개)
       const parsed = [];
       const seenItems = new Set();
@@ -2514,13 +2531,20 @@ function localParse(raw){
         });
       });
       if(parsed.length === 0) return;
-      // 단가 비례배분
+      // 단가 비례배분 (자연수 위주, 마지막 항목에서 오차 보정)
       const unitPrices = parsed.map(p => (CHARGE_PRICE[p.item]||1) * p.qty);
       const sum = unitPrices.reduce((a,b)=>a+b, 0);
+      const shares = parsed.map((p, i) => {
+        return sum > 0
+          ? Math.round(eg.price * (unitPrices[i]/sum))
+          : Math.round(eg.price / parsed.length);
+      });
+      // 반올림 오차 보정: 합계를 eg.price에 맞춤 (마지막 항목에서 조정)
+      const shareSum = shares.reduce((a,b)=>a+b, 0);
+      const diff = Math.round((eg.price - shareSum) * 10) / 10;
+      if(diff !== 0) shares[shares.length - 1] += diff;
       parsed.forEach((p, i) => {
-        const share = sum > 0
-          ? Math.round(eg.price * (unitPrices[i]/sum) * 10) / 10
-          : Math.round(eg.price / parsed.length * 10) / 10;
+        const share = shares[i];
         // 기존 results에 같은 item 있으면 _fixedAmt만 누적 (qty는 메인 파서가 이미 카운트함 → 이중카운트 방지)
         const existing = results.find(r => r.item === p.item);
         if(existing){
