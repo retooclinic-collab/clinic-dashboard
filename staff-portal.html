@@ -952,7 +952,7 @@ let TREATMENT_ITEMS = [
   '엑소좀','플라즈마엑소좀','MOXI',
   '티타튠','티타튠max',
   '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트',
-  'NAD','미라젯쥬베룩','알라딘필','문신제거',
+  'NAD','백옥','미라젯쥬베룩','알라딘필','문신제거',
   '피부관리','고압산소',
   '적립금차감','선납금차감','상품권차감','할인차감','적립금',
   '예약금','예약금제외','환불','위약금','제품','지정비용','점,편사제거','차액결제','양도'
@@ -983,7 +983,7 @@ const CHARGE_PRICE = {
   '줄기세포120cc':330, '줄기세포240cc':506,
   '자가엑소좀':165, '위고비':26, '스킨바이브':60.5,
   '아쿠아필':11, '제네시스+PTT':38.5, '제네시스':38.5,
-  '수액':8.8, 'NAD':16.5, 'TA':1.1, 'CO2':5.5,
+  '수액':8.8, 'NAD':16.5, '백옥':8.8, 'TA':1.1, 'CO2':5.5,
   '알라딘필':33, '리쥬셀릭크림':4.2, '리쥬셀릭앰플':4.8,
   '리쥬셀릭선물세트':12.5, 'VIP회원권':0, '상담만':2.2,
   '예약금':0, '하이쿡스':5.5, '플라즈마엑소좀':55,
@@ -1023,8 +1023,8 @@ const _ITEM_KEYWORDS = {
   '듀얼피코':/듀얼피코|피코토닝|피코(?!슈어|웨이|포커스|토닝)/i, '피코슈어':/피코슈어|피코웨이/i,
   'moxi':/moxi/i, 'LDM':/ldm/i, '플라즈마':/플라즈마(?!엑소)/i,
   '라라필':/라라필/i, '수면비':/수면/i, '아이리프팅':/아이리프팅/i,
-  '코레지셀핏':/코레지셀핏/i, '아그네스':/아그네스/i,
-  '수액':/(?:폭탄수액|백옥슈팅|비타민수액|리커버리수액|리바이탈수액|수액)/i, 'NAD':/nad/i,
+  '코레지셀핏':/코레지(?:셀핏)?/i, '아그네스':/아그네스/i,
+  '수액':/(?:폭탄수액|백옥슈팅|비타민수액|리커버리수액|리바이탈수액|수액)/i, 'NAD':/nad/i, '백옥':/백옥/i,
   '알라딘필':/알라딘필/i, '문신제거':/문신제거/i,
   '리쥬셀릭크림':/리쥬셀릭\s*크림|^크림[\d.]*$/i,
   '리쥬셀릭앰플':/리쥬셀릭앰플/i,
@@ -1064,7 +1064,9 @@ function extractTextPrices(raw, treatments){
     .replace(/^\s*[-－]\s*/gm, '')                       // 줄 시작 - (리스트 마커) 제거
     .replace(/(?:^|[\s,+])(\d+)\)\s*/g, '$1 ')            // "8) " 같은 번호 마커 제거 (e) 아닌 순수 숫자)
     // 이벤트 그룹 전체(접두어+시술명+총액) 제거 — standalone 가격만 남기기
-    .replace(/\d+월?(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트\s+)[^=]*?(?:[\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g, ',')
+    .replace(/\d+월?(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)[^=]*?(?:[\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g, ',')
+    .replace(/\d+월?(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)(?:[^=]|\([^)]*\))+?[=＝]\s*[\d.]+\s*[mM万]/g, ',')  // =가격 형식
+    .replace(/\d+월?(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)[^=,\n]*$/gm, ',')  // =가격 제거 후 남은 이벤트 접두어+시술 부분
     .replace(/[가-힣]+[eE][가-힣]*\)\s*[^=]*?(?:[\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g, ',')  // 한글 이벤트
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '')    // -예약금제외 제거
     .replace(/[-－\s]*[\d.]+\s*[mM만%]?\s*(?:적립금|추가)?할인/gi, '')  // -25적립금할인, -49할인, -50%할인, -0.5할인, -4m추가할인 등 제거
@@ -1736,14 +1738,30 @@ function localParse(raw){
   // "4월e)소프웨이브150s+티타늄40KJ 209m" → 소프웨이브 + 티타늄 각각 파싱, 총액 209만 비례배분
   // "4월e 울쎄라200샷+힐로웨이브2cc 165" → 괄호 없이 공백으로 시작하는 형식도 지원
   // "4월이벤트 소프웨이브350샷+티타늄40kj 451" → 한글 "이벤트" 형식도 지원
+  // "4월이벤트 울쎄라400샷+힐로웨이브2cc=286m" → =가격 형식도 지원
+  // "4월이벤" 약칭도 지원
   const eventGroups = [];
-  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트\s+)([^=]*?)\s*([\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g;
+  // 패턴1: 가격이 공백 뒤 숫자로 오는 경우 (기존)
+  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)([^=]*?)\s*([\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g;
   let evMatch;
   while((evMatch = eventPattern.exec(raw)) !== null){
     const groupName = evMatch[1].replace(/\+/g,'+').trim();
     const groupPrice = parseFloat(evMatch[2]);
     if(groupName && groupPrice > 0){
       eventGroups.push({name: groupName, price: groupPrice, fullMatch: evMatch[0]});
+    }
+  }
+
+  // 패턴2: 가격이 = 뒤에 오는 경우: "4월이벤트 울쎄라400샷+힐로웨이브2cc=286m"
+  const eventPatternEq = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=]|\([^)]*\))+?)[=＝]\s*([\d.]+)\s*[mM万]/g;
+  let evMatch3;
+  while((evMatch3 = eventPatternEq.exec(raw)) !== null){
+    const groupName = evMatch3[1].replace(/\+/g,'+').trim();
+    const groupPrice = parseFloat(evMatch3[2]);
+    // 이미 패턴1에서 잡힌 이벤트 그룹과 겹치면 스킵 (이름이 부분집합이거나 동일)
+    const alreadyFound = eventGroups.some(eg => eg.name === groupName || groupName.includes(eg.name) || eg.name.includes(groupName));
+    if(groupName && groupPrice > 0 && !alreadyFound){
+      eventGroups.push({name: groupName, price: groupPrice, fullMatch: evMatch3[0]});
     }
   }
 
@@ -1813,16 +1831,17 @@ function localParse(raw){
     /[-－]\s*(?!예약금)[^0-9+,=m]+?([\d.]+)\s*(?:차감|제외|공제)/gi,
   ];
   let totalDeduct = 0;
-  const usedPos = new Set();
+  const usedRanges = []; // {start, end} 매칭 범위
   deductPatterns.forEach(pat=>{
     const matches = [...raw.matchAll(pat)];
     matches.forEach(m=>{
-      // 위치 중복 방지: 이전 패턴이 같은 위치를 이미 매칭했으면 스킵
+      // 위치 중복 방지: 이전 패턴 매칭 범위와 겹치면 스킵
+      const mEnd = m.index + m[0].length;
       let overlap = false;
-      for(const p of usedPos){ if(Math.abs(m.index-p)<10){ overlap=true; break; } }
+      for(const r of usedRanges){ if(m.index < r.end && mEnd > r.start){ overlap=true; break; } }
       if(!overlap){
         totalDeduct += parseFloat(m[1]||0);
-        usedPos.add(m.index);
+        usedRanges.push({start: m.index, end: mEnd});
       }
     });
   });
@@ -1835,9 +1854,10 @@ function localParse(raw){
   const discountMatches = [...raw.matchAll(/(?:[-－]|추가)\s*([\d.]+)\s*[mM만]?\s*(?:적립금|추가)?할인/gi)];
   let totalDiscount = 0;
   discountMatches.forEach(m=>{
-    // 기존 차감패턴과 겹치지 않는 경우만
+    // 기존 차감패턴과 겹치지 않는 경우만 (매칭 범위 기준)
+    const mEnd2 = m.index + m[0].length;
     let overlap = false;
-    for(const p of usedPos){ if(Math.abs(m.index-p)<10){ overlap=true; break; } }
+    for(const r of usedRanges){ if(m.index < r.end && mEnd2 > r.start){ overlap=true; break; } }
     if(!overlap){
       totalDiscount += parseFloat(m[1]||0);
     }
@@ -2316,10 +2336,15 @@ function localParse(raw){
   if(/moxi/i.test(raw)) results.push({item:'moxi', qty:1});
   if(/라라필/i.test(raw)) results.push({item:'라라필', qty:1});
   if(/아쿠아필/i.test(raw)) results.push({item:'아쿠아필', qty:1});
-  if(/ldm/i.test(raw)) results.push({item:'LDM', qty:1});
+  // "코레지orLDM"이면 코레지에서 이미 처리 → LDM 중복 방지
+  if(/ldm/i.test(raw) && !/코레지.*ldm|ldm.*코레지/i.test(raw)) results.push({item:'LDM', qty:1});
   if(/플라즈마(?!엑소)/i.test(raw)) results.push({item:'플라즈마', qty:1});
   if(/플라즈마엑소좀/i.test(raw)) results.push({item:'플라즈마엑소좀', qty:1});
-  if(/코레지셀핏/i.test(raw)) results.push({item:'코레지셀핏', qty:1});
+  // 코레지(셀핏) — "코레지" 줄임말 지원, 회차 파싱, "코레지orLDM" → 코레지셀핏으로 통일
+  if(/코레지/i.test(raw)){
+    const coreM = raw.match(/코레지(?:셀핏)?\s*(?:or\s*ldm\s*)?\s*(?:\([^)]*\))?\s*(\d+)\s*회/i);
+    results.push({item:'코레지셀핏', qty: coreM ? parseInt(coreM[1]) : 1});
+  }
   if(/아이리프팅/i.test(raw)) results.push({item:'아이리프팅', qty:1});
   if(/아그네스/i.test(raw)) results.push({item:'아그네스', qty:1});
   if(/피코슈어|피코포커스|피코웨이/i.test(raw)) results.push({item:'피코슈어', qty:1});
@@ -2329,14 +2354,35 @@ function localParse(raw){
     results.push({item:'제네시스+PTT', qty: gM&&gM[1]?parseInt(gM[1]):1});
   } else if(/제네시스/i.test(raw)) results.push({item:'제네시스', qty:1});
   if(/수면/i.test(raw)) results.push({item:'수면비', qty:1});
-  // ── NAD (별도 항목 + 수액도 함께) ──
-  if(/nad/i.test(raw)){
-    results.push({item:'NAD', qty:1});
-    results.push({item:'수액', qty:1});
-  }
-  // ── 수액 (폭탄수액/백옥슈팅/비타민수액/리커버리 등, NAD 없을 때) ──
-  if(/폭탄수액|백옥슈팅|비타민수액|리커버리수액|리바이탈수액/i.test(raw)){
-    results.push({item:'수액', qty:1});
+  // ── 수액세트 파싱: "수액(NAD+백옥+비타민)5회" → NAD, 백옥, 수액 각 별도항목 ──
+  // 수액 세트 패턴: "수액(NAD+백옥+비타민)5회70.4" 또는 "NAD+백옥+비타민수액 5회"
+  const ivSetM = raw.match(/수액\s*\(([^)]+)\)\s*(\d+)\s*회/i);
+  if(ivSetM){
+    const ivQty = parseInt(ivSetM[2]);
+    const ivComponents = ivSetM[1].split(/[+,]/);
+    ivComponents.forEach(c => {
+      const comp = c.trim();
+      if(/nad/i.test(comp)) results.push({item:'NAD', qty:ivQty});
+      else if(/백옥/i.test(comp)) results.push({item:'백옥', qty:ivQty});
+      // 비타민 → 수액으로 처리
+      else if(/비타민/i.test(comp)) results.push({item:'수액', qty:ivQty});
+    });
+  } else {
+    // NAD (별도 항목 + 수액도 함께)
+    if(/nad/i.test(raw)){
+      const nadQtyM = raw.match(/nad\s*(\d+)\s*회/i);
+      results.push({item:'NAD', qty: nadQtyM ? parseInt(nadQtyM[1]) : 1});
+      results.push({item:'수액', qty: nadQtyM ? parseInt(nadQtyM[1]) : 1});
+    }
+    // 백옥 (단독)
+    if(/백옥/i.test(raw) && !ivSetM){
+      const baekQtyM = raw.match(/백옥\s*(\d+)\s*회/i);
+      results.push({item:'백옥', qty: baekQtyM ? parseInt(baekQtyM[1]) : 1});
+    }
+    // 수액 (폭탄수액/백옥슈팅/비타민수액/리커버리 등, NAD 없을 때)
+    if(!(/nad/i.test(raw)) && /폭탄수액|백옥슈팅|비타민수액|리커버리수액|리바이탈수액/i.test(raw)){
+      results.push({item:'수액', qty:1});
+    }
   }
   if(/새살주사/i.test(raw)) results.push({item:'새살주사', qty:1});
   if(/스킨바이브/i.test(raw)){
@@ -2722,9 +2768,9 @@ async function parsePayment(){
   try {
     const parsed = localParse(text);
     // ── 시술의사 자동 세팅 ──
-    if(parsed.doctor){
+    {
       const docSel = document.getElementById('f-doctor');
-      if(docSel) docSel.value = parsed.doctor;
+      if(docSel) docSel.value = parsed.doctor || '기록없음';
     }
     // ── 적립금차감 전액결제 감지 → 결제금액 0 자동 세팅 ──
     const hasCreditPayAll = parsed.treatments?.some(t=>t._creditPayAll);
@@ -2892,18 +2938,34 @@ function extractAmount(text){
   // 환불 전용 bare Nm 폴백: "계좌환불 64.9m 완료" → 64.9
   if(/환불/i.test(text)){
     const m4 = text.match(/([\d,.]+)\s*[mM]/i);
-    if(m4) return parseFloat(m4[1].replace(/,/g,''));
+    if(m4) return -Math.abs(parseFloat(m4[1].replace(/,/g,'')));
+    // 괄호 안 금액 폴백: "예약금환불(4/16 제로환불 3.3)" → -3.3
+    // 마지막 숫자를 금액으로 사용 (날짜 등 오인 방지)
+    const parenContent = text.match(/\(([^)]+)\)/);
+    if(parenContent){
+      const nums = [...parenContent[1].matchAll(/(?<!\/)(\d+\.?\d*)(?!\/)/g)].map(n=>parseFloat(n[1]));
+      const amt = nums.filter(n=>n>0 && n<1000).pop();
+      if(amt) return -Math.abs(amt);
+    }
   }
   return null;
 }
 
 /* ── 결제방식 추출 ── */
 function extractPayment(text){
-  // 환불: 이체(현영)으로 자동 설정 (환불후재결제+위약금은 제외)
+  // 환불: 결제방식 자동 설정 (환불후재결제+위약금은 제외)
   if(/환불/i.test(text) && !/환불\s*후\s*재결제/i.test(text) && !/위약금/i.test(text)){
+    // 제로환불 → 제로페이, 그 외 → 이체(현영)
+    const isZero = /제로/i.test(text);
+    const refundMethod = isZero ? '제로페이' : '이체(현영)';
     const refM = text.match(/([\d,.]+)\s*만\s*원/i) || text.match(/[=＝]\s*([\d,.]+)\s*[mM]/i) || text.match(/([\d,.]+)\s*[mM]/i);
-    const amt = refM ? -parseFloat(refM[1].replace(/,/g,'')) : 0;
-    return { methods: ['이체(현영)'], splitDetails: [{method:'이체(현영)', amt}] };
+    let amt = refM ? -parseFloat(refM[1].replace(/,/g,'')) : 0;
+    // 괄호 안 금액도 추출: "예약금환불(4/16 제로환불 3.3)" → 3.3
+    if(amt === 0){
+      const parenM = text.match(/환불\s*(?:\([^)]*?\s+)?([\d.]+)\s*\)?/i);
+      if(parenM) amt = -parseFloat(parenM[1]);
+    }
+    return { methods: [refundMethod], splitDetails: [{method: refundMethod, amt}] };
   }
   // ── VIP 결제방식 우선 추출: vip1500 = 1500 (카), vip700 = 700(알리) ──
   if(/vip\s*\d/i.test(text)){
@@ -3088,6 +3150,7 @@ function normalizePayMethod(s){
   if(/알리/.test(s)) return '알리페이';
   if(/자진/.test(s)) return '현금(자진)';
   if(/미수/.test(s)) return '미수';
+  if(/제로|zero/.test(s)) return '제로페이';
   return null;
 }
 
