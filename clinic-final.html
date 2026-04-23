@@ -277,7 +277,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
         <h2 style="font-size:20px;font-weight:800;margin-bottom:3px;">종합 분석</h2>
         <p style="color:#64748b;font-size:13px;">저장된 월별 데이터를 기반으로 직원별 추이를 분석해요</p>
       </div>
-      <button class="btn btn-o btn-sm" onclick="renderTrendTab()">🔄 새로고침</button>
+      <button class="btn btn-o btn-sm" onclick="refreshTrendFromDB()">🔄 새로고침</button>
     </div>
     <div id="trend-content"></div>
   </div>
@@ -1378,6 +1378,153 @@ function renderCrossTable(){
   el.innerHTML=h;
 }
 
+/* ═══ 종합 분석 — DB 새로고침 ═══ */
+async function refreshTrendFromDB(){
+  if(!window.fbGetConsultations){renderTrendTab();return;}
+  var el=document.getElementById('trend-content');
+  if(el) el.innerHTML='<div style="text-align:center;padding:40px;color:#64748b;">📊 상담 DB에서 최신 데이터 동기화 중...</div>';
+
+  try{
+    // 아카이브에 저장된 상담리스트 월들을 찾아 각각 갱신
+    var arc=G.arc||[];
+    var updated=false;
+    for(var ai=0;ai<arc.length;ai++){
+      var a=arc[ai];
+      var lbl=a.label||'';
+      // 상담리스트 타입만 갱신 (엑셀 업로드는 건드리지 않음)
+      if(!lbl.includes('상담리스트')) continue;
+      // 라벨에서 년월 추출: "2026년 04월_(상담리스트)" → "2026-04"
+      var ymM=lbl.match(/(\d{4})년?\s*(\d{1,2})월/);
+      if(!ymM) continue;
+      var ym=ymM[1]+'-'+String(parseInt(ymM[2])).padStart(2,'0');
+      var from=ym+'-01', to=ym+'-31';
+
+      var items=await window.fbGetConsultations(from,to);
+      items=items.filter(function(it){return it.type!=='vip';});
+      if(!items.length) continue;
+
+      // cRows 재생성
+      var rows=items.map(function(it){
+        return {
+          '상담자': it.staff||'미지정',
+          '내원경로': it.cat1||'미지정',
+          '결제금액': parseFloat(it.amount)||0,
+          '날짜': it.date||'',
+          '차트번호': it.chart||'',
+          '이름': it.name||'',
+          '진료의사': it.doctor||'',
+          '분류2': it.cat2||'',
+          '결제내역': it.paymentText||'',
+          '결제방식': (function(){
+            var pm=it.paymentMethods;
+            if(pm&&pm.items&&pm.items.length) return pm.items.map(function(p){return p.method+(p.amt?' '+p.amt:'');}).join('+');
+            if(pm&&pm.methods&&pm.methods.length) return pm.methods.join('/');
+            return '';
+          })()
+        };
+      });
+
+      // cData 재계산
+      var cCols={staff:'상담자',channel:'내원경로',amount:'결제금액',manwon:true};
+      var sMap={},chMap={},tot=0,cnt=0;
+      rows.forEach(function(r){
+        var amt=(parseFloat(r['결제금액'])||0)*10000;
+        var sv=(r['상담자']||'미지정').trim()||'미지정';
+        var cv=(r['내원경로']||'미지정').trim()||'미지정';
+        tot+=amt;cnt++;
+        if(!sMap[sv])sMap[sv]={tot:0,cnt:0};sMap[sv].tot+=amt;sMap[sv].cnt++;
+        if(!chMap[cv])chMap[cv]={tot:0,cnt:0};chMap[cv].tot+=amt;chMap[cv].cnt++;
+      });
+      var byStaff=Object.keys(sMap).map(function(k){return{name:k,total:sMap[k].tot,count:sMap[k].cnt,avg:sMap[k].cnt?Math.round(sMap[k].tot/sMap[k].cnt):0};}).sort(function(a,b){return b.total-a.total;});
+      var byChannel=Object.keys(chMap).map(function(k){return{name:k,total:chMap[k].tot,count:chMap[k].cnt};}).sort(function(a,b){return b.total-a.total;});
+
+      a.cData={total:tot,count:cnt,byStaff:byStaff,byChannel:byChannel};
+      a.cRows=rows;
+      a.cCols=cCols;
+
+      // aData 재계산 (시술 집계)
+      var treatMap={};
+      items.forEach(function(it){
+        (it.treatments||[]).forEach(function(t){
+          var nm=(t.item||'').trim();
+          if(!nm) return;
+          if(!treatMap[nm]) treatMap[nm]={count:0};
+          treatMap[nm].count+=(parseFloat(t.qty)||1);
+        });
+      });
+      if(Object.keys(treatMap).length){
+        var cfgT=loadCfg();
+        var aItems=[];
+        Object.keys(treatMap).forEach(function(nm){
+          var c=treatMap[nm].count;
+          var pr=cfgT.procedures[nm]?parseFloat(cfgT.procedures[nm].price)||0:0;
+          aItems.push({name:nm,count:c,price:pr,subtotal:c*pr});
+        });
+        aItems.sort(function(x,y){return y.subtotal-x.subtotal});
+        a.aData={items:aItems,totalCost:aItems.reduce(function(s,i){return s+i.subtotal},0)};
+      }
+
+      // bData 재계산 (수수료)
+      var routeMap={};
+      items.forEach(function(it){
+        var route=(it.cat1||'').trim();
+        if(!route||/합계|총계/.test(route)) return;
+        var amt2=(parseFloat(it.amount)||0)*10000;
+        if(!routeMap[route]) routeMap[route]=0;
+        routeMap[route]+=amt2;
+      });
+      if(Object.keys(routeMap).length){
+        var cfgB=loadCfg();
+        var bItems=[];
+        Object.keys(routeMap).forEach(function(route){
+          var amt3=routeMap[route];
+          var rc=cfgB.routes[route];
+          var v=rc?parseFloat(rc.value)||0:0;
+          var tp=rc?rc.type:'percent';
+          var comm=tp==='percent'?amt3*(v/100):v;
+          bItems.push({route:route,amount:amt3,type:tp,value:v,commission:comm});
+        });
+        a.bData={items:bItems,totalAmount:bItems.reduce(function(s,i){return s+i.amount},0),totalCommission:bItems.reduce(function(s,i){return s+i.commission},0)};
+      }
+
+      a.savedAt=new Date().toISOString();
+
+      // Firebase에 저장
+      function cleanVal(v){
+        if(v===undefined||v===null)return null;
+        try{var str=JSON.stringify(v,function(k,val){if(val===undefined)return null;return val;});var parsed=JSON.parse(str);return deepClean(parsed);}catch(e){return null;}
+      }
+      function deepClean(obj){
+        if(Array.isArray(obj))return obj.map(deepClean);
+        if(obj&&typeof obj==='object'){var out={};Object.keys(obj).forEach(function(k){if(k==='')return;out[k]=deepClean(obj[k]);});return out;}
+        return obj;
+      }
+      var entry={
+        label:a.label, displayLabel:a.displayLabel||a.label, savedAt:a.savedAt,
+        cData:cleanVal(a.cData), aData:cleanVal(a.aData), bData:cleanVal(a.bData),
+        bankData:cleanVal(a.bankData), bankManualCards:cleanVal(a.bankManualCards)||[],
+        bankEditedCards:cleanVal(a.bankEditedCards)||[],
+        fixedEditedCosts:a.fixedEditedCosts!==null?cleanVal(a.fixedEditedCosts):null,
+        cFile:a.cFile||'', aFile:a.aFile||'', bFile:a.bFile||'',
+        cCols:cleanVal(a.cCols),
+        cRows:cleanVal(a.cRows), aRows:cleanVal(a.aRows), bRows:cleanVal(a.bRows)
+      };
+      var sz=JSON.stringify(entry).length;
+      if(sz>900000){entry.cRows=null;entry.aRows=null;entry.bRows=null;entry._rowsOmitted=true;}
+      if(window.fbSave) await window.fbSave(entry);
+      updated=true;
+    }
+    if(updated){
+      renderArcList();
+      renderCloudTab();
+    }
+    renderTrendTab();
+  }catch(e){
+    console.error('refreshTrendFromDB:',e);
+    renderTrendTab();
+  }
+}
+
 /* ═══ 종합 분석 탭 ═══ */
 function renderTrendTab(){
   var el=document.getElementById('trend-content');
@@ -1656,7 +1803,7 @@ function renderArcList(){
     if(a.cData)sub.push(won(a.cData.total));
     if(a.aData)sub.push('재료 '+won(a.aData.totalCost));
     if(a.bData)sub.push('수수료 '+won(a.bData.totalCommission));
-    return'<div class="sbm" id="sbm-'+i+'" onclick="viewArc('+i+')">'+'<span class="sbm-del" onclick="event.stopPropagation();delArc('+i+')" title="삭제">✕</span>'+'<div class="sbm-name">'+esc(a.displayLabel||a.label)+'</div>'+'<div class="sbm-sub">'+sub.join(' · ')+'</div></div>';
+    return'<div class="sbm" id="sbm-'+i+'" onclick="viewArc('+i+')">'+'<span class="sbm-del" onclick="event.stopPropagation();renameArc('+i+')" title="이름 수정">✏</span>'+'<span class="sbm-del" onclick="event.stopPropagation();delArc('+i+')" title="삭제">✕</span>'+'<div class="sbm-name">'+esc(a.displayLabel||a.label)+'</div>'+'<div class="sbm-sub">'+sub.join(' · ')+'</div></div>';
   }).join('');
 }
 function viewArc(i){
@@ -1724,8 +1871,19 @@ function downloadArcCSV(){
 }
 function delArc(i){
   var a=G.arc[i]; if(!a)return;
-  if(!confirm('"'+a.label+'" 삭제할까요?'))return;
+  if(!confirm('"'+(a.displayLabel||a.label)+'" 삭제할까요?'))return;
   if(window.fbDelete) window.fbDelete(a.label);
+}
+async function renameArc(i){
+  var a=G.arc[i]; if(!a) return;
+  var cur=a.displayLabel||a.label;
+  var newName=prompt('표시 이름 수정:',cur);
+  if(!newName||newName.trim()===cur) return;
+  a.displayLabel=newName.trim();
+  if(window.fbSave){ await window.fbSave(a); }
+  renderArcList();
+  renderCloudTab();
+  renderTrendTab();
 }
 function openSaveMdl(){
   if(!G.cData&&!G.aData&&!G.bData&&!G.bankData){alert('분석 데이터가 없어요');return}
@@ -3465,6 +3623,7 @@ function renderCloudTab(){
     if(hasARows)h+='<button class="btn btn-o btn-sm" style="font-size:11px;" onclick="downloadCloudCSV('+i+',\'a\')">⬇ 시술집계</button>';
     if(hasBRows)h+='<button class="btn btn-o btn-sm" style="font-size:11px;" onclick="downloadCloudCSV('+i+',\'b\')">⬇ 구분집계</button>';
     h+='<button class="btn btn-o btn-sm" style="font-size:11px;" onclick="loadAndAnalyze('+i+')">📊 분석 보기</button>';
+    h+='<button class="btn btn-sm" style="font-size:11px;background:#fef2f2;color:#ef4444;border:1px solid #fecaca;" onclick="delArc('+i+')">✕ 삭제</button>';
     h+='</div></div>';
 
     // 데이터 현황 배지
