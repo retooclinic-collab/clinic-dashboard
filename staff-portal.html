@@ -1063,6 +1063,7 @@ function extractTextPrices(raw, treatments){
     .replace(/총\s*[\d.,]+\s*[mM만]?\s*$/gim, '')        // "총435.9" 잔여 제거
     .replace(/^\s*[-－]\s*/gm, '')                       // 줄 시작 - (리스트 마커) 제거
     .replace(/(?:^|[\s,+])(\d+)\)\s*/g, '$1 ')            // "8) " 같은 번호 마커 제거 (e) 아닌 순수 숫자)
+    .replace(/\d+[-－]\d+[,\d]*/g, '')       // 영역번호 (2-1,2 등) 사전 제거 — 세그먼트 분리 콤마 오인 방지
     // 이벤트 그룹 전체(접두어+시술명+총액) 제거 — standalone 가격만 남기기
     .replace(/\d+월?(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)[^=]*?(?:[\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g, ',')
     .replace(/\d+월?(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)(?:[^=]|\([^)]*\))+?[=＝]\s*[\d.]+\s*[mM万]/g, ',')  // =가격 형식
@@ -3004,6 +3005,23 @@ function extractPayment(text){
     const inner = lastAmtPay[2]
       .replace(/이체\s*[+,]\s*자진/gi, '이체현영')
       .replace(/현\s*[,+]\s*자진/gi, '현금자진');
+    // 날짜+방식+금액 패턴 사전 추출: "4/21 제로 3.3+4/22 제로 3.3+4/22 위챗 19.8"
+    const datePayParts = [...inner.matchAll(/\d+\/\d+\s+([가-힣a-zA-Z]+)\s+([\d.]+)/g)];
+    if(datePayParts.length > 0){
+      // 날짜별 결제 → 방식별 합산
+      const methodSums = {};
+      datePayParts.forEach(dp => {
+        const method = normalizePayMethod(dp[1]);
+        if(method){
+          methodSums[method] = (methodSums[method]||0) + parseFloat(dp[2]);
+          if(!methods.includes(method)) methods.push(method);
+        }
+      });
+      Object.entries(methodSums).forEach(([method, amt]) => {
+        splitDetails.push({method, amt: Math.round(amt*100)/100});
+      });
+      return {methods, splitDetails};
+    }
     // 분할결제: (120현금자진+50.5카), (400카+나머지알리), (카998.7 위챗850) 형태
     // 공백도 구분자로 사용 (방식+금액 형태: "카998.7 위챗850")
     const parts = inner.split(/[+,\/\s]+/).filter(Boolean);
