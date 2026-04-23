@@ -1982,8 +1982,9 @@ function localParse(raw){
   } else { window._ondaPrice = null; }
 
   // ── 엠페이스 ──
-  const empeM = raw.match(/엠페(?:이스)?\s*\(?\d+\s*분\)?\s*(\d+)?\s*회/i);
-  const empeMin = raw.match(/엠페(?:이스)?\s*\(?(\d+)\s*분\)?/i);
+  // "엠페이스2-1,2(40분)176" → 영역번호(콤마 포함) 등 중간 텍스트 허용
+  const empeM = raw.match(/엠페(?:이스)?.*?\(?\d+\s*분\)?\s*(\d+)?\s*회/i);
+  const empeMin = raw.match(/엠페(?:이스)?.*?\(?(\d+)\s*분\)?/i);
   const empeS = /엠페(?:이스)?/i.test(raw) && !empeM;
   if(empeM) results.push({item:'엠페이스', qty: empeM[1]?parseInt(empeM[1]):1});
   else if(empeMin){
