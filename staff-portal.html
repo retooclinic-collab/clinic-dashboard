@@ -1067,7 +1067,7 @@ function extractTextPrices(raw, treatments){
     .replace(/\d+월?(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트\s+)[^=]*?(?:[\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g, ',')
     .replace(/[가-힣]+[eE][가-힣]*\)\s*[^=]*?(?:[\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g, ',')  // 한글 이벤트
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '')    // -예약금제외 제거
-    .replace(/[-－\s]*\d+\s*[mM만]?\s*(?:적립금|추가)?할인/gi, '')  // -25적립금할인, -49할인, -4m추가할인 등 제거
+    .replace(/[-－\s]*[\d.]+\s*[mM만%]?\s*(?:적립금|추가)?할인/gi, '')  // -25적립금할인, -49할인, -50%할인, -0.5할인, -4m추가할인 등 제거
     .replace(/[-－\s]*\d+\s*[mM만]?\s*(?:적립금|선납금|금액|잔액|포인트)\s*(?:차감|제외|사용)/gi, '') // -N적립금차감 제거
     .replace(/\+\s*,/g, ',').replace(/,\s*\+/g, ',')   // +, 또는 ,+ 정리
     .replace(/,,+/g, ',').replace(/^[,\s]+|[,\s]+$/gm, ''); // 연속 콤마·공백 정리
@@ -1175,8 +1175,8 @@ function extractTextPrices(raw, treatments){
       // -3.3예약금 제외 / -예약금 / -예약금3.3 제외 등 (공백 허용)
       .replace(/[-－]\s*[\d.]*\s*[mM만]?\s*예약금[^+,\n]*/gi, '')
       // -25할인, 추가1.9m할인, -4m추가할인 등 할인 패턴 제거
-      .replace(/[-－]\s*[\d.]+\s*[mM만]?\s*(?:추가)?할인/gi, '')
-      .replace(/추가\s*[\d.]+\s*[mM만]?\s*할인/gi, '');
+      .replace(/[-－]\s*[\d.]+\s*[mM万%]?\s*(?:추가)?할인/gi, '')
+      .replace(/추가\s*[\d.]+\s*[mM万%]?\s*할인/gi, '');
     // /숫자 형식 (예: 울쎄라300/191.4)
     const slashPrice = seg2.match(/\/\s*([\d]+\.?\d*)/);
     if(slashPrice){ const v=parseFloat(slashPrice[1]); if(v>=1&&v<3000) return v; }
@@ -1197,6 +1197,17 @@ function extractTextPrices(raw, treatments){
 
   // BBL 직접 추출 가격 우선 반영
   Object.assign(found, bblPriceMap);
+
+  // 줄기세포+PPP/하이쿡스 세트 가격 추출: "줄기세포60cc(...)+ppp(...)198" → 줄기세포60cc=198
+  // 괄호 안 +를 허용하기 위해 (?:[^+,\n]|\([^)]*\))* 사용
+  const stemCellSetM = raw.match(/줄기세포\s*(\d+)\s*cc(?:[^+,\n]|\([^)]*\))*\+\s*ppp(?:[^,\n]|\([^)]*(?:\([^)]*\))*[^)]*\))*?([\d.]+)/i)
+                     || raw.match(/줄기세포\s*(\d+)\s*cc(?:[^+,\n]|\([^)]*\))*\+\s*하이쿡스(?:[^,\n]|\([^)]*\))*?([\d.]+)/i);
+  if(stemCellSetM){
+    const ccSize = stemCellSetM[1];
+    const setPrice = parseFloat(stemCellSetM[2]);
+    const stemItem = `줄기세포${ccSize}cc`;
+    if(setPrice >= 1 && setPrice < 2000) found[stemItem] = setPrice;
+  }
 
   const segments = splitTopLevel(text);
 
@@ -1652,6 +1663,30 @@ function distributePrices(treatments, total, rawText){
     priced[balIdx] = {...priced[balIdx], price: deductAmt < 0 ? deductAmt : 0};
   }
 
+  // ── %할인 비율 스케일링 ──
+  // rawText에서 XX%할인 감지 → 양수 항목을 비율적으로 축소하여 최종합=total 맞춤
+  const pctDiscountM2 = rawText && rawText.match(/[-－]\s*([\d.]+)\s*%\s*할인/i);
+  const pctDiscountItem = pctDiscountM2 ? {_pctDiscount: parseFloat(pctDiscountM2[1])} : null;
+  if(pctDiscountItem){
+    // 고정 차감 항목 합산 (할인차감 등 음수 항목, _pctDiscount 항목 자체 제외)
+    const fixedDeducts = priced
+      .filter(t => t !== pctDiscountItem && (t.price < 0 || t._fixedAmt === 0))
+      .reduce((s,t) => s + t.price, 0);
+    // 양수(스케일링 대상) 항목 합산
+    const positiveItems = priced.filter(t => t !== pctDiscountItem && t.price > 0 && t._fixedAmt !== 0);
+    const positiveSum = positiveItems.reduce((s,t) => s + t.price, 0);
+    // 비율 계산: 양수항목 * ratio + 고정차감 = total (가급적 정수로 반올림)
+    if(positiveSum > 0){
+      const targetPositive = total - fixedDeducts;
+      const ratio = targetPositive / positiveSum;
+      positiveItems.forEach(t => {
+        t.price = Math.round(t.price * ratio);
+      });
+      // _pctDiscount 항목 자체는 제거 (비율이 적용됐으므로 별도 차감 불필요)
+      priced = priced.filter(t => t !== pctDiscountItem);
+    }
+  }
+
   // 반올림 오차 보정
   const newSum = priced.reduce((s,t)=>s+t.price, 0);
   const diff = Math.round((total-newSum)*100)/100;
@@ -1809,6 +1844,14 @@ function localParse(raw){
   });
   if(totalDiscount > 0){
     results.push({item:'할인차감', qty:1, _deductAmt: -totalDiscount});
+  }
+
+  // ── %할인 패턴 (예: -50%할인) → _pctDiscount 마커로 저장 (treatments에 안 넣고 별도 플래그) ──
+  const pctDiscountM = raw.match(/[-－]\s*([\d.]+)\s*%\s*할인/i);
+  let _pctDiscount = 0;
+  if(pctDiscountM){
+    const pctVal = parseFloat(pctDiscountM[1]);
+    if(pctVal > 0 && pctVal <= 100) _pctDiscount = pctVal;
   }
 
   // ── 위약금 파싱 ──
@@ -2263,6 +2306,10 @@ function localParse(raw){
   else if(/줄기세포\s*120/i.test(raw)) results.push({item:'줄기세포120cc', qty:1});
   else if(/줄기세포\s*60/i.test(raw)) results.push({item:'줄기세포60cc', qty:1});
   else if(/줄기세포\s*30/i.test(raw)) results.push({item:'줄기세포30cc', qty:1});
+  // 줄기세포+PPP/하이쿡스 세트: 하이쿡스는 재료 항목(price=0), 줄기세포에 세트가격 몰기
+  if(/하이쿡스/i.test(raw) || /ppp/i.test(raw)){
+    results.push({item:'하이쿡스', qty:1, _fixedAmt:0});
+  }
 
   // ── 기타 ──
   if(/자가엑소좀/i.test(raw)) results.push({item:'자가엑소좀', qty:1});
@@ -2449,8 +2496,9 @@ function localParse(raw){
 
   // SV(서비스/무료) 감지: "시술명SV" 또는 "시술명 SV" → 해당 항목 가격 0, qty는 유지
   // 예: "얼전국산b(눈밑눈가메인)SV" → 보톡스(국산) _fixedAmt:0
-  // 캡처 시 `+` 경계를 넘지 않도록 [^,\n+]+?로 제한 (over-match 방지)
-  const svPattern = /(?:^|[\n,+])([^,\n+]+?)sv(?:\s|[=,\n+(]|$)/gim;
+  // 괄호 안 +는 허용 (BBL(포에버영+스킨타이트닝) sv), 괄호 밖 +는 경계
+  // (?:[^,\n+(]|\([^)]*\))+ = 괄호블록 또는 비구분자 문자
+  const svPattern = /(?:^|[\n,+])((?:[^,\n+(]|\([^)]*\))+?)\s*sv(?:\s|[=,\n+(]|$)/gim;
   const svMatches = [..._origRaw.matchAll(svPattern)];
   if(svMatches.length > 0){
     results.forEach(r => {
@@ -2471,6 +2519,16 @@ function localParse(raw){
     // 이벤트 그룹 내 시술명 → 표준항목명 매핑 헬퍼
     const mapEventItem = (token) => {
       const t = token.toLowerCase().replace(/\s+/g,'');
+      // "대체" 키워드가 포함된 토큰은 설명용 → 시술로 파싱하지 않음
+      // 예: "온다40kj(티타늄대체)" → 온다만 파싱, 티타늄은 스킵
+      // 단, 토큰 자체가 대체 대상인 경우("티타늄대체")만 제외하고 메인 시술은 유지
+      if(/대체/.test(t)){
+        // 괄호 안의 대체 언급 제거 후 재처리: "온다40kj(티타늄대체)" → "온다40kj"
+        const cleaned = token.replace(/\([^)]*대체[^)]*\)/gi, '').trim();
+        if(cleaned && cleaned !== token) return mapEventItem(cleaned);
+        // 토큰 전체가 "○○대체"면 스킵
+        return null;
+      }
       // 샷/회/cc/kj 등 숫자 수량 추출
       let qty = 1;
       const shotM = t.match(/(\d+)샷/); if(shotM){
@@ -2516,6 +2574,13 @@ function localParse(raw){
       // 일반 시술
       if(/소프(?:웨이브)?/.test(t)) return [{item:'소프웨이브(50샷)', qty}];
       if(/울쎄라|울쎼라/.test(t)) return [{item:'울쎄라(100샷)', qty}];
+      if(/온다/.test(t)){
+        // 온다도 티타늄과 동일한 KJ 기반 단가 체계
+        const kjM = t.match(/(\d+)\s*kj/i);
+        const kj = kjM ? parseInt(kjM[1]) : 60;
+        const odPrice = kj>=100?165 : kj>=80?132 : kj>=60?99 : kj>=40?66 : 99;
+        return [{item:'온다', qty:1, _unitPrice: odPrice}];
+      }
       if(/티타늄/.test(t)){
         // KJ 기반 단가 힌트: 비례배분 정확도 개선
         const kjM = t.match(/(\d+)\s*kj/i);
@@ -2642,7 +2707,7 @@ function localParse(raw){
     if(docM && DOCTOR_NAMES.includes(docM[1])) doctor = docM[1];
   }
 
-  return {treatments: deduped, notes: notes.join(', '), doctor};
+  return {treatments: deduped, notes: notes.join(', '), doctor, _pctDiscount};
 }
 
 /* ── 파싱 실행 ── */
