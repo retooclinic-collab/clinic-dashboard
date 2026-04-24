@@ -2121,6 +2121,8 @@ function renderDailyTotals(){
   var tAmt=0, tComm=0, tMat=0, cnt=_dailyFiltered.length;
   // 실장별/경로별/의사별 소계
   var byStaff={}, byCat={}, byDoc={};
+  // 분류1→분류2 세부 집계
+  var byCat2={}; // {cat1: {cat2: {amt,comm,mat,cnt}}}
   // 1차: percent 수수료만 건별 계산
   _dailyFiltered.forEach(function(it){
     var amt=(parseFloat(it.amount)||0)*10000;
@@ -2134,6 +2136,11 @@ function renderDailyTotals(){
     var ck=cat1||'미분류';
     if(!byCat[ck]) byCat[ck]={amt:0,comm:0,mat:0,cnt:0};
     byCat[ck].amt+=amt; byCat[ck].comm+=comm; byCat[ck].mat+=mat; byCat[ck].cnt++;
+    // 분류2 세부 집계
+    var c2=(it.cat2||'').trim()||'(미지정)';
+    if(!byCat2[ck]) byCat2[ck]={};
+    if(!byCat2[ck][c2]) byCat2[ck][c2]={amt:0,comm:0,mat:0,cnt:0};
+    byCat2[ck][c2].amt+=amt; byCat2[ck][c2].comm+=comm; byCat2[ck][c2].mat+=mat; byCat2[ck][c2].cnt++;
     var dk=it.doctor||'미지정';
     if(!byDoc[dk]) byDoc[dk]={amt:0,comm:0,mat:0,cnt:0};
     byDoc[dk].amt+=amt; byDoc[dk].comm+=comm; byDoc[dk].mat+=mat; byDoc[dk].cnt++;
@@ -2253,6 +2260,9 @@ function renderDailyTotals(){
   // 내원경로별 소계 테이블
   h+=buildSortableTable('cat','내원경로별 소계','🔀',byCat,'경로');
 
+  // 내원경로 분류2 세부 분석
+  h+=buildCat2Drilldown(byCat, byCat2, cnt);
+
   // 의사별 소계 테이블
   h+=buildSortableTable('doc','시술의사별 소계','👩‍⚕️',byDoc,'의사');
 
@@ -2285,6 +2295,75 @@ function getUnitPrice(name, cfg2){
   if(/줄기세포.*?60/i.test(name)) return parseFloat((cfg2.procedures['줄기세포 60cc']||{}).price)||297500;
   if(/줄기세포.*?30/i.test(name)) return parseFloat((cfg2.procedures['줄기세포30cc']||{}).price)||145000;
   return 0;
+}
+
+function buildCat2Drilldown(byCat, byCat2, totalCnt){
+  var cats=Object.keys(byCat);
+  // 분류2 데이터가 있는 경로만 (미지정만 있는 건 제외)
+  var hasCat2=false;
+  cats.forEach(function(c1){
+    var subs=byCat2[c1]||{};
+    var keys=Object.keys(subs);
+    if(keys.length>1 || (keys.length===1 && keys[0]!=='(미지정)')) hasCat2=true;
+  });
+  if(!hasCat2) return '';
+
+  // 정렬: 건수 많은 순
+  cats.sort(function(a,b){ return byCat[b].cnt - byCat[a].cnt; });
+
+  var h='<details style="margin-bottom:8px;"><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">📂 내원경로 분류2 세부 분석</summary>';
+  h+='<div style="display:grid;gap:10px;">';
+
+  cats.forEach(function(c1){
+    var parent=byCat[c1];
+    var subs=byCat2[c1]||{};
+    var subKeys=Object.keys(subs).sort(function(a,b){ return subs[b].cnt - subs[a].cnt; });
+    // (미지정)만 있으면 스킵
+    if(subKeys.length<=1 && subKeys[0]==='(미지정)') return;
+
+    h+='<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+    h+='<div style="font-size:13px;font-weight:700;color:#1e293b;">'+esc(c1)+'</div>';
+    h+='<div style="font-size:11px;color:#64748b;">총 '+parent.cnt+'건 · '+formatW(parent.amt)+'</div>';
+    h+='</div>';
+
+    h+='<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+    h+='<thead><tr style="background:#e2e8f0;">';
+    h+='<th style="padding:5px 8px;text-align:left;color:#475569;">분류2</th>';
+    h+='<th style="padding:5px 8px;text-align:right;color:#475569;">건수</th>';
+    h+='<th style="padding:5px 8px;text-align:right;color:#475569;">비율</th>';
+    h+='<th style="padding:5px 8px;text-align:right;color:#475569;">수납액</th>';
+    h+='<th style="padding:5px 8px;text-align:right;color:#475569;">객단가</th>';
+    h+='<th style="padding:5px 8px;text-align:right;color:#475569;">수수료</th>';
+    h+='<th style="padding:5px 8px;text-align:right;color:#475569;">재료비</th>';
+    h+='</tr></thead><tbody>';
+
+    subKeys.forEach(function(c2,i){
+      var d=subs[c2];
+      var pct=parent.cnt>0?(d.cnt/parent.cnt*100).toFixed(1)+'%':'-';
+      var avg=d.cnt>0?d.amt/d.cnt:0;
+      var bg=i%2===0?'#ffffff':'#f1f5f9';
+      // 비율 바
+      var barW=parent.cnt>0?Math.round(d.cnt/parent.cnt*100):0;
+
+      h+='<tr style="background:'+bg+';border-bottom:1px solid #e2e8f0;">';
+      h+='<td style="padding:5px 8px;color:#1e293b;font-weight:600;">'+esc(c2);
+      h+='<div style="margin-top:2px;height:3px;background:#e2e8f0;border-radius:2px;"><div style="height:3px;background:#3b82f6;border-radius:2px;width:'+barW+'%;"></div></div>';
+      h+='</td>';
+      h+='<td style="padding:5px 8px;text-align:right;font-weight:700;color:#2563eb;">'+d.cnt+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#64748b;">'+pct+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#059669;font-weight:600;">'+formatW(d.amt)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#475569;">'+formatW(avg)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#f97316;">'+formatW(d.comm)+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:#a855f7;">'+formatW(d.mat)+'</td>';
+      h+='</tr>';
+    });
+
+    h+='</tbody></table></div>';
+  });
+
+  h+='</div></details>';
+  return h;
 }
 
 function buildTreatmentTop15(cfg2){
