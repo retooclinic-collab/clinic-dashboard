@@ -2256,10 +2256,119 @@ function renderDailyTotals(){
   // 의사별 소계 테이블
   h+=buildSortableTable('doc','시술의사별 소계','👩‍⚕️',byDoc,'의사');
 
+  // ── 시술항목 TOP 15 (사용 개수순) ──
+  h+=buildTreatmentTop15(cfg2);
+
   el.innerHTML=h;
   el.style.display=cnt>0?'block':'none';
   // 믹스/기여도 분석
   renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2);
+}
+
+function getUnitPrice(name, cfg2){
+  if(cfg2.procedures[name]) return parseFloat(cfg2.procedures[name].price)||0;
+  if(/울쎄라/i.test(name)) return parseFloat((cfg2.procedures['울쎄라(100샷)']||{}).price)||125000;
+  if(/소프웨이브|소프/i.test(name)) return parseFloat((cfg2.procedures['소프웨이브(50샷)']||{}).price)||70000;
+  if(/써마지.*?900/i.test(name)) return parseFloat((cfg2.procedures['써마지900샷']||{}).price)||883000;
+  if(/써마지.*?600/i.test(name)) return parseFloat((cfg2.procedures['써마지600']||{}).price)||804000;
+  if(/써마지.*?300/i.test(name)) return parseFloat((cfg2.procedures['써마지300']||{}).price)||549000;
+  if(/아이써마지.*?450/i.test(name)) return parseFloat((cfg2.procedures['아이써마지450샷']||{}).price)||462000;
+  if(/아이써마지.*?225/i.test(name)) return parseFloat((cfg2.procedures['아이써마지225']||{}).price)||360000;
+  if(/보톡스.*?국/i.test(name)) return parseFloat((cfg2.procedures['보톡스(국산)']||{}).price)||10000;
+  if(/보톡스.*?수입/i.test(name)) return parseFloat((cfg2.procedures['보톡스(수입)']||{}).price)||50000;
+  if(/필러.*?수입/i.test(name)) return parseFloat((cfg2.procedures['필러(수입)']||{}).price)||130000;
+  if(/포텐자.*?모공/i.test(name)) return parseFloat((cfg2.procedures['포텐자(모공)']||{}).price)||33000;
+  if(/포텐자.*?기미/i.test(name)) return parseFloat((cfg2.procedures['포텐자(기미)']||{}).price)||33000;
+  if(/포텐자.*?펌핑|펌핑팁/i.test(name)) return parseFloat((cfg2.procedures['포텐자(펌핑)']||{}).price)||55000;
+  if(/줄기세포.*?240/i.test(name)) return parseFloat((cfg2.procedures['줄기세포240cc']||{}).price)||765000;
+  if(/줄기세포.*?120/i.test(name)) return parseFloat((cfg2.procedures['줄기세포120cc']||{}).price)||510000;
+  if(/줄기세포.*?60/i.test(name)) return parseFloat((cfg2.procedures['줄기세포 60cc']||{}).price)||297500;
+  if(/줄기세포.*?30/i.test(name)) return parseFloat((cfg2.procedures['줄기세포30cc']||{}).price)||145000;
+  return 0;
+}
+
+function buildTreatmentTop15(cfg2){
+  if(!_dailyFiltered.length) return '';
+  // 시술항목 집계
+  var tMap={};
+  _dailyFiltered.forEach(function(it){
+    (it.treatments||[]).forEach(function(t){
+      var nm=(t.item||'').trim();
+      if(!nm) return;
+      var qty=parseFloat(t.qty)||1;
+      if(!tMap[nm]) tMap[nm]={qty:0, cnt:0};
+      tMap[nm].qty+=qty;
+      tMap[nm].cnt++;
+    });
+  });
+  var items=Object.keys(tMap).map(function(nm){
+    var d=tMap[nm];
+    var up=getUnitPrice(nm, cfg2);
+    return {name:nm, qty:d.qty, cnt:d.cnt, unitPrice:up, totalCost:up*d.qty};
+  });
+  // 정렬 상태 관리
+  if(!window._subtotalSort) window._subtotalSort={};
+  var ss=window._subtotalSort['treat']||{col:'qty',asc:false};
+  window._subtotalSort['treat']=ss;
+  items.sort(function(a,b){
+    var va=a[ss.col], vb=b[ss.col];
+    if(ss.col==='name') return ss.asc?va.localeCompare(vb):vb.localeCompare(va);
+    return ss.asc?va-vb:vb-va;
+  });
+  var top=items.slice(0,15);
+  if(!top.length) return '';
+  var totalMatAll=items.reduce(function(s,i){return s+i.totalCost;},0);
+  var totalQtyAll=items.reduce(function(s,i){return s+i.qty;},0);
+
+  var cols=[
+    {key:'rank',label:'#',align:'center'},
+    {key:'name',label:'시술명',align:'left'},
+    {key:'qty',label:'시행 횟수',align:'right'},
+    {key:'cnt',label:'처방 건수',align:'right'},
+    {key:'unitPrice',label:'재료비(건당)',align:'right'},
+    {key:'totalCost',label:'재료비(합계)',align:'right'},
+    {key:'pct',label:'비중',align:'right'}
+  ];
+  var th='';
+  cols.forEach(function(c){
+    if(c.key==='rank'||c.key==='pct'){
+      th+='<th style="padding:6px 8px;text-align:'+c.align+';color:#64748b;font-size:11px;">'+c.label+'</th>';
+    } else {
+      var active=ss.col===c.key;
+      var arrow=active?(ss.asc?' ▲':' ▼'):' ⇅';
+      var arrowColor=active?'#3b82f6':'#94a3b8';
+      th+='<th style="padding:6px 8px;text-align:'+c.align+';color:#64748b;font-size:11px;cursor:pointer;user-select:none;white-space:nowrap;" onclick="window._sortSubtotal(\'treat\',\''+c.key+'\')">';
+      th+=c.label+'<span style="font-size:9px;color:'+arrowColor+';margin-left:2px;">'+arrow+'</span></th>';
+    }
+  });
+  var tb='';
+  top.forEach(function(r,i){
+    var pct=totalMatAll>0?(r.totalCost/totalMatAll*100).toFixed(1)+'%':'-';
+    var bg=i%2===0?'#ffffff':'#f8fafc';
+    tb+='<tr style="background:'+bg+';border-bottom:1px solid #e2e8f0;">';
+    tb+='<td style="padding:6px 8px;text-align:center;color:#94a3b8;font-size:11px;">'+(i+1)+'</td>';
+    tb+='<td style="padding:6px 8px;font-weight:600;color:#1e293b;font-size:12px;">'+esc(r.name)+'</td>';
+    tb+='<td style="padding:6px 8px;text-align:right;font-weight:700;color:#2563eb;font-size:12px;">'+nf(r.qty)+'</td>';
+    tb+='<td style="padding:6px 8px;text-align:right;color:#475569;font-size:11px;">'+r.cnt+'건</td>';
+    tb+='<td style="padding:6px 8px;text-align:right;color:#8b5cf6;font-size:11px;">'+(r.unitPrice>0?formatW(r.unitPrice):'-')+'</td>';
+    tb+='<td style="padding:6px 8px;text-align:right;font-weight:600;color:#a855f7;font-size:12px;">'+(r.totalCost>0?formatW(r.totalCost):'-')+'</td>';
+    tb+='<td style="padding:6px 8px;text-align:right;color:#64748b;font-size:11px;">'+pct+'</td>';
+    tb+='</tr>';
+  });
+  // 합계 행
+  tb+='<tr style="background:#f1f5f9;border-top:2px solid #cbd5e1;font-weight:700;">';
+  tb+='<td colspan="2" style="padding:6px 8px;color:#1e293b;font-size:12px;">합계 (전체 '+items.length+'개 항목)</td>';
+  tb+='<td style="padding:6px 8px;text-align:right;color:#2563eb;font-size:12px;">'+nf(totalQtyAll)+'</td>';
+  tb+='<td style="padding:6px 8px;text-align:right;color:#475569;font-size:11px;">-</td>';
+  tb+='<td style="padding:6px 8px;text-align:right;color:#64748b;font-size:11px;">-</td>';
+  tb+='<td style="padding:6px 8px;text-align:right;color:#a855f7;font-size:12px;">'+formatW(totalMatAll)+'</td>';
+  tb+='<td style="padding:6px 8px;text-align:right;color:#64748b;font-size:11px;">100%</td>';
+  tb+='</tr>';
+
+  var out='<details style="margin-bottom:8px;" open><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">🧪 시술항목 TOP 15 (재료비 분석)</summary>';
+  out+='<table style="width:100%;border-collapse:collapse;">';
+  out+='<thead><tr style="background:#f1f5f9;">'+th+'</tr></thead><tbody>'+tb+'</tbody></table></details>';
+  return out;
 }
 
 // ─────────────────────────────────────────────────────────
