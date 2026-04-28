@@ -1750,7 +1750,9 @@ function localParse(raw){
       if(/^\s*vip\s*\d/i.test(t) || /^\s*\d+\s*vip/i.test(t)) return false;
       // 적립 합산줄: "1359.7+100=1459.7m 적립" 등 (숫자+숫자=숫자m 적립)
       if(/^\d[\d.]*\s*\+\s*\d[\d.]*\s*=\s*[\d.]+\s*[mM만]\s*적립/i.test(t)) return false;
-      // 메모/주석: "예약금N은..." "남은금액없음" "BBL...남음" "64.1m(남음)" 등
+      // 시술 키워드 포함 줄은 메모 필터 스킵 (시술 라인 끝에 "남음" 등 붙어도 보존)
+      if(/\d+월\s*[eE)\s]|이벤트|BBL|소프|울쎄라|울쎼라|미라젯|포텐자|리쥬란|쥬베룩|쥬브아셀|티타늄|온다|오푸스|필러|보톡스|튠페|튠라이너|LDM|아쿠아필/i.test(t)) return true;
+      // 메모/주석: "예약금N은..." "남은금액없음" "148.5남음" "지인분" 등
       if(/^예약금[\d.]|남은\s*금액|남음|지인분|^총\s*[\d.]+/i.test(t)) return false;
       // 차감줄: "1463-예약금=1459.7m 차감 후..." 등
       if(/^\d[\d.]*\s*-\s*예약금/i.test(t)) return false;
@@ -1780,7 +1782,7 @@ function localParse(raw){
   // 패턴1: 가격이 공백 뒤 숫자로 오는 경우 (기존)
   // - 괄호 블록 \([^)]*\) 을 하나의 단위로 건너뛰어 괄호 안 숫자를 가격으로 오인 방지
   // - 합산 가격 "511.5+99" 지원: [\d.]+(?:\+[\d.]+)* → 610.5
-  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=(]|\([^)]*\))*?)\s*([\d.]+(?:\+[\d.]+)*)\s*(?:[mM万]|(?=[-－,\n ]|$)|(?=\+(?!\d)))/g;
+  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=(]|\([^)]*\))*?)\s*([\d.]+(?:\+[\d.]+)*)\s*(?:[mM万]|(?=[-－,\n (]|$)|(?=\+(?!\d)))/g;
   let evMatch;
   while((evMatch = eventPattern.exec(raw)) !== null){
     const groupName = evMatch[1].replace(/\+/g,'+').trim();
@@ -1968,7 +1970,7 @@ function localParse(raw){
   } else {
     // ── 티타늄 (단독) — KJ에 따라 가격 다름 ──
     // "티타늄대체" = 티타늄 대신 다른 시술 → 티타늄 카운트 안 함
-    const isTitanReplace = /티타늄\s*대체/i.test(raw);
+    const isTitanReplace = /티타늄[\d\s]*대체/i.test(raw);
     // 홍/티타늄 패턴: 홍조치료 포함이라 티타늄은 카운트하되 가격 0원
     const isHongTitan = /홍\s*[\/·,]\s*티타늄/i.test(raw);
     const titanM = !isTitanReplace && raw.match(/티타늄\s*(?:\d+\s*kj)?\s*(?:\([^)]*\))?\s*(\d+)?\s*회/i);
@@ -2208,7 +2210,10 @@ function localParse(raw){
   }
 
   // ── 리투오 (미라젯 콤보에서 이미 처리된 경우 스킵) ──
-  if(!hasMjLto){
+  // "(또는리투오)" "또는 리투오" 등 대안 언급만 있는 경우 스킵
+  const _ltoAltOnly = /(?:또는|or)\s*리투오|리투오\s*(?:또는|or)/i.test(raw)
+                    && !raw.replace(/\([^)]*(?:또는|or)[^)]*리투오[^)]*\)/gi,'').replace(/\([^)]*리투오[^)]*(?:또는|or)[^)]*\)/gi,'').match(/리투오/i);
+  if(!hasMjLto && !_ltoAltOnly){
     const ltoM = raw.match(/리투오\s*(\d+)\s*병/i);
     const ltoQtyM = raw.match(/(?:리투오\s*\/\s*쥬브아셀|쥬브아셀\s*\/\s*리투오)\s*(\d+)\s*회/i) || raw.match(/리투오\s*(?:또는|or)?\s*쥬브아셀\s*(\d+)\s*회/i);
     const ltoQtyM2 = raw.match(/리투오\s*(\d+)\s*회/i);
@@ -2717,6 +2722,7 @@ function localParse(raw){
       if(/리투오/.test(t)) return [{item:'리투오', qty}];
       if(/아쿠아필/.test(t)) return [{item:'아쿠아필', qty:1}];
       if(/엠페이스/.test(t)) return [{item:'엠페이스', qty:1}];
+      if(/오푸스/.test(t)) return [{item:'오푸스', qty:1}];
       return null;
     };
 
@@ -2780,7 +2786,7 @@ function localParse(raw){
     });
     // 이벤트 그룹에서 피부관리로 흡수된 항목(LDM, 아쿠아필 등)이 메인 파서에서도 별도 감지된 경우 제거
     if(_eventGroupRawTokens.length > 0){
-      const egAbsorbed = ['LDM','아쿠아필','미라젯','리쥬란','쥬베룩볼륨','미라젯쥬베룩'];
+      const egAbsorbed = ['LDM','아쿠아필','미라젯','리쥬란','쥬베룩볼륨','미라젯쥬베룩','오푸스'];
       egAbsorbed.forEach(itemName => {
         const pattern = itemName === 'LDM' ? /ldm/i
           : itemName === '쥬베룩볼륨' ? /쥬베룩/i
@@ -2995,7 +3001,13 @@ function extractAmount(text){
   // ── VIP 결제금액 우선: "vip700 = 700 (알리)", "VIP1500 = 1500(카)", "VIP700+차액150=850m(카)" ──
   if(/vip\s*\d/i.test(text)){
     const vipM = text.match(/vip\s*\d+\s*(?:\+[^=]*?)?[=＝]\s*([\d,.]+)\s*[mM만]?\s*\(/i);
-    if(vipM){ const v = parseFloat(vipM[1].replace(/,/g,'')); if(v>0) return v; }
+    if(vipM){
+      let v = parseFloat(vipM[1].replace(/,/g,''));
+      // VIP적립 보너스 가산: "VIP800+80적립" → 800 + 80 = 880 (실효 크레딧)
+      const bonusM = text.match(/\+\s*(\d+)\s*적립/i);
+      if(bonusM) v += parseFloat(bonusM[1]);
+      if(v>0) return v;
+    }
   }
   // → 숫자m 패턴 우선 (최종 결제금액): "= 264m(...) → 258.8m(알리)" → 258.8
   const arrow = text.match(/→\s*(-?[\d,]+\.?\d*)\s*(?:[mM만](?:원)?)/);
