@@ -2272,18 +2272,20 @@ function localParse(raw){
   if(/포텐자.*?모공/i.test(raw)) results.push({item:'포텐자(모공)', qty:1});
   if(/포텐자.*?기미/i.test(raw)) results.push({item:'포텐자(기미)', qty:1});
 
-  // ── 필러 (수입) - 턱끝F, 목필러, 눈밑필러 등 포함 ──
-  const fillerImpMatches = [...raw.matchAll(/(?:턱끝[fF]|목필러|눈밑필러|관자필러|이마필러|옆볼필러|입술필러|턱필러|코필러|필러)\s*(\d+)\s*cc\s*\(?수입\)?|(?:수입)\s*필러\s*(\d+)\s*cc/gi)];
+  // ── 필러 (수입) - 턱끝F, 목필러, 눈밑필러, 입술F 등 포함 ──
+  // "F" = 필러 약어: 입술F(수입)1cc, 턱끝F(수입), 코F 등
+  const _fillerAliasRaw = raw.replace(/(?:턱끝|눈밑|관자|이마|옆볼|입술|턱|코|목)[fF]/gi, m => m.slice(0,-1)+'필러');
+  const fillerImpMatches = [..._fillerAliasRaw.matchAll(/(?:턱끝필러|목필러|눈밑필러|관자필러|이마필러|옆볼필러|입술필러|턱필러|코필러|필러)\s*\(?수입\)?\s*(\d+)\s*cc|(?:수입)\s*필러\s*(\d+)\s*cc/gi)];
   if(fillerImpMatches.length>0){
     let totalCC=0;
     fillerImpMatches.forEach(m=>{ totalCC+=parseInt(m[1]||m[2]||1); });
     results.push({item:'필러(수입)', qty: totalCC});
-  } else if(/(?:수입)\s*필러|필러.*?수입|턱끝[fF].*?수입|입술필러.*?수입|턱필러.*?수입|목필러.*?수입/i.test(raw)){
+  } else if(/(?:수입)\s*필러|필러.*?수입|턱끝[fF].*?수입|입술[fF필러].*?수입|턱[fF필러].*?수입|목필러.*?수입|[fF]\s*\(?수입\)?/i.test(raw)){
     results.push({item:'필러(수입)', qty:1});
   }
-  const fillerDomMatch = /(?:국산|국)\s*필러|필러.*?국산|입술필러.*?국[^산]|입술(?:필러)?.*?\(국\)/i.test(raw);
+  const fillerDomMatch = /(?:국산|국)\s*필러|필러.*?국산|입술[fF필러].*?국[^산]|입술(?:[fF]|필러)?.*?\(국\)/i.test(raw);
   if(fillerDomMatch){
-    const ccm = raw.match(/필러\s*(\d+)\s*cc/i);
+    const ccm = raw.match(/(?:필러|[fF])\s*(\d+)\s*cc/i);
     results.push({item:'필러(국산)', qty: ccm?parseInt(ccm[1]):1});
   }
 
@@ -2338,7 +2340,9 @@ function localParse(raw){
   }
 
   // ── 점제거 (사마귀·점·편사·얼굴점·act2 포함) ──
-  if(/사마귀|편사|얼굴점|(?:점\s*제거)|(?:점\s*\d+개)|act\.?\s*2/i.test(raw)){
+  // 괄호 안 "이마 점1개" 등 시술 영역 설명은 점제거가 아님 → rawNoParen 사용
+  const _rawNoParen = raw.replace(/\([^)]*\)/g, ' ');
+  if(/사마귀|편사|얼굴점|(?:점\s*제거)|(?:점\s*\d+개)|act\.?\s*2/i.test(_rawNoParen)){
     const countM = raw.match(/(?:사마귀|편사|얼굴점|점)\s*(\d+)\s*(?:개|곳|군데)/i)
                 || raw.match(/점\s*제거\s*(\d+)/i)
                 || raw.match(/act\.?\s*2\s*(\d+)/i);
@@ -2400,7 +2404,8 @@ function localParse(raw){
   if(/라라필/i.test(raw)) results.push({item:'라라필', qty:1});
   if(/아쿠아필/i.test(raw)) results.push({item:'아쿠아필', qty:1});
   // "코레지orLDM"이면 코레지에서 이미 처리 → LDM 중복 방지
-  if(/ldm/i.test(raw) && !/코레지.*ldm|ldm.*코레지/i.test(raw)) results.push({item:'LDM', qty:1});
+  // 괄호 안 메모 "(관리 LDM이나인텐스로)" 등에서만 언급된 경우 스킵 → _rawNoParen 사용
+  if(/ldm/i.test(_rawNoParen) && !/코레지.*ldm|ldm.*코레지/i.test(raw)) results.push({item:'LDM', qty:1});
   if(/플라즈마(?!엑소)/i.test(raw)) results.push({item:'플라즈마', qty:1});
   if(/플라즈마엑소좀/i.test(raw)) results.push({item:'플라즈마엑소좀', qty:1});
   // 코레지(셀핏) — "코레지" 줄임말 지원, 회차 파싱, "코레지orLDM" → 코레지셀핏으로 통일
@@ -2411,7 +2416,8 @@ function localParse(raw){
   if(/아이리프팅/i.test(raw)) results.push({item:'아이리프팅', qty:1});
   if(/아그네스/i.test(raw)) results.push({item:'아그네스', qty:1});
   if(/피코슈어|피코포커스|피코웨이/i.test(raw)) results.push({item:'피코슈어', qty:1});
-  if(/인텐스울트라|인텐스/i.test(raw)) results.push({item:'인텐스울트라', qty:1});
+  // 괄호 안 메모 "(관리 LDM이나인텐스로)" 등에서만 언급된 경우 스킵
+  if(/인텐스울트라|인텐스/i.test(_rawNoParen)) results.push({item:'인텐스울트라', qty:1});
   // 변경/교체/전환 맥락 괄호 안에만 제네시스가 있으면 스킵
   // 예: "(제네시스2회프로그램 변경)" → 제네시스는 메모, 별도 시술 아님
   { const _genRaw = raw.replace(/\([^)]*(?:변경|교체|전환)[^)]*\)/gi, '');
@@ -2456,9 +2462,10 @@ function localParse(raw){
     const sbM = raw.match(/스킨바이브\s*(\d+)\s*cc/i);
     results.push({item:'스킨바이브', qty: sbM?parseInt(sbM[1]):1});
   }
-  const taM = raw.match(/\bta\s*(\d+)\s*(?:ea|개|p)/i);
+  // 괄호 안 "or ta" 등 대안 언급만 있으면 스킵 → _rawNoParen 사용
+  const taM = _rawNoParen.match(/\bta\s*(\d+)\s*(?:ea|개|p)/i);
   if(taM) results.push({item:'TA', qty: parseInt(taM[1])});
-  else if(/\bta\b/i.test(raw)) results.push({item:'TA', qty:1});
+  else if(/\bta\b/i.test(_rawNoParen)) results.push({item:'TA', qty:1});
   const wgM = raw.match(/위고비.*?(\d+)\s*펜/i);
   if(wgM) results.push({item:'위고비', qty: parseInt(wgM[1])});
   else if(/위고비/i.test(raw)) results.push({item:'위고비', qty:1});
