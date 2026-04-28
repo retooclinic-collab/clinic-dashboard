@@ -1020,7 +1020,7 @@ const _ITEM_KEYWORDS = {
   '필러(국산)':/(?:국산.*?필러|필러.*?국)/i,
   '보톡스(국산)':/(?:보톡스.*?국|국산.*?b(?:톡스)?|b.*?국|국.*?보톡스)/i,
   '보톡스(수입)':/(?:제오민|\(제\)|보톡스.*?수입)/i,
-  '듀얼피코':/듀얼피코|피코토닝|피코(?!슈어|웨이|포커스|토닝)/i, '피코슈어':/피코슈어|피코웨이/i,
+  '듀얼피코':/듀얼피코|듀얼토닝|피코토닝|피코(?!슈어|웨이|포커스|토닝)/i, '피코슈어':/피코슈어|피코웨이/i,
   'moxi':/moxi/i, 'LDM':/ldm/i, '플라즈마':/플라즈마(?!엑소)/i,
   '라라필':/라라필/i, '수면비':/수면/i, '아이리프팅':/아이리프팅/i,
   '코레지셀핏':/코레지(?:셀핏)?/i, '아그네스':/아그네스/i,
@@ -1083,7 +1083,10 @@ function extractTextPrices(raw, treatments){
   const hasBblAcneText = /bbl.*?여드름/i.test(raw);
   const hasBblTightText = /bbl.*?스킨타이트닝/i.test(raw);
   // 포에버영은 색소/홍조 프로그램 포함 → 중복 카운트 방지
-  const bblHasColorText = hasBblForeverText ? false : hasBblColorText;
+  // 단, BBL(포에버영+색소+홍조)처럼 괄호 안 명시적 나열이면 별도
+  const bblCoListedText = /bbl\s*\([^)]*(?:포에버영|포영)[^)]*(?:색소|홍조)/i.test(raw)
+                       || /bbl\s*\([^)]*(?:색소|홍조)[^)]*(?:포에버영|포영)/i.test(raw);
+  const bblHasColorText = (hasBblForeverText && !bblCoListedText) ? false : hasBblColorText;
   const bblTypeCountText = (hasBblForeverText?1:0)+(bblHasColorText?1:0)+(hasBblAcneText?1:0)+(hasBblTightText?1:0);
   // 서브타입별 개별 가격 추출 시도
   const bblForeverPriceM = raw.match(/(?:포에버영|포영)(?:\s*\d+\s*회)?[\s만]*([\d.]+)(?!\s*회)/i);
@@ -1131,7 +1134,7 @@ function extractTextPrices(raw, treatments){
         if(bblTypeCountText > 1){
           const eachPrice = Math.round(price/bblTypeCountText*100)/100;
           if(hasBblForeverText) bblPriceMap['BBL(포에버영)'] = eachPrice;
-          else if(hasBblColorText) bblPriceMap['BBL(색소)'] = eachPrice;
+          if(bblHasColorText) bblPriceMap['BBL(색소)'] = eachPrice;
           if(hasBblAcneText) bblPriceMap['BBL(여드름)'] = eachPrice;
           if(hasBblTightText) bblPriceMap['BBL(스킨타이트닝)'] = eachPrice;
         } else {
@@ -2252,7 +2255,10 @@ function localParse(raw){
     }
   }
   // 포에버영은 색소/홍조 프로그램을 포함 → 포에버영+색소 동시면 포에버영만
-  const bblHasColor = hasBblForever ? false : hasBblColor;
+  // 단, BBL(포에버영+색소+홍조)처럼 괄호 안에 명시적으로 같이 나열되면 별도 항목
+  const bblCoListed = /bbl\s*\([^)]*(?:포에버영|포영)[^)]*(?:색소|홍조)/i.test(raw)
+                   || /bbl\s*\([^)]*(?:색소|홍조)[^)]*(?:포에버영|포영)/i.test(raw);
+  const bblHasColor = (hasBblForever && !bblCoListed) ? false : hasBblColor;
   const bblTypeCount = (hasBblForever?1:0)+(bblHasColor?1:0)+(hasBblAcne?1:0)+(hasBblTight?1:0);
   if(hasBblForever) results.push({item:'BBL(포에버영)', qty:bblForeverQty, _bblGroup:bblTypeCount>1});
   if(bblHasColor) results.push({item:'BBL(색소)', qty:bblColorQty, _bblGroup:bblTypeCount>1});
@@ -2260,8 +2266,8 @@ function localParse(raw){
   if(hasBblAcne) results.push({item:'BBL(여드름)', qty:bblAcneQty, _bblGroup:bblTypeCount>1});
 
   // ── 듀얼피코 (피코토닝, 피코 단독 포함) ──
-  const dpM = raw.match(/(?:듀얼피코|피코토닝)\s*(\d+)\s*회/i);
-  const dpSingle = /듀얼피코|피코토닝/i.test(raw) && !dpM;
+  const dpM = raw.match(/(?:듀얼피코|듀얼토닝|피코토닝)\s*(\d+)\s*회/i);
+  const dpSingle = /듀얼피코|듀얼토닝|피코토닝/i.test(raw) && !dpM;
   // 피코만 단독 (피코슈어/피코웨이/피코포커스 제외)
   const picoOnly = /피코(?!슈어|웨이|포커스|토닝)/i.test(raw) && !/듀얼피코|피코토닝/i.test(raw);
   if(dpM) results.push({item:'듀얼피코', qty: parseInt(dpM[1])});
@@ -2341,12 +2347,26 @@ function localParse(raw){
 
   // ── 점제거 (사마귀·점·편사·얼굴점·act2 포함) ──
   // 괄호 안 "이마 점1개" 등 시술 영역 설명은 점제거가 아님 → rawNoParen 사용
+  // 단, "co2점" = CO2레이저 점제거 → 별도 트리거
   const _rawNoParen = raw.replace(/\([^)]*\)/g, ' ');
-  if(/사마귀|편사|얼굴점|(?:점\s*제거)|(?:점\s*\d+개)|act\.?\s*2/i.test(_rawNoParen)){
-    const countM = raw.match(/(?:사마귀|편사|얼굴점|점)\s*(\d+)\s*(?:개|곳|군데)/i)
-                || raw.match(/점\s*제거\s*(\d+)/i)
-                || raw.match(/act\.?\s*2\s*(\d+)/i);
-    results.push({item:'점,편사제거', qty: countM?parseInt(countM[1]):1});
+  const _co2SpotTrigger = /co2\s*점/i.test(raw);
+  if(_co2SpotTrigger || /사마귀|편사|얼굴점|(?:점\s*제거)|(?:점\s*\d+개)|act\.?\s*2/i.test(_rawNoParen)){
+    let _spotQty = 0;
+    // co2점 뒤 괄호에서 개수 합산: "co2점 (이마1개,우측볼1개)" → 2
+    if(_co2SpotTrigger){
+      const _co2SpotParenM = raw.match(/co2\s*점\s*\(([^)]+)\)/i);
+      if(_co2SpotParenM){
+        const _spotNums = [..._co2SpotParenM[1].matchAll(/(\d+)\s*개/g)];
+        _spotQty = _spotNums.reduce((s,m)=>s+parseInt(m[1]),0);
+      }
+    }
+    if(_spotQty === 0){
+      const countM = raw.match(/(?:사마귀|편사|얼굴점|점)\s*(\d+)\s*(?:개|곳|군데)/i)
+                  || raw.match(/점\s*제거\s*(\d+)/i)
+                  || raw.match(/act\.?\s*2\s*(\d+)/i);
+      _spotQty = countM ? parseInt(countM[1]) : 1;
+    }
+    results.push({item:'점,편사제거', qty: _spotQty});
   }
 
   // ── 문신제거 ──
@@ -2609,9 +2629,36 @@ function localParse(raw){
     if(existMira && !existMira._fixedAmt) existMira._fixedAmt = parseFloat(rituoMiraM[2]);
   }
 
-  const co2M = raw.match(/co2\s*(\d+)\s*(?:ea|개)/i);
-  if(co2M) results.push({item:'CO2', qty: parseInt(co2M[1])});
-  else if(/co2/i.test(raw)) results.push({item:'CO2', qty:1});
+  // ── CO2 다중 파싱: 세그먼트별 co2 카운트 합산 ──
+  // 각 세그먼트(+구분)에서 co2 발견 시: 명시적 개수 → co2점 괄호 개수 → 1
+  {
+    let _co2Qty = 0;
+    // +로 분리 (괄호 안 + 무시)
+    const _co2Segs = []; let _d=0, _c2='';
+    for(let i=0;i<raw.length;i++){
+      const ch=raw[i];
+      if(ch==='(') _d++; else if(ch===')'&&_d>0) _d--;
+      else if(ch==='+'&&_d===0){ _co2Segs.push(_c2); _c2=''; continue; }
+      _c2+=ch;
+    }
+    if(_c2) _co2Segs.push(_c2);
+    _co2Segs.forEach(seg => {
+      if(!/co2/i.test(seg)) return;
+      // 1) "co2 Nea/N개" 명시적 개수
+      const expl = seg.match(/co2\s*(\d+)\s*(?:ea|개)/i);
+      if(expl){ _co2Qty += parseInt(expl[1]); return; }
+      // 2) "co2점 (이마N개,부위N개)" 괄호 안 개수
+      const spotM = seg.match(/co2\s*점\s*\(([^)]+)\)/i);
+      if(spotM){
+        const nums = [...spotM[1].matchAll(/(\d+)\s*개/g)];
+        _co2Qty += nums.length > 0 ? nums.reduce((s,m)=>s+parseInt(m[1]),0) : 1;
+        return;
+      }
+      // 3) 단독 co2 → 1개
+      _co2Qty += 1;
+    });
+    if(_co2Qty > 0) results.push({item:'CO2', qty: _co2Qty});
+  }
   if(/좌측볼사마귀|사마귀|편사|점\s*\d+개/i.test(raw) && !/제거/i.test(raw)) {}
 
   // SV(서비스/무료) 감지: "시술명SV" 또는 "시술명 SV" → 해당 항목 가격 0, qty는 유지
@@ -3126,7 +3173,9 @@ function extractPayment(text){
     }
     // 분할결제: (120현금자진+50.5카), (400카+나머지알리), (카998.7 위챗850) 형태
     // 공백도 구분자로 사용 (방식+금액 형태: "카998.7 위챗850")
-    const parts = inner.split(/[+,\/\s]+/).filter(Boolean).map(p => p.replace(/[mM万]\s*$/, ''));
+    // "154.7m 카" → "154.7카" 로 사전 결합 (금액m + 공백 + 방식 패턴)
+    const innerJoined = inner.replace(/([\d.]+)\s*[mM万]\s+(?=카|현|알리|위챗?|이체|제로|자진)/g, '$1');
+    const parts = innerJoined.split(/[+,\/\s]+/).filter(Boolean).map(p => p.replace(/[mM万]\s*$/, ''));
     let remainderMethod = null; // "나머지" 키워드용
     parts.forEach(part => {
       const isRemainder = /나머지/.test(part);
