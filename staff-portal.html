@@ -1709,7 +1709,7 @@ function localParse(raw){
   if(/vip/i.test(raw) && raw.includes('\n')){
     const vipLines = raw.split('\n');
     const contentLines = vipLines.filter(line => {
-      const t = line.trim();
+      const t = line.trim().replace(/\s*\/\/.*$/, ''); // 후행 "// 코멘트" 제거 후 필터
       if(!t) return false;
       // VIP 헤더: "VIP700=677m" "1000VIP+차액...=1359.7m" 등
       if(/^\s*vip\s*\d/i.test(t) || /^\s*\d+\s*vip/i.test(t)) return false;
@@ -1743,11 +1743,13 @@ function localParse(raw){
   // "4월이벤" 약칭도 지원
   const eventGroups = [];
   // 패턴1: 가격이 공백 뒤 숫자로 오는 경우 (기존)
-  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)([^=]*?)\s*([\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g;
+  // - 괄호 블록 \([^)]*\) 을 하나의 단위로 건너뛰어 괄호 안 숫자를 가격으로 오인 방지
+  // - 합산 가격 "511.5+99" 지원: [\d.]+(?:\+[\d.]+)* → 610.5
+  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=(]|\([^)]*\))*?)\s*([\d.]+(?:\+[\d.]+)*)\s*(?:[mM万]|(?=[-－,\n ]|$)|(?=\+(?!\d)))/g;
   let evMatch;
   while((evMatch = eventPattern.exec(raw)) !== null){
     const groupName = evMatch[1].replace(/\+/g,'+').trim();
-    const groupPrice = parseFloat(evMatch[2]);
+    const groupPrice = evMatch[2].split('+').reduce((s,p) => s + parseFloat(p), 0);
     if(groupName && groupPrice > 0){
       eventGroups.push({name: groupName, price: groupPrice, fullMatch: evMatch[0]});
     }
@@ -1767,7 +1769,7 @@ function localParse(raw){
   }
 
   // 이벤트 그룹 가격이 괄호 안에 있는 경우: "4월e) 소프300샷+티타늄40KJ(374)"
-  const eventPatternParen = /(?:\d+월?|[가-힣]+)[eE][가-힣]*\)\s*([^=]*?)\(([\d.]+)\)\s*(?=[,\n+\-=]|$)/g;
+  const eventPatternParen = /(?:\d+월?|[가-힣]+)[eE][가-힣]*\)\s*((?:[^=(]|\([^)]*\))*?)\(([\d.]+)\)\s*(?=[,\n+\-=]|$)/g;
   let evMatch2;
   while((evMatch2 = eventPatternParen.exec(raw)) !== null){
     const groupName = evMatch2[1].replace(/\+/g,'+').trim();
