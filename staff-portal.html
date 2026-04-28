@@ -1779,6 +1779,19 @@ function localParse(raw){
     }
   }
 
+  // 이벤트 그룹 토큰 미리 수집 → 메인 파서 중복 방지용
+  eventGroups.forEach(eg => {
+    let d=0, c2='';
+    for(let i=0;i<eg.name.length;i++){
+      const ch=eg.name[i];
+      if(ch==='(') d++;
+      else if(ch===')'){ if(d>0) d--; }
+      else if((ch==='+'||ch===',')&&d===0){ if(c2.trim()) _eventGroupRawTokens.push(c2.trim().toLowerCase()); c2=''; continue; }
+      c2+=ch;
+    }
+    if(c2.trim()) _eventGroupRawTokens.push(c2.trim().toLowerCase());
+  });
+
   // ── 양도 금액 추출 ──
   const transferMatch = raw.match(/([\d.]+)\s*[mM만]?\s*\(?\s*양도\s*\)?/);
   const transferAmt = transferMatch ? parseFloat(transferMatch[1]) : 0;
@@ -2021,12 +2034,14 @@ function localParse(raw){
   const rjEye = raw.match(/(?:아이리쥬란|리쥬란아이|리쥬란\s*e\s*아이)\s*(\d+)\s*cc/i);
   if(rjEye) results.push({item:'리쥬란아이', qty: parseInt(rjEye[1])});
   // 미라젯리쥬란 콤보가 있을 경우 단독 리쥬란 파서는 스킵 (콤보에서 처리)
+  // 이벤트 그룹에서 이미 리쥬란이 처리된 경우도 스킵
+  const _egHasRjEarly = _eventGroupRawTokens.some(t => /리쥬란/.test(t));
   const hasMjRjCombo = /미라젯\s*리쥬란/i.test(raw) || /미라젯\s*\([^)]*리쥬란/i.test(raw) || /리쥬란\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw);
   const rjNorm = raw.match(/(?<!아이)리쥬란\s*(\d+)\s*cc/i);
-  if(rjNorm && !rjHB && !hasMjRjCombo) {
+  if(rjNorm && !rjHB && !hasMjRjCombo && !_egHasRjEarly) {
     const cc = parseInt(rjNorm[1]);
     results.push({item:'리쥬란', qty: Math.round(cc/2)});
-  } else if(!hasMjRjCombo && /(?<!아이)리쥬란\s*\d+개/i.test(raw)){
+  } else if(!hasMjRjCombo && !_egHasRjEarly && /(?<!아이)리쥬란\s*\d+개/i.test(raw)){
     const m2 = raw.match(/리쥬란\s*(\d+)개/i);
     if(m2) results.push({item:'리쥬란', qty: parseInt(m2[1])});
   }
@@ -2041,10 +2056,14 @@ function localParse(raw){
   }
 
   // ── 미라젯 조합 시술 (순서 중요: 조합 먼저 체크) ──
-  const hasMjRjHB = /미라젯\s*리쥬란\s*hb/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*hb/i.test(raw);
-  const hasMjRjEye = /미라젯\s*리쥬란\s*아이/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*아이/i.test(raw);
-  const hasMjRj = (/미라젯\s*리쥬란(?!\s*(?:hb|아이))/i.test(raw) || /미라젯\s*\([^)]*리쥬란(?!\s*(?:hb|아이))/i.test(raw) || /리쥬란\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw)) && !hasMjRjHB && !hasMjRjEye;
-  const hasMjJbv = /미라젯\s*쥬베룩/i.test(raw) || /미라젯\s*\([^)]*쥬베룩/i.test(raw) || /쥬베룩\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw);
+  // 이벤트 그룹에서 이미 처리된 미라젯 조합은 스킵 (중복 방지)
+  const _egHasMj = _eventGroupRawTokens.some(t => /미라젯/.test(t));
+  const _egHasRj = _eventGroupRawTokens.some(t => /리쥬란/.test(t));
+  const _egHasJbv = _eventGroupRawTokens.some(t => /쥬베룩/.test(t));
+  const hasMjRjHB = !(_egHasMj && _egHasRj) && (/미라젯\s*리쥬란\s*hb/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*hb/i.test(raw));
+  const hasMjRjEye = !(_egHasMj && _egHasRj) && (/미라젯\s*리쥬란\s*아이/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*아이/i.test(raw));
+  const hasMjRj = !(_egHasMj && _egHasRj) && (/미라젯\s*리쥬란(?!\s*(?:hb|아이))/i.test(raw) || /미라젯\s*\([^)]*리쥬란(?!\s*(?:hb|아이))/i.test(raw) || /리쥬란\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw)) && !hasMjRjHB && !hasMjRjEye;
+  const hasMjJbv = !(_egHasMj && _egHasJbv) && (/미라젯\s*쥬베룩/i.test(raw) || /미라젯\s*\([^)]*쥬베룩/i.test(raw) || /쥬베룩\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw));
   const hasMjJba = /미라젯\s*쥬브아셀/i.test(raw) || /미라젯\s*\([^)]*쥬브아셀/i.test(raw);
   const hasMjLto = /미라젯\s*리투오/i.test(raw) || /미라젯\s*\([^)]*리투오/i.test(raw);
 
@@ -2097,7 +2116,7 @@ function localParse(raw){
   // "미라젯38.5" 또는 "-미라젯38.5" 같은 별도 라인/세그먼트
   const standaloneMjPattern = /(?:^|[\n,+\-－])[\s\-－]*미라젯(?!\s*(?:쥬베룩|쥬브아셀|리투오|리쥬란))\s*(?:(\d+)\s*회\s*)?/gim;
   const standaloneMjAll = [...raw.matchAll(standaloneMjPattern)];
-  if(!hasAnyMjCombo && /미라젯/i.test(raw)){
+  if(!hasAnyMjCombo && !_egHasMj && /미라젯/i.test(raw)){
     const mjQtyM = raw.match(/미라젯\s*(\d+)\s*회/i);
     results.push({item:'미라젯', qty: mjQtyM ? parseInt(mjQtyM[1]) : 1});
   } else if(hasAnyMjCombo && standaloneMjAll.length > 0){
@@ -2112,9 +2131,9 @@ function localParse(raw){
                         || /\([^)]*(?:변경|대체|교체|전환)[^)]*쥬베룩[^)]*\)/i.test(raw);
   const jbvM = raw.match(/쥬베룩\s*볼륨.*?(\d+)\s*회/i);
   const jbvB = raw.match(/쥬베룩\s*볼륨.*?(\d+)\s*병/i);
-  if(!jbvChangeContext && jbvM) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvM[1])});
-  else if(!jbvChangeContext && jbvB) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvB[1])});
-  else if(!jbvChangeContext && /쥬베룩\s*볼륨/i.test(raw)) results.push({item:'쥬베룩볼륨', qty:1});
+  if(!jbvChangeContext && !_egHasJbv && jbvM) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvM[1])});
+  else if(!jbvChangeContext && !_egHasJbv && jbvB) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvB[1])});
+  else if(!jbvChangeContext && !_egHasJbv && /쥬베룩\s*볼륨/i.test(raw)) results.push({item:'쥬베룩볼륨', qty:1});
 
   // ── 쥬베룩아이 (띄어쓰기 허용: "쥬베룩 아이") ──
   const jbeyeM = raw.match(/쥬베룩\s*아이.*?(\d+)\s*회/i);
@@ -2122,7 +2141,7 @@ function localParse(raw){
   else if(/쥬베룩\s*아이/i.test(raw)) results.push({item:'쥬베룩아이', qty:1});
 
   // ── 쥬베룩 (단독, 볼륨/아이가 아닌 일반 쥬베룩) ──
-  if(!jbvChangeContext && !(/쥬베룩\s*볼륨/i.test(raw)) && !(/쥬베룩\s*아이/i.test(raw)) && !hasMjJbv){
+  if(!jbvChangeContext && !_egHasJbv && !(/쥬베룩\s*볼륨/i.test(raw)) && !(/쥬베룩\s*아이/i.test(raw)) && !hasMjJbv){
     const jbCc = raw.match(/쥬베룩\s*(\d+)\s*cc/i);
     const jbBottle = raw.match(/쥬베룩\s*(\d+)\s*병/i);
     const jbQtyM = raw.match(/쥬베룩\s*(\d+)\s*회/i);
@@ -2716,9 +2735,11 @@ function localParse(raw){
     });
     // 이벤트 그룹에서 피부관리로 흡수된 항목(LDM, 아쿠아필 등)이 메인 파서에서도 별도 감지된 경우 제거
     if(_eventGroupRawTokens.length > 0){
-      const egAbsorbed = ['LDM','아쿠아필'];
+      const egAbsorbed = ['LDM','아쿠아필','미라젯','리쥬란','쥬베룩볼륨','미라젯쥬베룩'];
       egAbsorbed.forEach(itemName => {
-        const pattern = itemName === 'LDM' ? /ldm/i : new RegExp(itemName, 'i');
+        const pattern = itemName === 'LDM' ? /ldm/i
+          : itemName === '쥬베룩볼륨' ? /쥬베룩/i
+          : new RegExp(itemName, 'i');
         if(_eventGroupRawTokens.some(t => pattern.test(t))){
           const idx = results.findIndex(r => r.item === itemName && !r._fixedAmt);
           if(idx >= 0) results.splice(idx, 1);
