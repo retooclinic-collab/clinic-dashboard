@@ -2808,6 +2808,18 @@ function localParse(raw){
     else { seen[r.item]=r; deduped.push(r); }
   });
 
+  // ── 원문 등장 순서로 정렬 (검산 편의) ──
+  const _origLower = _origRaw.toLowerCase();
+  deduped.sort((a, b) => {
+    const kwA = _ITEM_KEYWORDS[a.item];
+    const kwB = _ITEM_KEYWORDS[b.item];
+    let posA = kwA ? _origLower.search(kwA) : -1;
+    let posB = kwB ? _origLower.search(kwB) : -1;
+    if(posA < 0) posA = 99999;
+    if(posB < 0) posB = 99999;
+    return posA - posB;
+  });
+
   // ── 시술의사 추출: "/ 도은" → 상담직원, 결제내역 끝부분 "도김재림" → 시술의사 ──
   const DOCTOR_NAMES = ['김재림','김선민','윤규성','송승아','장명선'];
   let doctor = '';
@@ -3091,7 +3103,7 @@ function extractPayment(text){
     }
     // 분할결제: (120현금자진+50.5카), (400카+나머지알리), (카998.7 위챗850) 형태
     // 공백도 구분자로 사용 (방식+금액 형태: "카998.7 위챗850")
-    const parts = inner.split(/[+,\/\s]+/).filter(Boolean);
+    const parts = inner.split(/[+,\/\s]+/).filter(Boolean).map(p => p.replace(/[mM万]\s*$/, ''));
     let remainderMethod = null; // "나머지" 키워드용
     parts.forEach(part => {
       const isRemainder = /나머지/.test(part);
