@@ -1213,8 +1213,9 @@ function extractTextPrices(raw, treatments){
   }
 
   const segments = splitTopLevel(text);
+  const _segItemMap = {};  // segIdx → [{item, price}] — 동일 세그먼트 복합가 감지용
 
-  segments.forEach(seg=>{
+  segments.forEach((seg, _segIdx)=>{
     const inner = [...seg.matchAll(/\(([^)]+)\)/g)].map(m=>m[1]);
     const outer = seg.replace(/\([^)]*\)/g,' ').trim();
 
@@ -1236,6 +1237,8 @@ function extractTextPrices(raw, treatments){
             found[t.item] = Math.round((found[t.item] + p)*100)/100;
           } else if(found[t.item]===undefined){
             found[t.item] = p;
+            if(!_segItemMap[_segIdx]) _segItemMap[_segIdx] = [];
+            _segItemMap[_segIdx].push({item: t.item, price: p});
           }
         } else if(found[t.item]===undefined && kw.test(outer)){
           // outer에 키워드는 있지만 가격이 없으면, inner에서 순수 숫자 찾기
@@ -1259,6 +1262,38 @@ function extractTextPrices(raw, treatments){
             if(p!==null) foundParen[t.item]=p;
           }
         });
+      }
+    });
+  });
+
+  // 동일 세그먼트에서 동일 가격을 받은 복수 항목 → 복합가로 재분배
+  // 예: "포텐자펌핑쥬베룩71.5" → 포텐자(펌핑)+쥬베룩볼륨 둘 다 71.5 → 표준가 비율로 분배
+  Object.values(_segItemMap).forEach(entries => {
+    if(entries.length < 2) return;
+    const byPrice = {};
+    entries.forEach(e => { if(!byPrice[e.price]) byPrice[e.price]=[]; byPrice[e.price].push(e.item); });
+    Object.entries(byPrice).forEach(([priceStr, items]) => {
+      if(items.length < 2) return;
+      const compoundPrice = parseFloat(priceStr);
+      const stdSum = items.reduce((s, itemName) => {
+        const t = treatments.find(tt => tt.item === itemName);
+        return s + (CHARGE_PRICE[itemName] ?? 0) * (t ? t.qty : 1);
+      }, 0);
+      if(stdSum > 0){
+        let running = 0;
+        items.forEach((itemName, idx) => {
+          const t = treatments.find(tt => tt.item === itemName);
+          const std = (CHARGE_PRICE[itemName] ?? 0) * (t ? t.qty : 1);
+          if(idx < items.length - 1){
+            const share = Math.round(compoundPrice * std / stdSum * 10) / 10;
+            found[itemName] = share;
+            running += share;
+          } else {
+            found[itemName] = Math.round((compoundPrice - running) * 10) / 10;
+          }
+        });
+      } else {
+        items.forEach(itemName => { found[itemName] = Math.round(compoundPrice / items.length * 10) / 10; });
       }
     });
   });
