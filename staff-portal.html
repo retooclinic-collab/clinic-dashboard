@@ -2626,10 +2626,11 @@ function localParse(raw){
         return [{item:'미라젯', qty:1}, {item:'리쥬란아이', qty: eyeQty}];
       }
       // 미라젯(리쥬란+쥬베룩) 복합: 리쥬란Ncc + 쥬베룩Mcc 둘 다 포함
+      // 미라젯은 디바이스 1개, 리쥬란·쥬베룩 각각 별도 카운트
       if(/미라젯/.test(t) && /리쥬란/.test(t) && /쥬베룩/.test(t)){
         const rjCc = t.match(/리쥬란\s*(\d+)\s*cc/);
         const rjQty = rjCc ? Math.max(1, Math.round(parseInt(rjCc[1])/2)) : 1;
-        return [{item:'미라젯', qty:1}, {item:'리쥬란', qty: rjQty}, {item:'미라젯쥬베룩', qty: 1}];
+        return [{item:'미라젯', qty:1}, {item:'리쥬란', qty: rjQty}, {item:'쥬베룩볼륨', qty: 1}];
       }
       if(/미라젯.*리쥬란|리쥬란.*미라젯/.test(t)){
         // 미라젯리쥬란NCC → 미라젯 1 + 리쥬란 N/2
@@ -2658,11 +2659,22 @@ function localParse(raw){
         return [{item:'티타늄', qty:1, _unitPrice: tjPrice}];
       }
       if(/리쥬란\s*hb/.test(t)) return [{item:'리쥬란HB', qty}];
+      // 리쥬란아이/아이리쥬란 → 리쥬란 일반보다 먼저 체크 (안 그러면 /리쥬란/에 먼저 걸림)
+      if(/리쥬란\s*아이|아이리쥬란/.test(t)){
+        const ccM2 = t.match(/(\d+)\s*cc/);
+        return [{item:'리쥬란아이', qty: ccM2 ? parseInt(ccM2[1]) : qty}];
+      }
       if(/리쥬란/.test(t)) return [{item:'리쥬란', qty}];
       if(/쥬베룩.*아이/.test(t)) return [{item:'쥬베룩아이', qty:1}];
       if(/쥬베룩/.test(t)) return [{item:'쥬베룩볼륨', qty:1}];
       if(/쥬브아셀/.test(t)) return [{item:'쥬브아셀', qty}];
       if(/미라젯/.test(t)) return [{item:'미라젯', qty}];
+      // 보톡스: 제오민/보톨타 → 수입, 나보타/보툴렉스/국산 → 국산
+      if(/보톡스/.test(t)){
+        if(/제오민|보톨타|수입/.test(t)) return [{item:'보톡스(수입)', qty:1}];
+        if(/국산|나보타|보툴렉스/.test(t)) return [{item:'보톡스(국산)', qty:1}];
+        return [{item:'보톡스(수입)', qty:1}];
+      }
       if(/bbl.*포에버영|bbl.*포영/.test(t)) return [{item:'BBL(포에버영)', qty}];
       if(/bbl.*미백|bbl.*색소|bbl.*홍조/.test(t) || /bbl/.test(t)) return [{item:'BBL(색소)', qty}];
       if(/힐로웨이브/.test(t)) return [{item:'힐로웨이브', qty:1}];
@@ -2670,10 +2682,6 @@ function localParse(raw){
       if(/리투오/.test(t)) return [{item:'리투오', qty}];
       if(/아쿠아필/.test(t)) return [{item:'아쿠아필', qty:1}];
       if(/엠페이스/.test(t)) return [{item:'엠페이스', qty:1}];
-      if(/리쥬란\s*아이|아이리쥬란/.test(t)){
-        const ccM = t.match(/(\d+)\s*cc/);
-        return [{item:'리쥬란아이', qty: ccM ? parseInt(ccM[1]) : qty}];
-      }
       return null;
     };
 
