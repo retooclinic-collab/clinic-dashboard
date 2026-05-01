@@ -945,7 +945,7 @@ let TREATMENT_ITEMS = [
   '크라이오','제모(여자)','제모(남자)','새살주사','펌핑팁','수면비','히알라제',
   '상담만','TA','아쿠아필','포텐자(펌핑)','아그네스','PDRN','줄기세포','VIP회원권','VIP할인혜택',
   '프락셀','써마지300','아이써마지225','하이쿡스','리쥬란아이','써마지600',
-  '리쥬란HB','소프웨이브(50샷)','위고비','미라젯','엠페이스','온다','스킨바이브',
+  '리쥬란HB','소프웨이브(50샷)','위고비','미라젯','엠페이스','온다','온다(바디)','스킨바이브',
   '써마지900샷','줄기세포30cc','줄기세포60cc','줄기세포120cc','줄기세포240cc',
   'BBL(색소)','BBL(홍조)','BBL(스킨타이트닝)','BBL(여드름)','moxi','오푸스','쥬베룩아이',
   '리투오','쥬브아셀','자가엑소좀','힐로웨이브','스컬트라','아이써마지450샷',
@@ -965,7 +965,7 @@ const CHARGE_PRICE = {
   '울쎄라(100샷)':60, '소프웨이브(50샷)':66,
   '써마지300':165, '써마지600':275, '써마지900샷':429,
   '아이써마지225':132, '아이써마지450샷':198,
-  '튠페이스':55, '튠라이너':55, '튠바디':55, '티타늄':99, '온다':99,
+  '튠페이스':55, '튠라이너':55, '튠바디':55, '티타늄':99, '온다':99, '온다(바디)':99,
   '티타튠':132, '티타튠max':165,
   '리쥬란':55, '리쥬란HB':49.5, '리쥬란아이':55,
   '힐로웨이브':66, '미라젯':38.5, '미라젯쥬베룩':99,
@@ -1003,7 +1003,9 @@ const _ITEM_KEYWORDS = {
   '써마지900샷':/써마지.*?900/i,
   '아이써마지225':/아이써마지.*?225/i, '아이써마지450샷':/아이써마지.*?450/i,
   '튠페이스':/튠페(?!이스.*라이너)/i, '튠라이너':/튠라이너/i, '튠바디':/튠바디/i,
-  '티타늄':/티타늄/i, '온다':/온다/i,
+  '티타늄':/티타늄/i,
+  '온다(바디)':/(?:바디|팔|종아리|다리|복부)온다|온다\s*바디/i,
+  '온다':/온다/i,
   '티타튠max':/티타튠max/i, '티타튠':/티타튠(?!max)/i,
   '리쥬란HB':/리쥬란\s*hb/i,
   '리쥬란아이':/(?:아이리쥬란|리쥬란아이)/i,
@@ -1242,8 +1244,11 @@ function extractTextPrices(raw, treatments){
     treatments.forEach(t=>{
       const kw = KEYWORDS[t.item];
       if(!kw) return;
-      // _fixedAmt가 이미 있는 항목: 음수(차감)면 완전 스킵, 양수면 추가 가격 탐색 허용
+      // _fixedAmt가 이미 있는 항목: 음수(차감)면 완전 스킵
       if(t._fixedAmt !== undefined && t._fixedAmt <= 0) return;
+      // 미라젯 콤보(_fixedAmt 양수)인 항목: 콤보 총액을 개별 항목에 오배정하는 것 방지
+      // 예: 미라젯쥬브아셀126.5 → 쥬브아셀에 126.5 오배정 차단 (실제는 38.5+88)
+      if(t._fixedAmt !== undefined && t._fixedAmt > 0) return;
       // BBL은 bblPriceMap에서 이미 가격 설정됨 → 세그먼트 중복 추출 방지
       if(bblPriceMap[t.item] !== undefined) return;
 
@@ -1487,13 +1492,7 @@ function distributePrices(treatments, total, rawText){
     }
     // 위약금 등 고정금액 항목 (이벤트 그룹 share + standalone 가격 합산)
     if(t._fixedAmt !== undefined){
-      let combinedPrice = t._fixedAmt;
-      // 같은 항목이 이벤트 밖에서도 개별 가격을 가진 경우 합산
-      if(found[t.item] !== undefined && t._fixedAmt > 0){
-        combinedPrice += found[t.item];
-        delete found[t.item]; // 이중 반영 방지
-      }
-      return {...t, price: combinedPrice, fromText:true};
+      return {...t, price: t._fixedAmt, fromText:true};
     }
     // 예약금제외: 나중에 잔액으로 계산 (일단 0)
     if(t._balanceDeduct){
@@ -1502,6 +1501,7 @@ function distributePrices(treatments, total, rawText){
     if(found[t.item]!==undefined){
       // 복합소계 감지: 명시가가 해당 항목 KJ/표준가의 3배 이상이면 복합소계로 간주 → 무시
       const unitStd = t.item==='온다' && window._ondaPrice ? window._ondaPrice
+                    : t.item==='온다(바디)' && window._ondaBodyPrice ? window._ondaBodyPrice
                     : t.item==='티타늄' && window._titaniumPrice ? window._titaniumPrice
                     : (CHARGE_PRICE[t.item]??0);
       const isCombinedSubtotal = unitStd > 0 && found[t.item] > unitStd * t.qty * 3.5;
@@ -1516,6 +1516,7 @@ function distributePrices(treatments, total, rawText){
     // 표준가 추정 (티타늄·온다는 KJ 기반 동적 가격)
     const unit = t.item==='티타늄' && window._titaniumPrice ? window._titaniumPrice
                : t.item==='온다' && window._ondaPrice ? window._ondaPrice
+               : t.item==='온다(바디)' && window._ondaBodyPrice ? window._ondaBodyPrice
                : (CHARGE_PRICE[t.item]??0);
     return {...t, price: Math.round(unit*t.qty*100)/100, fromText:false};
   });
@@ -2041,28 +2042,58 @@ function localParse(raw){
     else if(tuneFsingle) results.push({item:'튠페이스', qty:1});
   }
 
-  // ── 온다 — KJ에 따라 가격 다름 (중복 언급 합산: 온다100kj 2회 + 온다80kj 1회 → 3회) ──
-  // 바디온다/팔온다/종아리온다/다리온다/복부온다 등 부위 접두어도 온다로 합산
-  const ondaWithRounds = [...raw.matchAll(/(?:바디|팔|종아리|다리|복부)?온다\s*(\d+)\s*kj\s*(?:\([^)]*\))?\s*(\d+)\s*회/gi)];
-  const ondaKjAll = [...raw.matchAll(/(?:바디|팔|종아리|다리|복부)?온다\s*(\d+)\s*kj/gi)];
-  const ondaAnyMention = /(?:바디|팔|종아리|다리|복부)?온다/i.test(raw);
-  // 온다80KJ(121) → 괄호 안 가격 추출
-  const ondaParenPrice = raw.match(/(?:바디|팔|종아리|다리|복부)?온다\s*\d+\s*kj\s*\(\s*([\d.]+)\s*\)/i);
-  const ondaFixedAmt = ondaParenPrice ? parseFloat(ondaParenPrice[1]) : null;
-  if(ondaWithRounds.length > 0){
-    const ondaTotalQty = ondaWithRounds.reduce((s,m) => s + parseInt(m[2]), 0);
-    results.push({item:'온다', qty: ondaTotalQty, ...(ondaFixedAmt?{_fixedAmt:ondaFixedAmt}:{})});
-  } else if(ondaKjAll.length > 0){
-    // 회차 없는 KJ만 있는 경우: 언급 횟수만큼 qty 누적 (e.g. 온다60kj + 팔온다150kj → qty 2)
-    results.push({item:'온다', qty: ondaKjAll.length, ...(ondaFixedAmt?{_fixedAmt:ondaFixedAmt}:{})});
-  } else if(ondaAnyMention){
-    results.push({item:'온다', qty:1, ...(ondaFixedAmt?{_fixedAmt:ondaFixedAmt}:{})});
+  // ── 온다 — KJ에 따라 가격 다름 ──
+  // 바디온다/팔온다/종아리온다/다리온다/복부온다/온다바디 → 온다(바디)
+  // 그 외 온다 → 온다
+  {
+    const _bodyPfx = /(?:바디|팔|종아리|다리|복부)/;
+    // 바디온다 계열 (with rounds)
+    const ondaBodyWR = [...raw.matchAll(/(?:바디|팔|종아리|다리|복부)온다\s*(\d+)\s*kj\s*(?:\([^)]*\))?\s*(\d+)\s*회/gi)];
+    const ondaBodyKj = [...raw.matchAll(/(?:바디|팔|종아리|다리|복부)온다\s*(\d+)\s*kj/gi)];
+    const ondaBodyAlt = [...raw.matchAll(/온다\s*바디\s*(\d+)\s*kj/gi)];
+    const ondaBodyKjAll = [...ondaBodyKj, ...ondaBodyAlt];
+    const ondaBodyAny = /(?:바디|팔|종아리|다리|복부)온다|온다\s*바디/i.test(raw);
+    const ondaBodyParenPrice = raw.match(/(?:바디|팔|종아리|다리|복부)온다\s*\d+\s*kj\s*\(\s*([\d.]+)\s*\)/i)
+                            || raw.match(/온다\s*바디\s*\d+\s*kj\s*\(\s*([\d.]+)\s*\)/i);
+    const ondaBodyFixedAmt = ondaBodyParenPrice ? parseFloat(ondaBodyParenPrice[1]) : null;
+    if(ondaBodyWR.length > 0){
+      const q = ondaBodyWR.reduce((s,m) => s + parseInt(m[2]), 0);
+      results.push({item:'온다(바디)', qty:q, ...(ondaBodyFixedAmt?{_fixedAmt:ondaBodyFixedAmt}:{})});
+    } else if(ondaBodyKjAll.length > 0){
+      results.push({item:'온다(바디)', qty:ondaBodyKjAll.length, ...(ondaBodyFixedAmt?{_fixedAmt:ondaBodyFixedAmt}:{})});
+    } else if(ondaBodyAny){
+      results.push({item:'온다(바디)', qty:1, ...(ondaBodyFixedAmt?{_fixedAmt:ondaBodyFixedAmt}:{})});
+    }
+    // 온다(바디) KJ → 동적 가격
+    if(ondaBodyKjAll.length > 0){
+      const maxKj = Math.max(...ondaBodyKjAll.map(m=>parseInt(m[1])));
+      window._ondaBodyPrice = maxKj>=100?165 : maxKj>=80?132 : maxKj>=60?99 : 66;
+    } else { window._ondaBodyPrice = null; }
+
+    // 일반 온다 (바디 접두어 없는 것만)
+    const ondaPlainWR = [...raw.matchAll(/(?<!바디|팔|종아리|다리|복부)온다\s*(\d+)\s*kj\s*(?:\([^)]*\))?\s*(\d+)\s*회/gi)]
+                          .filter(m => !/온다\s*바디/i.test(raw.slice(Math.max(0,m.index-1), m.index+m[0].length+3)));
+    const ondaPlainKj = [...raw.matchAll(/(?<!바디|팔|종아리|다리|복부)온다\s*(\d+)\s*kj/gi)]
+                          .filter(m => !/온다\s*바디/i.test(raw.slice(Math.max(0,m.index-1), m.index+m[0].length+3)));
+    const ondaPlainAny = /(?<!바디|팔|종아리|다리|복부)온다/i.test(raw) && !/온다\s*바디/i.test(raw);
+    const ondaPlainParenPrice = raw.match(/(?<!바디|팔|종아리|다리|복부)온다\s*\d+\s*kj\s*\(\s*([\d.]+)\s*\)/i);
+    const ondaPlainFixedAmt = ondaPlainParenPrice ? parseFloat(ondaPlainParenPrice[1]) : null;
+    // 일반 온다가 바디온다와 겹치지 않는 경우에만 push
+    const hasPlainOnda = ondaPlainAny && !ondaBodyAny;
+    if(ondaPlainWR.length > 0){
+      const q = ondaPlainWR.reduce((s,m) => s + parseInt(m[2]), 0);
+      results.push({item:'온다', qty:q, ...(ondaPlainFixedAmt?{_fixedAmt:ondaPlainFixedAmt}:{})});
+    } else if(ondaPlainKj.length > 0 && !ondaBodyAny){
+      results.push({item:'온다', qty:ondaPlainKj.length, ...(ondaPlainFixedAmt?{_fixedAmt:ondaPlainFixedAmt}:{})});
+    } else if(hasPlainOnda){
+      results.push({item:'온다', qty:1, ...(ondaPlainFixedAmt?{_fixedAmt:ondaPlainFixedAmt}:{})});
+    }
+    // 일반 온다 KJ → 동적 가격
+    if(ondaPlainKj.length > 0){
+      const maxKj = Math.max(...ondaPlainKj.map(m=>parseInt(m[1])));
+      window._ondaPrice = maxKj>=100?165 : maxKj>=80?132 : maxKj>=60?99 : 66;
+    } else { window._ondaPrice = null; }
   }
-  // KJ 추출 → 동적 가격 (여러 KJ가 있으면 가장 큰 값 기준)
-  if(ondaKjAll.length > 0){
-    const maxKj = Math.max(...ondaKjAll.map(m=>parseInt(m[1])));
-    window._ondaPrice = maxKj>=100?165 : maxKj>=80?132 : maxKj>=60?99 : 66;
-  } else { window._ondaPrice = null; }
 
   // ── 엠페이스 ──
   // "엠페이스2-1,2(40분)176" → 영역번호(콤마 포함) 등 중간 텍스트 허용
@@ -2116,12 +2147,21 @@ function localParse(raw){
     if(m2) results.push({item:'리쥬란', qty: parseInt(m2[1])});
   }
 
-  // ── 힐로웨이브 (모든 출현 카운트) ──
-  const hiloAll = [...raw.matchAll(/힐로웨이브\s*(?:\d+\s*cc)?/gi)];
+  // ── 힐로웨이브 (2cc=1회 기준) ──
+  const hiloAll = [...raw.matchAll(/힐로웨이브\s*(?:(\d+)\s*cc)?/gi)];
   if(hiloAll.length > 0){
-    // 개수 명시("힐로웨이브3개") 우선, 아니면 출현 횟수
+    // 개수 명시("힐로웨이브3개") 우선
     const hiloGaeM = raw.match(/힐로웨이브\s*(\d+)\s*개/i);
-    const hiloQty = hiloGaeM ? parseInt(hiloGaeM[1]) : hiloAll.length;
+    // 회차 명시("힐로웨이브3회") 우선
+    const hiloRoundM = raw.match(/힐로웨이브\s*(\d+)\s*회/i);
+    let hiloQty;
+    if(hiloGaeM) hiloQty = parseInt(hiloGaeM[1]);
+    else if(hiloRoundM) hiloQty = parseInt(hiloRoundM[1]);
+    else {
+      // cc 합산 → 2cc당 1회
+      const totalCc = hiloAll.reduce((s,m) => s + (m[1] ? parseInt(m[1]) : 2), 0);
+      hiloQty = Math.max(1, Math.round(totalCc / 2));
+    }
     results.push({item:'힐로웨이브', qty: hiloQty});
   }
 
@@ -2746,8 +2786,13 @@ function localParse(raw){
         const n = parseInt(sM[1]);
         if(/소프(?:웨이브)?/.test(t)) qty = Math.max(1, Math.round(n/50));
       }
-      // cc→qty: 힐로웨이브는 cc가 용량이므로 제외 (2cc=1회)
-      const ccM = t.match(/(\d+)cc/); if(ccM && !/힐로웨이브/.test(t)) qty = Math.max(1, parseInt(ccM[1]));
+      // cc→qty: 리쥬란/힐로웨이브는 2cc=1회, 나머지는 cc=qty
+      const ccM = t.match(/(\d+)cc/);
+      if(ccM){
+        const ccVal = parseInt(ccM[1]);
+        if(/리쥬란|힐로웨이브/.test(t)) qty = Math.max(1, Math.round(ccVal/2));
+        else qty = Math.max(1, ccVal);
+      }
       const hoeM = t.match(/(\d+)\s*회/); if(hoeM) qty = parseInt(hoeM[1]);
       // kj는 수량 영향 거의 없음 (티타늄)
 
@@ -2780,8 +2825,13 @@ function localParse(raw){
       // 일반 시술
       if(/소프(?:웨이브)?/.test(t)) return [{item:'소프웨이브(50샷)', qty}];
       if(/울쎄라|울쎼라/.test(t)) return [{item:'울쎄라(100샷)', qty}];
+      if(/(?:바디|팔|종아리|다리|복부)온다|온다\s*바디/.test(t)){
+        const kjM = t.match(/(\d+)\s*kj/i);
+        const kj = kjM ? parseInt(kjM[1]) : 60;
+        const odPrice = kj>=100?165 : kj>=80?132 : kj>=60?99 : kj>=40?66 : 99;
+        return [{item:'온다(바디)', qty:1, _unitPrice: odPrice}];
+      }
       if(/온다/.test(t)){
-        // 온다도 티타늄과 동일한 KJ 기반 단가 체계
         const kjM = t.match(/(\d+)\s*kj/i);
         const kj = kjM ? parseInt(kjM[1]) : 60;
         const odPrice = kj>=100?165 : kj>=80?132 : kj>=60?99 : kj>=40?66 : 99;
