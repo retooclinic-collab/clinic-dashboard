@@ -947,7 +947,7 @@ let TREATMENT_ITEMS = [
   '프락셀','써마지300','아이써마지225','하이쿡스','리쥬란아이','써마지600','클라리티',
   '리쥬란HB','소프웨이브(50샷)','위고비','미라젯','엠페이스','온다','온다(바디)','스킨바이브',
   '써마지900샷','줄기세포30cc','줄기세포60cc','줄기세포120cc','줄기세포240cc',
-  'BBL(색소)','BBL(홍조)','BBL(스킨타이트닝)','BBL(여드름)','moxi','오푸스','쥬베룩아이',
+  'BBL','BBL(여드름)','BBL(스킨타이트닝)','BBL(바디)','moxi','오푸스','쥬베룩아이',
   '리투오','쥬브아셀','자가엑소좀','힐로웨이브','스컬트라','아이써마지450샷',
   '엑소좀','플라즈마엑소좀','MOXI',
   '티타튠','티타튠max',
@@ -973,7 +973,7 @@ const CHARGE_PRICE = {
   '쥬브아셀':88, '리투오':88,
   '엠페이스':88, '오푸스':55,
   '포텐자(펌핑)':71.5, '포텐자(모공)':44, '포텐자(기미)':44,
-  'BBL(색소)':22, 'BBL(홍조)':22, 'BBL(포에버영)':16.5, 'BBL(여드름)':49.5, 'BBL(스킨타이트닝)':71.5,
+  'BBL':22, 'BBL(여드름)':49.5, 'BBL(스킨타이트닝)':71.5, 'BBL(바디)':22,
   '필러(수입)':55, '필러(국산)':33,
   '보톡스(국산)':11, '보톡스(수입)':22,
   '듀얼피코':33, '피코슈어':33, 'moxi':66, 'MOXI':66,
@@ -995,9 +995,8 @@ const CHARGE_PRICE = {
 
 /* ── 공통: 항목명 → 원문 매칭용 정규식 사전 (extractTextPrices + SV 감지 공유) ── */
 const _ITEM_KEYWORDS = {
-  'BBL(포에버영)':/bbl.*?(?:포에버영|포영)/i,
-  'BBL(색소)':/bbl/i, 'BBL(홍조)':/bbl.*?홍조/i, 'BBL(여드름)':/bbl.*?여드름/i,
-  'BBL(스킨타이트닝)':/bbl.*?스킨타이트닝/i,
+  'BBL':/bbl/i, 'BBL(여드름)':/bbl.*?여드름/i, 'BBL(스킨타이트닝)':/bbl.*?스킨타이트닝/i,
+  'BBL(바디)':/(?:바디\s*bbl|bbl\s*(?:\([^)]*\)\s*)?바디)/i,
   '울쎄라(100샷)':/울쎄라|울쎼라/i, '소프웨이브(50샷)':/소프/i,
   '써마지300':/써마지.*?300/i, '써마지600':/써마지.*?600/i,
   '써마지900샷':/써마지.*?900/i,
@@ -1079,89 +1078,30 @@ function extractTextPrices(raw, treatments){
     .replace(/([\d.]+)\s*[mM만]\s*(?=[가-힣])/g, '$1m+')  // "38.5m쥬브아셀" → "38.5m+쥬브아셀" 세그먼트 분리
     .replace(/,,+/g, ',').replace(/^[,\s]+|[,\s]+$/gm, ''); // 연속 콤마·공백 정리
 
-  // BBL 가격 직접 추출 (세그먼트 분리 전)
-  // 서브타입별 개별 가격 추출: "포에버영2회99+스킨타이트닝3회198" → 각각 99, 198
+  // BBL 가격 직접 추출 (세그먼트 분리 전) — BBL 통합, 스킨타이트닝/바디만 별도
   const bblPriceMap = {};
-  const hasBblForeverText = /bbl.*?(?:포에버영|포영)/i.test(raw);
-  const hasBblColorText = /bbl.*?(?:색소|화이트닝|미백|스킨(?!타이트))/i.test(raw);
-  const hasBblHongjoText = /bbl.*?홍조/i.test(raw);
-  const hasBblAcneText = /bbl.*?여드름/i.test(raw);
   const hasBblTightText = /bbl.*?스킨타이트닝/i.test(raw);
-  // 포에버영은 색소/홍조 프로그램 포함 → 중복 카운트 방지
-  // 단, BBL(포에버영+색소+홍조) 또는 BBL포영+홍조처럼 명시적 나열이면 별도
-  const bblCoListedText = /bbl[^,\n]*(?:포에버영|포영)[^,\n]*(?:색소|홍조)/i.test(raw)
-                       || /bbl[^,\n]*(?:색소|홍조)[^,\n]*(?:포에버영|포영)/i.test(raw);
-  const _bblHasColorText = (hasBblForeverText && !bblCoListedText) ? false : hasBblColorText;
-  const _bblHasHongjoText = (hasBblForeverText && !bblCoListedText) ? false : hasBblHongjoText;
-  const bblTypeCountText = (hasBblForeverText?1:0)+(_bblHasColorText?1:0)+(_bblHasHongjoText?1:0)+(hasBblAcneText?1:0)+(hasBblTightText?1:0);
-  // 서브타입별 개별 가격 추출 시도
-  const bblForeverPriceM = raw.match(/(?:포에버영|포영)(?:\s*\d+\s*회)?[\s만]*([\d.]+)(?!\s*회)/i);
-  const bblColorPriceM = raw.match(/(?:색소|화이트닝|미백)(?:\s*\d+\s*회)?[\s만]*([\d.]+)(?!\s*회)/i);
-  const bblHongjoPriceM = raw.match(/홍조(?:\s*\d+\s*회)?[\s만]*([\d.]+)(?!\s*회)/i);
-  const bblTightPriceM = raw.match(/스킨타이트닝(?:\s*\d+\s*회)?\s*([\d.]+)(?!\s*회)/i);
-  const bblAcnePriceM = raw.match(/여드름(?:\s*\d+\s*회)?\s*([\d.]+)(?!\s*회)/i);
-  const hasSubPrices = bblForeverPriceM || bblColorPriceM || bblHongjoPriceM || bblTightPriceM || bblAcnePriceM;
-  if(hasSubPrices){
-    // 서브타입별 가격 추출 → 마지막 숫자가 BBL 소계일 수 있음
-    // "포에버영2회99+스킨타이트닝3회198" → 99는 포에버영, 198은 BBL소계(스킨타이트닝=198-99=99)
-    const subPrices = [];
-    if(hasBblForeverText && !bblCoListedText){
-      // co-listed가 아닌 경우: 포에버영이 색소/홍조 가격 흡수
-      const fPrice = bblForeverPriceM ? parseFloat(bblForeverPriceM[1])
-                   : (bblHongjoPriceM ? parseFloat(bblHongjoPriceM[1])
-                   : (bblColorPriceM ? parseFloat(bblColorPriceM[1]) : null));
-      if(fPrice) subPrices.push({key:'BBL(포에버영)', price:fPrice});
-    } else {
-      // co-listed이거나 포에버영 없는 경우: 각각 개별
-      if(bblForeverPriceM && hasBblForeverText) subPrices.push({key:'BBL(포에버영)', price:parseFloat(bblForeverPriceM[1])});
-      if(bblColorPriceM && _bblHasColorText) subPrices.push({key:'BBL(색소)', price:parseFloat(bblColorPriceM[1])});
-      if(bblHongjoPriceM && _bblHasHongjoText) subPrices.push({key:'BBL(홍조)', price:parseFloat(bblHongjoPriceM[1])});
+  const hasBblBodyText = /(?:바디\s*bbl|bbl\s*(?:\([^)]*\)\s*)?바디)/i.test(raw);
+  const hasBblText = /bbl/i.test(raw);
+  if(hasBblText){
+    // 스킨타이트닝 별도 가격
+    const bblTightPriceM = raw.match(/스킨타이트닝(?:\s*\d+\s*회)?\s*([\d.]+)(?!\s*회)/i);
+    if(bblTightPriceM && hasBblTightText){
+      const p = parseFloat(bblTightPriceM[1]);
+      if(p>=1&&p<2000) bblPriceMap['BBL(스킨타이트닝)'] = p;
     }
-    if(bblTightPriceM && hasBblTightText) subPrices.push({key:'BBL(스킨타이트닝)', price:parseFloat(bblTightPriceM[1])});
-    if(bblAcnePriceM && hasBblAcneText) subPrices.push({key:'BBL(여드름)', price:parseFloat(bblAcnePriceM[1])});
-    if(subPrices.length >= 2){
-      // 마지막 가격이 앞 가격들보다 크면 → BBL 소계로 판단
-      const lastSub = subPrices[subPrices.length-1];
-      const prevSum = subPrices.slice(0,-1).reduce((s,sp)=>s+sp.price, 0);
-      if(lastSub.price > prevSum && lastSub.price <= prevSum*3){
-        // 마지막 숫자 = BBL 소계, 마지막 서브타입 가격 = 소계-나머지합
-        subPrices.slice(0,-1).forEach(sp=>{ if(sp.price>=1&&sp.price<2000) bblPriceMap[sp.key]=sp.price; });
-        const lastPrice = Math.round((lastSub.price - prevSum)*100)/100;
-        if(lastPrice>=1&&lastPrice<2000) bblPriceMap[lastSub.key]=lastPrice;
-      } else {
-        // 개별 가격으로 처리
-        subPrices.forEach(sp=>{ if(sp.price>=1&&sp.price<2000) bblPriceMap[sp.key]=sp.price; });
-      }
-    } else if(subPrices.length === 1 && bblCoListedText && bblTypeCountText > 1){
-      // co-listed인데 가격 1개만 → 그룹 합계로 균등 분배
-      const groupTotal = subPrices[0].price;
-      const eachPrice = Math.round(groupTotal/bblTypeCountText*100)/100;
-      if(hasBblForeverText) bblPriceMap['BBL(포에버영)'] = eachPrice;
-      if(_bblHasColorText) bblPriceMap['BBL(색소)'] = eachPrice;
-      if(_bblHasHongjoText) bblPriceMap['BBL(홍조)'] = eachPrice;
-      if(hasBblAcneText) bblPriceMap['BBL(여드름)'] = eachPrice;
-      if(hasBblTightText) bblPriceMap['BBL(스킨타이트닝)'] = eachPrice;
-    } else {
-      subPrices.forEach(sp=>{ if(sp.price>=1&&sp.price<2000) bblPriceMap[sp.key]=sp.price; });
-    }
-  } else {
-    // 서브타입별 가격 없으면 기존 로직: BBL 전체 가격 → 균등분할
-    const bblRe = /bbl\s*(?:\([^)]*\))?\s*(?:(?:포에버영|포영|색소|홍조|화이트닝|미백|여드름|스킨타이트닝)\s*[+,]?\s*)*(?:[\d.]+\s*회\s*)?([\d.]+)(?!\s*회)/gi;
+    // BBL 전체 가격 추출 → BBL(스킨타이트닝 별도 시 차감)
+    const bblRe = /bbl\s*(?:\([^)]*\))?\s*(?:(?:포에버영|포영|색소|홍조|화이트닝|미백|여드름|스킨타이트닝|바디)\s*[+,]?\s*)*(?:[\d.]+\s*회\s*)?([\d.]+)(?!\s*회)/gi;
     for(const m of raw.matchAll(bblRe)){
       const price = parseFloat(m[1]);
       if(price >= 1 && price < 2000){
-        if(bblTypeCountText > 1){
-          const eachPrice = Math.round(price/bblTypeCountText*100)/100;
-          if(hasBblForeverText) bblPriceMap['BBL(포에버영)'] = eachPrice;
-          if(_bblHasColorText) bblPriceMap['BBL(색소)'] = eachPrice;
-          if(_bblHasHongjoText) bblPriceMap['BBL(홍조)'] = eachPrice;
-          if(hasBblAcneText) bblPriceMap['BBL(여드름)'] = eachPrice;
-          if(hasBblTightText) bblPriceMap['BBL(스킨타이트닝)'] = eachPrice;
+        if(hasBblTightText && !bblPriceMap['BBL(스킨타이트닝)']){
+          // 스킨타이트닝과 BBL이 함께 있는데 별도 가격 없으면 → 총가에서 BBL 표준가 빼기
+          const bblStd = 22;
+          bblPriceMap['BBL'] = bblStd;
+          bblPriceMap['BBL(스킨타이트닝)'] = Math.round((price - bblStd)*100)/100;
         } else {
-          if(/여드름/i.test(m[0])) bblPriceMap['BBL(여드름)'] = price;
-          else if(hasBblForeverText) bblPriceMap['BBL(포에버영)'] = price;
-          else if(hasBblHongjoText) bblPriceMap['BBL(홍조)'] = price;
-          else bblPriceMap['BBL(색소)'] = price;
+          bblPriceMap['BBL'] = price;
         }
       }
     }
@@ -1764,23 +1704,7 @@ function distributePrices(treatments, total, rawText){
     }
   }
 
-  // BBL 복수타입 균등분할: _bblGroup이 true인 항목들의 가격 합을 균등 분배
-  const bblGroupItems = priced.filter(t=>t._bblGroup);
-  if(bblGroupItems.length > 1){
-    const bblTotal = bblGroupItems.reduce((s,t)=>s+t.price, 0);
-    const eachBbl = Math.round(bblTotal/bblGroupItems.length*100)/100;
-    priced = priced.map(t=>{
-      if(!t._bblGroup) return t;
-      return {...t, price: eachBbl};
-    });
-    // 균등분할 후 반올림 오차 보정
-    const bblNewSum = priced.filter(t=>t._bblGroup).reduce((s,t)=>s+t.price, 0);
-    const bblDiff = Math.round((bblTotal - bblNewSum)*100)/100;
-    if(Math.abs(bblDiff)>0){
-      const lastBbl = priced.findIndex(t=>t._bblGroup);
-      if(lastBbl>=0) priced[lastBbl]={...priced[lastBbl], price:Math.round((priced[lastBbl].price+bblDiff)*100)/100};
-    }
-  }
+  // (BBL 복수타입 균등분할 제거 — BBL 통합으로 불필요)
 
   // 마이너스 가격 방지 (차감/환불/위약금/예약금/VIP할인 항목 제외) — 예약금 체크보다 먼저
   const deductItems = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP할인혜택','지정비용','제품','양도']);
@@ -2385,49 +2309,32 @@ function localParse(raw){
     else if(/리투오/i.test(raw)) results.push({item:'리투오', qty:1});
   }
 
-  // ── BBL ──
-  // bbl(포에버영2회99+스킨타이트닝3회198) 등 서브타입별 회차·가격 파싱
-  const hasBblForever = /bbl.*?(?:포에버영|포영)/i.test(raw);
-  const hasBblColor = /bbl.*?(?:색소|화이트닝|미백|스킨(?!타이트))/i.test(raw);
-  const hasBblHongjo = /bbl.*?홍조/i.test(raw);
-  const hasBblTight = /bbl.*?(?:스킨타이트닝)/i.test(raw);
+  // ── BBL (통합: 색소/홍조/포에버영 → BBL, 여드름/스킨타이트닝/바디만 별도) ──
+  const hasBblTight = /bbl.*?스킨타이트닝/i.test(raw);
   const hasBblAcne = /bbl.*?여드름/i.test(raw);
-  // 각 서브타입별 회차 추출: "포에버영2회", "스킨타이트닝3회", "여드름2회" 등
-  const bblForeverQtyM = raw.match(/(?:포에버영|포영)\s*(\d+)\s*회(?!\s*대체|\s*대신)/i);
-  let bblForeverQty = bblForeverQtyM ? parseInt(bblForeverQtyM[1]) : 1;
-  const bblColorQtyM = raw.match(/(?:색소|화이트닝|미백)\s*(\d+)\s*회(?!대체|대신)/i);
-  let bblColorQty = bblColorQtyM ? parseInt(bblColorQtyM[1]) : 1;
-  const bblHongjoQtyM = raw.match(/홍조\s*(\d+)\s*회(?!대체|대신)/i);
-  let bblHongjoQty = bblHongjoQtyM ? parseInt(bblHongjoQtyM[1]) : 1;
+  const hasBblBody = /(?:바디\s*bbl|bbl\s*(?:\([^)]*\)\s*)?바디)/i.test(raw);
+  const hasBblBase = /bbl/i.test(raw);
+  // BBL 회차 추출
+  let bblQty = 1, bblTightQty = 1, bblAcneQty = 1, bblBodyQty = 1;
   const bblTightQtyM = raw.match(/스킨타이트닝\s*(\d+)\s*회/i);
-  let bblTightQty = bblTightQtyM ? parseInt(bblTightQtyM[1]) : 1;
+  if(bblTightQtyM) bblTightQty = parseInt(bblTightQtyM[1]);
   const bblAcneQtyM = raw.match(/여드름\s*(\d+)\s*회/i);
-  let bblAcneQty = bblAcneQtyM ? parseInt(bblAcneQtyM[1]) : 1;
-  // 서브타입별 회차가 없고 BBL 전체에 회차가 있으면 공통 적용
-  if(!bblForeverQtyM && !bblColorQtyM && !bblHongjoQtyM && !bblTightQtyM && !bblAcneQtyM){
-    const bblGlobalQtyM = raw.match(/bbl\s*\([^)]*\)\s*(\d+)\s*회(?!\s*대체|\s*대신)/i)
-                      || raw.match(/bbl[^+,\n]*?(\d+)\s*회(?!\s*대체|\s*대신)/i);
-    if(bblGlobalQtyM){
-      const gq = parseInt(bblGlobalQtyM[1]);
-      if(hasBblForever) bblForeverQty = gq;
-      if(hasBblColor) bblColorQty = gq;
-      if(hasBblHongjo) bblHongjoQty = gq;
-      if(hasBblTight) bblTightQty = gq;
-      if(hasBblAcne) bblAcneQty = gq;
-    }
+  if(bblAcneQtyM) bblAcneQty = parseInt(bblAcneQtyM[1]);
+  // BBL 전체 회차 (서브타입 개별 회차 없을 때)
+  const bblGlobalQtyM = raw.match(/bbl\s*\([^)]*\)\s*(\d+)\s*회(?!\s*대체|\s*대신)/i)
+                    || raw.match(/bbl[^+,\n]*?(\d+)\s*회(?!\s*대체|\s*대신)/i);
+  if(bblGlobalQtyM) bblQty = parseInt(bblGlobalQtyM[1]);
+  // BBL 기본 (색소/홍조/포에버영 통합) — 여드름/스킨타이트닝/바디 제외한 BBL 언급이 있으면
+  if(hasBblBase && !(!hasBblAcne && !hasBblTight && !hasBblBody && !/색소|홍조|포에버영|포영|화이트닝|미백/i.test(raw) && /여드름/i.test(raw))){
+    // BBL 기본이 있는 경우 (색소/홍조/포에버영 중 하나라도 있거나, 서브타입 미명시)
+    const onlyAcne = hasBblAcne && !hasBblTight && !hasBblBody && !/색소|홍조|포에버영|포영|화이트닝|미백/i.test(raw);
+    const onlyTight = hasBblTight && !hasBblAcne && !hasBblBody && !/색소|홍조|포에버영|포영|화이트닝|미백/i.test(raw);
+    const onlyBody = hasBblBody && !hasBblAcne && !hasBblTight && !/색소|홍조|포에버영|포영|화이트닝|미백/i.test(raw);
+    if(!onlyAcne && !onlyTight && !onlyBody) results.push({item:'BBL', qty:bblQty});
   }
-  // 포에버영은 색소/홍조 프로그램을 포함 → 포에버영+색소 동시면 포에버영만
-  // 단, BBL(포에버영+색소+홍조) 또는 BBL포영+홍조처럼 명시적으로 같이 나열되면 별도 항목
-  const bblCoListed = /bbl[^,\n]*(?:포에버영|포영)[^,\n]*(?:색소|홍조)/i.test(raw)
-                   || /bbl[^,\n]*(?:색소|홍조)[^,\n]*(?:포에버영|포영)/i.test(raw);
-  const _bblHasColor = (hasBblForever && !bblCoListed) ? false : hasBblColor;
-  const _bblHasHongjo = (hasBblForever && !bblCoListed) ? false : hasBblHongjo;
-  const bblTypeCount = (hasBblForever?1:0)+(_bblHasColor?1:0)+(_bblHasHongjo?1:0)+(hasBblAcne?1:0)+(hasBblTight?1:0);
-  if(hasBblForever) results.push({item:'BBL(포에버영)', qty:bblForeverQty, _bblGroup:bblTypeCount>1});
-  if(_bblHasColor) results.push({item:'BBL(색소)', qty:bblColorQty, _bblGroup:bblTypeCount>1});
-  if(_bblHasHongjo) results.push({item:'BBL(홍조)', qty:bblHongjoQty, _bblGroup:bblTypeCount>1});
-  if(hasBblTight) results.push({item:'BBL(스킨타이트닝)', qty:bblTightQty, _bblGroup:bblTypeCount>1});
-  if(hasBblAcne) results.push({item:'BBL(여드름)', qty:bblAcneQty, _bblGroup:bblTypeCount>1});
+  if(hasBblTight) results.push({item:'BBL(스킨타이트닝)', qty:bblTightQty});
+  if(hasBblAcne) results.push({item:'BBL(여드름)', qty:bblAcneQty});
+  if(hasBblBody) results.push({item:'BBL(바디)', qty:bblBodyQty});
 
   // ── 듀얼피코 (피코토닝, 피코 단독 포함) ──
   const dpM = raw.match(/(?:듀얼피코|듀얼토닝|피코토닝)\s*(\d+)\s*회/i);
@@ -2968,12 +2875,11 @@ function localParse(raw){
       }
       if(/bbl/.test(t)){
         const bblItems = [];
-        if(/포에버영|포영/.test(t)) bblItems.push({item:'BBL(포에버영)', qty:1, _bblGroup:true});
-        if(/색소|화이트닝|미백/.test(t)) bblItems.push({item:'BBL(색소)', qty:1, _bblGroup:true});
-        if(/홍조/.test(t)) bblItems.push({item:'BBL(홍조)', qty:1, _bblGroup:true});
-        if(/여드름/.test(t)) bblItems.push({item:'BBL(여드름)', qty:1, _bblGroup:true});
-        if(/스킨타이트닝/.test(t)) bblItems.push({item:'BBL(스킨타이트닝)', qty:1, _bblGroup:true});
-        if(bblItems.length === 0) bblItems.push({item:'BBL(색소)', qty:1});
+        if(/여드름/.test(t)) bblItems.push({item:'BBL(여드름)', qty:1});
+        if(/스킨타이트닝/.test(t)) bblItems.push({item:'BBL(스킨타이트닝)', qty:1});
+        if(/바디/.test(t)) bblItems.push({item:'BBL(바디)', qty:1});
+        // 색소/홍조/포에버영 → BBL 통합
+        if(/색소|화이트닝|미백|포에버영|포영|홍조/.test(t) || bblItems.length === 0) bblItems.push({item:'BBL', qty:1});
         return bblItems;
       }
       if(/힐로웨이브/.test(t)) return [{item:'힐로웨이브', qty:1}];
