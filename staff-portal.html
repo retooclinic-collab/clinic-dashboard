@@ -2110,10 +2110,13 @@ function localParse(raw){
 
   // ── 엠페이스 ──
   // "엠페이스2-1,2(40분)176" → 영역번호(콤마 포함) 등 중간 텍스트 허용
+  // "엠페이스2-1,2-2 176m" → qty=2, 영역번호 2-1,2-2
   const empeM = raw.match(/엠페(?:이스)?.*?\(?\d+\s*분\)?\s*(\d+)?\s*회/i);
+  const empeQtyArea = raw.match(/엠페(?:이스)?\s*(\d+)\s*[-]/i);  // "엠페이스2-1,2-2" → qty=2
   const empeMin = raw.match(/엠페(?:이스)?.*?\(?(\d+)\s*분\)?/i);
-  const empeS = /엠페(?:이스)?/i.test(raw) && !empeM;
+  const empeS = /엠페(?:이스)?/i.test(raw) && !empeM && !empeQtyArea;
   if(empeM) results.push({item:'엠페이스', qty: empeM[1]?parseInt(empeM[1]):1});
+  else if(empeQtyArea) results.push({item:'엠페이스', qty: parseInt(empeQtyArea[1])});
   else if(empeMin){
     // 60분 → 3회 (20분당 1회)
     const mins = parseInt(empeMin[1]);
