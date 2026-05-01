@@ -2557,7 +2557,7 @@ function localParse(raw){
     : btxDomPrefixQty > 0 ? btxDomPrefixQty
     : 0;
   if(btxDomQty>0) results.push({item:'보톡스(국산)', qty: btxDomQty});
-  else if(/보톡스.*?국산|국산.*?보톡스|\(국\)|\(국산\)|국산\s*b(?!\s*\(제오민\))/i.test(raw)) results.push({item:'보톡스(국산)', qty:1});
+  else if(/보톡스.*?국산|국산.*?보톡스|\(국\)|\(국산\)|국산[가-힣]*b(?:톡스|tx)?(?!\s*\(제오민\))/i.test(raw)) results.push({item:'보톡스(국산)', qty:1});
 
   // ── 보톡스 수입/제오민 (입꼬리제오민, 사각턱제오민 등 모두 포함) ──
   // "대체/교체/대신" 맥락 괄호 안 제오민 언급은 제외 (예: "아쿠아필(눈가제오민b대체)")
