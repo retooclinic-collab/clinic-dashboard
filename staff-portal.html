@@ -1003,7 +1003,7 @@ const _ITEM_KEYWORDS = {
   '아이써마지225':/아이써마지.*?225/i, '아이써마지450샷':/아이써마지.*?450/i,
   '튠페이스':/튠페(?!이스.*라이너)/i, '튠라이너':/튠라이너/i, '튠바디':/튠바디/i,
   '티타늄':/티타늄/i,
-  '온다(바디)':/(?:바디|팔|종아리|다리|복부)온다|온다\s*바디/i,
+  '온다(바디)':/(?:바디|팔|종아리|다리|복부)온다|온다\s*바디|온다\s*\((?:팔뚝|팔|종아리|다리|복부|허벅지|바디|옆구리|등|힙|엉덩이)/i,
   '온다':/온다/i,
   '티타튠max':/티타튠max/i, '티타튠':/티타튠(?!max)/i,
   '리쥬란HB':/리쥬란\s*hb/i,
@@ -2058,11 +2058,14 @@ function localParse(raw){
   {
     const _bodyPfx = /(?:바디|팔|종아리|다리|복부)/;
     // 바디온다 계열 (with rounds)
+    // "팔온다120KJ", "온다바디120KJ", "온다(팔뚝)120KJ", "온다(복부)150KJ" 모두 지원
     const ondaBodyWR = [...raw.matchAll(/(?:바디|팔|종아리|다리|복부)온다\s*(\d+)\s*kj\s*(?:\([^)]*\))?\s*(\d+)\s*회/gi)];
     const ondaBodyKj = [...raw.matchAll(/(?:바디|팔|종아리|다리|복부)온다\s*(\d+)\s*kj/gi)];
     const ondaBodyAlt = [...raw.matchAll(/온다\s*바디\s*(\d+)\s*kj/gi)];
-    const ondaBodyKjAll = [...ondaBodyKj, ...ondaBodyAlt];
-    const ondaBodyAny = /(?:바디|팔|종아리|다리|복부)온다|온다\s*바디/i.test(raw);
+    // "온다(팔뚝)120KJ", "온다(복부)150KJ" 등 괄호 안 부위명 패턴
+    const ondaBodyParen = [...raw.matchAll(/온다\s*\((?:팔뚝|팔|종아리|다리|복부|허벅지|바디|옆구리|등|힙|엉덩이)[^)]*\)\s*(\d+)\s*kj/gi)];
+    const ondaBodyKjAll = [...ondaBodyKj, ...ondaBodyAlt, ...ondaBodyParen];
+    const ondaBodyAny = /(?:바디|팔|종아리|다리|복부)온다|온다\s*바디|온다\s*\((?:팔뚝|팔|종아리|다리|복부|허벅지|바디|옆구리|등|힙|엉덩이)/i.test(raw);
     const ondaBodyParenPrice = raw.match(/(?:바디|팔|종아리|다리|복부)온다\s*\d+\s*kj\s*\(\s*([\d.]+)\s*\)/i)
                             || raw.match(/온다\s*바디\s*\d+\s*kj\s*\(\s*([\d.]+)\s*\)/i);
     const ondaBodyFixedAmt = ondaBodyParenPrice ? parseFloat(ondaBodyParenPrice[1]) : null;
