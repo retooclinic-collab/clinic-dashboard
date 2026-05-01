@@ -3244,6 +3244,9 @@ function extractAmount(text){
   // =N(결제방식) 패턴 (m/M 생략): =183.7(91알리+나머지92.7카)
   const m2b = text.match(/[=＝]\s*(-?[\d,]+\.?\d*)\s*\(/);
   if(m2b){ const v=parseFloat(m2b[1].replace(/,/g,'')); if(v>0) return v; }
+  // =N 폴백 (m 생략, 끝): "예약금11건(...)=36.3" → 36.3
+  const m2c = text.match(/[=＝]\s*(-?[\d,]+\.?\d*)\s*$/);
+  if(m2c){ const v=parseFloat(m2c[1].replace(/,/g,'')); if(v>0) return v; }
   // N만원 폴백 (환불 등 = 없는 케이스): -19.8만원
   const m3 = text.match(/(-?[\d,]+\.?\d*)\s*만\s*원/);
   if(m3) return parseFloat(m3[1].replace(/,/g,''));
@@ -3291,6 +3294,29 @@ function extractPayment(text){
         return { methods: [singleMethod], splitDetails: [{method: singleMethod, amt}] };
       }
       // 분할결제: (500m카/216.6m알리) → 일반 분기로 넘김 (아래에서 처리)
+    }
+  }
+  // ── 괄호 안 날짜+결제방식+금액 패턴 우선 감지 ──
+  // "예약금11건(4/30 위챗 3.3+5/1 위챗19.8+5/1 제로 13.2)=36.3"
+  const parenContent = text.match(/\(([^)]+)\)/);
+  if(parenContent){
+    const datePayParts = [...parenContent[1].matchAll(/\d+\/\d+\s+([가-힣a-zA-Z]+)\s*([\d.]+)/g)];
+    if(datePayParts.length >= 2){
+      const methods = [], splitDetails = [];
+      const methodSums = {};
+      datePayParts.forEach(dp => {
+        const method = normalizePayMethod(dp[1]);
+        if(method){
+          methodSums[method] = (methodSums[method]||0) + parseFloat(dp[2]);
+          if(!methods.includes(method)) methods.push(method);
+        }
+      });
+      if(Object.keys(methodSums).length > 0){
+        Object.entries(methodSums).forEach(([method, amt]) => {
+          splitDetails.push({method, amt: Math.round(amt*100)/100});
+        });
+        return {methods, splitDetails};
+      }
     }
   }
   // 금액m(결제방식) 패턴: =855.2m(위챗), →258.8m(알리), =170.5m(120현금자진+50.5카)
