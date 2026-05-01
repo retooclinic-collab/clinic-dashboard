@@ -944,7 +944,7 @@ let TREATMENT_ITEMS = [
   '플라즈마','라라필','포텐자(모공)','포텐자(기미)','인텐스울트라','코레지셀핏','LDM',
   '크라이오','제모(여자)','제모(남자)','새살주사','펌핑팁','수면비','히알라제',
   '상담만','TA','아쿠아필','포텐자(펌핑)','아그네스','PDRN','줄기세포','VIP회원권','VIP할인혜택',
-  '프락셀','써마지300','아이써마지225','하이쿡스','리쥬란아이','써마지600',
+  '프락셀','써마지300','아이써마지225','하이쿡스','리쥬란아이','써마지600','클라리티',
   '리쥬란HB','소프웨이브(50샷)','위고비','미라젯','엠페이스','온다','온다(바디)','스킨바이브',
   '써마지900샷','줄기세포30cc','줄기세포60cc','줄기세포120cc','줄기세포240cc',
   'BBL(색소)','BBL(홍조)','BBL(스킨타이트닝)','BBL(여드름)','moxi','오푸스','쥬베룩아이',
@@ -982,7 +982,7 @@ const CHARGE_PRICE = {
   '리투핏주사':17.6, '줄기세포30cc':145, '줄기세포60cc':198,
   '줄기세포120cc':330, '줄기세포240cc':506,
   '자가엑소좀':165, '위고비':26, '스킨바이브':60.5,
-  '아쿠아필':11, '제네시스+PTT':38.5, '제네시스':38.5,
+  '아쿠아필':11, '제네시스+PTT':38.5, '제네시스':38.5, '클라리티':27.5,
   '수액':8.8, 'NAD':16.5, '백옥':8.8, 'TA':1.1, 'CO2':5.5,
   '알라딘필':33, '리쥬셀릭크림':4.2, '리쥬셀릭앰플':4.8,
   '리쥬셀릭선물세트':12.5, 'VIP회원권':0, '상담만':2.2,
@@ -1035,6 +1035,7 @@ const _ITEM_KEYWORDS = {
   '아쿠아필':/아쿠아필/i,
   '제네시스+PTT':/제네시스\s*\+?\s*ptt/i,
   '제네시스':/제네시스(?!\s*\+?\s*ptt)/i,
+  '클라리티':/클라리티/i,
   'PDRN':/pdrn/i,
   '줄기세포240cc':/줄기세포\s*240/i, '줄기세포120cc':/줄기세포\s*120/i,
   '줄기세포60cc':/줄기세포\s*60/i, '줄기세포30cc':/줄기세포\s*30/i,
@@ -2388,7 +2389,7 @@ function localParse(raw){
   const hasBblTight = /bbl.*?(?:스킨타이트닝)/i.test(raw);
   const hasBblAcne = /bbl.*?여드름/i.test(raw);
   // 각 서브타입별 회차 추출: "포에버영2회", "스킨타이트닝3회", "여드름2회" 등
-  const bblForeverQtyM = raw.match(/(?:포에버영|포영)\s*(\d+)\s*회(?!대체|대신)/i);
+  const bblForeverQtyM = raw.match(/(?:포에버영|포영)\s*(\d+)\s*회(?!\s*대체|\s*대신)/i);
   let bblForeverQty = bblForeverQtyM ? parseInt(bblForeverQtyM[1]) : 1;
   const bblColorQtyM = raw.match(/(?:색소|화이트닝|미백)\s*(\d+)\s*회(?!대체|대신)/i);
   let bblColorQty = bblColorQtyM ? parseInt(bblColorQtyM[1]) : 1;
@@ -2400,8 +2401,8 @@ function localParse(raw){
   let bblAcneQty = bblAcneQtyM ? parseInt(bblAcneQtyM[1]) : 1;
   // 서브타입별 회차가 없고 BBL 전체에 회차가 있으면 공통 적용
   if(!bblForeverQtyM && !bblColorQtyM && !bblHongjoQtyM && !bblTightQtyM && !bblAcneQtyM){
-    const bblGlobalQtyM = raw.match(/bbl\s*\([^)]*\)\s*(\d+)\s*회/i)
-                      || raw.match(/bbl[^+,\n]*?(\d+)\s*회/i);
+    const bblGlobalQtyM = raw.match(/bbl\s*\([^)]*\)\s*(\d+)\s*회(?!\s*대체|\s*대신)/i)
+                      || raw.match(/bbl[^+,\n]*?(\d+)\s*회(?!\s*대체|\s*대신)/i);
     if(bblGlobalQtyM){
       const gq = parseInt(bblGlobalQtyM[1]);
       if(hasBblForever) bblForeverQty = gq;
@@ -2431,6 +2432,9 @@ function localParse(raw){
   const picoOnly = /피코(?!슈어|웨이|포커스|토닝)/i.test(raw) && !/듀얼피코|피코토닝/i.test(raw);
   if(dpM) results.push({item:'듀얼피코', qty: parseInt(dpM[1])});
   else if(dpSingle || picoOnly) results.push({item:'듀얼피코', qty:1});
+
+  // ── 클라리티 (혈관모드/색소모드 등) ──
+  if(/클라리티/i.test(raw)) results.push({item:'클라리티', qty:1});
 
   // ── 포텐자 ──
   if(/포텐자.*?펌핑|펌핑팁|펌핑쥬베룩/i.test(raw)) results.push({item:'포텐자(펌핑)', qty:1});
@@ -2839,6 +2843,22 @@ function localParse(raw){
     });
   }
 
+  // 나오쿠폰/쿠폰 감지: "시술명 나오쿠폰" → 해당 항목 가격 0
+  if(/쿠폰/i.test(_origRaw)){
+    const couponPattern = /(?:^|[\n,+])((?:[^,\n+(]|\([^)]*\))+?)\s*(?:나오쿠폰|쿠폰)(?:\s|[=,\n+(]|$)/gim;
+    const couponMatches = [..._origRaw.matchAll(couponPattern)];
+    if(couponMatches.length > 0){
+      results.forEach(r => {
+        if(r._fixedAmt !== undefined) return;
+        const kw = _ITEM_KEYWORDS[r.item];
+        if(!kw) return;
+        couponMatches.forEach(cm => {
+          if(kw.test(cm[1])) r._fixedAmt = 0;
+        });
+      });
+    }
+  }
+
   // ── 4월e) 이벤트 그룹 개별 파싱 + 단가 비례배분 ──
   // 각 이벤트 그룹 내용에서 시술명 추출 → 단가 기준 비례배분 → 기존 results에 머지
   if(eventGroups.length > 0){
@@ -2942,15 +2962,23 @@ function localParse(raw){
         if(/국산|나보타|보툴렉스/.test(t)) return [{item:'보톡스(국산)', qty:1}];
         return [{item:'보톡스(수입)', qty:1}];
       }
-      if(/bbl.*포에버영|bbl.*포영/.test(t)) return [{item:'BBL(포에버영)', qty}];
-      if(/bbl.*홍조/.test(t)) return [{item:'BBL(홍조)', qty}];
-      if(/bbl.*미백|bbl.*색소/.test(t) || /bbl/.test(t)) return [{item:'BBL(색소)', qty}];
+      if(/bbl/.test(t)){
+        const bblItems = [];
+        if(/포에버영|포영/.test(t)) bblItems.push({item:'BBL(포에버영)', qty:1, _bblGroup:true});
+        if(/색소|화이트닝|미백/.test(t)) bblItems.push({item:'BBL(색소)', qty:1, _bblGroup:true});
+        if(/홍조/.test(t)) bblItems.push({item:'BBL(홍조)', qty:1, _bblGroup:true});
+        if(/여드름/.test(t)) bblItems.push({item:'BBL(여드름)', qty:1, _bblGroup:true});
+        if(/스킨타이트닝/.test(t)) bblItems.push({item:'BBL(스킨타이트닝)', qty:1, _bblGroup:true});
+        if(bblItems.length === 0) bblItems.push({item:'BBL(색소)', qty:1});
+        return bblItems;
+      }
       if(/힐로웨이브/.test(t)) return [{item:'힐로웨이브', qty:1}];
       if(/진정관리|진정팩|피부관리|ldm|엘디엠|힐라이트/i.test(t)) return [{item:'피부관리', qty:1}];
       if(/리투오/.test(t)) return [{item:'리투오', qty}];
       if(/아쿠아필/.test(t)) return [{item:'아쿠아필', qty:1}];
       if(/엠페이스/.test(t)) return [{item:'엠페이스', qty}];
       if(/오푸스/.test(t)) return [{item:'오푸스', qty:1}];
+      if(/클라리티/.test(t)) return [{item:'클라리티', qty:1}];
       return null;
     };
 
@@ -2989,25 +3017,76 @@ function localParse(raw){
         });
       });
       if(parsed.length === 0) return;
-      // 단가 비례배분 (자연수 위주, 마지막 항목에서 오차 보정)
-      const unitPrices = parsed.map(p => (p._unitPrice || CHARGE_PRICE[p.item]||1) * p.qty);
-      const sum = unitPrices.reduce((a,b)=>a+b, 0);
-      const shares = parsed.map((p, i) => {
-        return sum > 0
-          ? Math.round(eg.price * (unitPrices[i]/sum))
-          : Math.round(eg.price / parsed.length);
+      // standalone 가격 감지: 이벤트 외 줄에서 같은 항목의 단가가 명시되어 있으면 사용
+      // 예: "소프+온다 330" 이벤트 + "온다40kj 추가 44" standalone → 온다=44, 소프=286
+      const standaloneLines = raw.split('\n').filter(l => !/\d+월?[eE]/.test(l));
+      let standaloneUsed = false;
+      let standaloneTotal = 0;
+      parsed.forEach(p => {
+        const itemKw = _ITEM_KEYWORDS[p.item];
+        if(!itemKw) return;
+        for(const line of standaloneLines){
+          if(!itemKw.test(line)) continue;
+          // 줄에서 마지막 숫자 추출 (샷/회/kj/cc 뒤 제외)
+          const cleanLine = line.replace(/\d+\s*(?:cc|샷|회|개|kj|병|ml|분)/gi, '?');
+          const nums = [...cleanLine.matchAll(/([\d]+\.?\d*)/g)].map(m=>parseFloat(m[1])).filter(n=>n>=1&&n<2000);
+          if(nums.length > 0){
+            p._standalonePrice = nums[nums.length - 1];
+            break;
+          }
+        }
       });
-      // 반올림 오차 보정: 합계를 eg.price에 맞춤 (마지막 항목에서 조정)
-      const shareSum = shares.reduce((a,b)=>a+b, 0);
-      const diff = Math.round((eg.price - shareSum) * 10) / 10;
-      if(diff !== 0) shares[shares.length - 1] += diff;
+      const withStandalone = parsed.filter(p => p._standalonePrice !== undefined);
+      const withoutStandalone = parsed.filter(p => p._standalonePrice === undefined);
+      // standalone 항목이 일부만 있으면 뺄셈 분배
+      if(withStandalone.length > 0 && withoutStandalone.length > 0){
+        standaloneTotal = withStandalone.reduce((s,p) => s + p._standalonePrice, 0);
+        if(standaloneTotal < eg.price) standaloneUsed = true;
+      }
+
+      let shares;
+      if(standaloneUsed){
+        // standalone 항목: 실제 단가 사용, 나머지: 잔액을 표준가 비율로 분배
+        const remainder = Math.round((eg.price - standaloneTotal)*100)/100;
+        const wpUnitPrices = withoutStandalone.map(p => (p._unitPrice || CHARGE_PRICE[p.item]||1) * p.qty);
+        const wpSum = wpUnitPrices.reduce((a,b)=>a+b, 0);
+        shares = parsed.map((p, i) => {
+          if(p._standalonePrice !== undefined) return p._standalonePrice;
+          const wpIdx = withoutStandalone.indexOf(p);
+          return wpSum > 0
+            ? Math.round(remainder * wpUnitPrices[wpIdx] / wpSum * 10) / 10
+            : Math.round(remainder / withoutStandalone.length * 10) / 10;
+        });
+        // 반올림 오차 보정
+        const sSum = shares.reduce((a,b)=>a+b, 0);
+        const sDiff = Math.round((eg.price - sSum)*10)/10;
+        if(sDiff !== 0){
+          const lastWpIdx = parsed.findLastIndex(p => p._standalonePrice === undefined);
+          if(lastWpIdx >= 0) shares[lastWpIdx] += sDiff;
+          else shares[shares.length - 1] += sDiff;
+        }
+      } else {
+        // 기존 로직: 단가 비례배분
+        const unitPrices = parsed.map(p => (p._unitPrice || CHARGE_PRICE[p.item]||1) * p.qty);
+        const sum = unitPrices.reduce((a,b)=>a+b, 0);
+        shares = parsed.map((p, i) => {
+          return sum > 0
+            ? Math.round(eg.price * (unitPrices[i]/sum))
+            : Math.round(eg.price / parsed.length);
+        });
+        // 반올림 오차 보정: 합계를 eg.price에 맞춤 (마지막 항목에서 조정)
+        const shareSum = shares.reduce((a,b)=>a+b, 0);
+        const diff = Math.round((eg.price - shareSum) * 10) / 10;
+        if(diff !== 0) shares[shares.length - 1] += diff;
+      }
       parsed.forEach((p, i) => {
         const share = shares[i];
         // 기존 results에 같은 item 있으면 _fixedAmt만 누적 (qty는 메인 파서가 이미 카운트함 → 이중카운트 방지)
         const existing = results.find(r => r.item === p.item);
         if(existing){
-          // 이벤트 그룹 share로 덮어쓰기 (메인파서 중복 방지)
-          existing._fixedAmt = share;
+          // 이벤트 그룹 share + standalone 가격 합산
+          // 예: 온다 event share=44 + standalone 추가 44 → _fixedAmt=88
+          existing._fixedAmt = share + (p._standalonePrice || 0);
           // qty도 이벤트 그룹 기준으로 갱신 (엠페이스4회 등)
           if(p.qty > existing.qty) existing.qty = p.qty;
         } else {
