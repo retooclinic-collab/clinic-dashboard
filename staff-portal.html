@@ -1827,15 +1827,25 @@ function localParse(raw){
   }
 
   // 이벤트 그룹 가격이 괄호 안에 있는 경우: "4월e) 소프300샷+티타늄40KJ(374)"
-  const eventPatternParen = /(?:\d+월?|[가-힣]+)[eE][가-힣]*\)\s*((?:[^=(]|\([^)]*\))*?)\(([\d.]+)\)\s*(?=[,\n+\-=]|$)/g;
+  // "4월e 엠페이스4회+온다80KJ(379.5)" — e 뒤 공백 형식도 지원
+  const eventPatternParen = /(?:\d+월?|[가-힣]+)[eE](?:[가-힣]*\)\s*|\s+)((?:[^=(]|\([^)]*\))*?)\(([\d.]+)\)\s*(?=[,\n+\-=]|$)/g;
   let evMatch2;
   while((evMatch2 = eventPatternParen.exec(raw)) !== null){
     const groupName = evMatch2[1].replace(/\+/g,'+').trim();
     const groupPrice = parseFloat(evMatch2[2]);
-    // 이미 같은 위치에서 매칭된 이벤트 그룹이 있으면 스킵
-    const alreadyFound = eventGroups.some(eg => eg.fullMatch === evMatch2[0] || eg.name === groupName);
-    if(groupName && groupPrice > 0 && !alreadyFound){
-      eventGroups.push({name: groupName, price: groupPrice, fullMatch: evMatch2[0]});
+    // 패턴1에서 잘못 잡힌 동일 이벤트 접두어 그룹이 있으면 교체 (괄호 가격이 더 정확)
+    const existIdx = eventGroups.findIndex(eg => {
+      // 같은 접두어에서 시작한 이벤트 그룹: name이 현재 groupName을 포함하거나 반대
+      return eg.name.includes(groupName) || groupName.includes(eg.name);
+    });
+    if(groupName && groupPrice > 0){
+      const entry = {name: groupName, price: groupPrice, fullMatch: evMatch2[0]};
+      if(existIdx >= 0){
+        // 괄호 가격 버전으로 교체 (더 정확한 범위)
+        eventGroups[existIdx] = entry;
+      } else {
+        eventGroups.push(entry);
+      }
     }
   }
 
@@ -2868,7 +2878,7 @@ function localParse(raw){
       if(/진정관리|진정팩|피부관리|ldm|엘디엠|힐라이트/i.test(t)) return [{item:'피부관리', qty:1}];
       if(/리투오/.test(t)) return [{item:'리투오', qty}];
       if(/아쿠아필/.test(t)) return [{item:'아쿠아필', qty:1}];
-      if(/엠페이스/.test(t)) return [{item:'엠페이스', qty:1}];
+      if(/엠페이스/.test(t)) return [{item:'엠페이스', qty}];
       if(/오푸스/.test(t)) return [{item:'오푸스', qty:1}];
       return null;
     };
@@ -2925,7 +2935,10 @@ function localParse(raw){
         // 기존 results에 같은 item 있으면 _fixedAmt만 누적 (qty는 메인 파서가 이미 카운트함 → 이중카운트 방지)
         const existing = results.find(r => r.item === p.item);
         if(existing){
-          existing._fixedAmt = (existing._fixedAmt||0) + share;
+          // 이벤트 그룹 share로 덮어쓰기 (메인파서 중복 방지)
+          existing._fixedAmt = share;
+          // qty도 이벤트 그룹 기준으로 갱신 (엠페이스4회 등)
+          if(p.qty > existing.qty) existing.qty = p.qty;
         } else {
           results.push({item: p.item, qty: p.qty, _fixedAmt: share});
         }
