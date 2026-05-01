@@ -1360,8 +1360,77 @@ function extractTextPrices(raw, treatments){
         const kw = KEYWORDS[t.item];
         return kw && priceItemSeg >= 0 && kw.test(plusParts[priceItemSeg].replace(/\([^)]*\)/g,' '));
       });
-      // 가격없는 항목이 가격있는 항목과 같은 +세그먼트에 없으면 → 개별가격, 스킵
-      if(!noPriceInSameSeg) return;
+      // 가격없는 항목이 가격있는 항목과 같은 +세그먼트에 없으면 →
+      // 인접 +세그먼트 복합소계 가능성 체크 (소프150+온다40KJ 209 패턴)
+      if(!noPriceInSameSeg){
+        const groupOuter = group.replace(/\([^)]*\)/g,' ').trim();
+        const gp = getPrice(groupOuter);
+        if(gp !== null && gp > 0){
+          const priceItem = withPrice[0];
+          const currentFound = found[priceItem.item] || 0;
+          // 다른 콤마그룹에서 누적된 가격 = currentFound - gp
+          const otherGrpPrice = Math.max(0, Math.round((currentFound - gp)*100)/100);
+          // 그룹 내 각 항목의 표준가 (shot 기반은 그룹 내 샷수 사용)
+          const gStdParts = groupItems.map(t => {
+            let gq = 1;
+            if(/소프웨이브/.test(t.item)){
+              const sm = group.match(/소프(?:웨이브)?\s*(\d+)\s*샷/i);
+              if(sm) gq = Math.max(1, Math.round(parseInt(sm[1])/50));
+            } else if(/울쎄라/.test(t.item)){
+              const sm = group.match(/울쎄라\s*(\d+)\s*샷/i);
+              if(sm) gq = Math.max(1, Math.round(parseInt(sm[1])/100));
+            }
+            return { item: t.item, std: (CHARGE_PRICE[t.item]??0) * gq };
+          });
+          const gStdSum = gStdParts.reduce((s,p) => s + p.std, 0);
+          // 개별가 vs 복합가 비교: gp가 priceItem 표준가보다 복합 표준가에 더 가까우면 복합소계
+          const priceItemStd = gStdParts.find(p => p.item === priceItem.item)?.std ?? 0;
+          const ratioIndiv = priceItemStd > 0 ? Math.abs(gp/priceItemStd - 1) : Infinity;
+          const ratioCombo = gStdSum > 0 ? Math.abs(gp/gStdSum - 1) : Infinity;
+          if(ratioCombo < ratioIndiv && gStdSum > 0 && gp >= gStdSum*0.3 && gp <= gStdSum*3){
+            if(otherGrpPrice > 0.5){
+              // 다른 그룹에 같은 항목의 실제 단가가 있음 → 뺄셈으로 분배
+              // 예: 소프+온다 209, 온다추가 44 → 온다=44, 소프=209-44=165
+              const remainder = Math.round((gp - otherGrpPrice)*100)/100;
+              if(remainder > 0){
+                if(withoutPrice.length === 1){
+                  found[withoutPrice[0].item] = remainder;
+                } else {
+                  // 나머지를 가격없는 항목들에 표준가 비율 분배
+                  const wpStdSum = withoutPrice.reduce((s,t) => s + (gStdParts.find(p=>p.item===t.item)?.std ?? 0), 0);
+                  let dr2 = 0;
+                  withoutPrice.forEach((t, idx) => {
+                    const std = gStdParts.find(p=>p.item===t.item)?.std ?? 0;
+                    if(idx < withoutPrice.length - 1){
+                      const share = wpStdSum > 0 ? Math.round(remainder*std/wpStdSum*10)/10 : Math.round(remainder/withoutPrice.length*10)/10;
+                      found[t.item] = share; dr2 += share;
+                    } else {
+                      found[t.item] = Math.round((remainder - dr2)*10)/10;
+                    }
+                  });
+                }
+                // priceItem: 콤보 내 몫(=otherGrpPrice) + 다른 그룹 가격
+                found[priceItem.item] = Math.round(otherGrpPrice * 2 * 100)/100;  // combo share + standalone
+              }
+            } else {
+              // 다른 그룹에 실제 단가 없음 → 표준가 비율 분배
+              let dr = 0;
+              groupItems.forEach((t, idx) => {
+                const sp = gStdParts.find(p => p.item === t.item);
+                const std = sp ? sp.std : 0;
+                if(idx < groupItems.length - 1){
+                  const share = Math.round(gp * std / gStdSum * 10) / 10;
+                  found[t.item] = share;
+                  dr += share;
+                } else {
+                  found[t.item] = Math.round((gp - dr) * 10) / 10;
+                }
+              });
+            }
+          }
+        }
+        return;
+      }
 
       const p = found[withPrice[0].item];
       const stdSum = groupItems.reduce((s,t)=>s+(CHARGE_PRICE[t.item]??0)*t.qty, 0);
@@ -1530,7 +1599,8 @@ function distributePrices(treatments, total, rawText){
   const hasVip = priced.some(t=>t.item==='VIP회원권');
   if(hasVip){
     // 적립금 라인에서 직접 추출: "1359.7+100=1459.7m 적립" → 100
-    const creditLineM = rawText && rawText.match(/[\d.]+\s*\+\s*([\d.]+)\s*=\s*[\d.]+\s*[mM만]\s*적립/);
+    // "500+25+9.6=534.6적립" (m 없이, 항 3개 이상도 지원)
+    const creditLineM = rawText && rawText.match(/[\d.]+\s*\+\s*([\d.]+)(?:\s*\+\s*[\d.]+)*\s*=\s*[\d.]+\s*[mM万]?\s*적립/);
     const directCredit = creditLineM ? parseFloat(creditLineM[1]) : 0;
 
     // 1) 기존 할인차감 항목이 있으면 VIP할인혜택으로 이름 변경 (본문 명시 할인)
