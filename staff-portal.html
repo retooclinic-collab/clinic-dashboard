@@ -1060,7 +1060,7 @@ function extractTextPrices(raw, treatments){
     .replace(/^.*모두\s*사용.*$/gim, '')                 // 모두사용 메모줄 제거
     .replace(/^.*남은\s*적립금\s*없음.*$/gim, '')         // 남은적립금없음 메모줄 제거
     .replace(/^.*남은\s*금액\s*[x×X].*$/gim, '')         // 남은 금액x 메모줄 제거
-    .replace(/^.*총\s*[\d.,]+\s*차감.*$/gim, '')         // 총1131.9 차감 후... 메모줄 제거
+    .replace(/[=＝]\s*총\s*[\d.,]+\s*[mM만]?\s*차감[^,\n]*/gi, '')  // =총647.9차감... 부분만 제거 (줄 전체X)
     .replace(/[=＝]\s*[\d.,]+\s*[mM만]?.*$/gim, '')   // =결제금액 제거 (각 줄별, m 없어도 제거)
     .replace(/[=＝]\s*[\d.,]+\s*(?:차감|결제).*$/gim, '')  // =N차감, =N결제 제거
     .replace(/총\s*[\d.,]+\s*[mM만]?\s*$/gim, '')        // "총435.9" 잔여 제거
@@ -1601,7 +1601,11 @@ function distributePrices(treatments, total, rawText){
   if(hasVip){
     // 적립금 라인에서 직접 추출: "1359.7+100=1459.7m 적립" → 100
     // "500+25+9.6=534.6적립" (m 없이, 항 3개 이상도 지원)
-    const creditLineM = rawText && rawText.match(/[\d.]+\s*\+\s*([\d.]+)(?:\s*\+\s*[\d.]+)*\s*=\s*[\d.]+\s*[mM万]?\s*적립/);
+    // "VIP700+49적립=700m" (적립이 =보다 앞에 오는 패턴도 지원)
+    const creditLineM = rawText && (
+      rawText.match(/[\d.]+\s*\+\s*([\d.]+)(?:\s*\+\s*[\d.]+)*\s*=\s*[\d.]+\s*[mM万]?\s*적립/)
+      || rawText.match(/vip\s*\d+\s*\+\s*([\d.]+)\s*적립/i)
+    );
     const directCredit = creditLineM ? parseFloat(creditLineM[1]) : 0;
 
     // 1) 기존 할인차감 항목이 있으면 VIP할인혜택으로 이름 변경 (본문 명시 할인)
@@ -3313,9 +3317,6 @@ function extractAmount(text){
     const vipM = text.match(/vip\s*\d+\s*(?:\+[^=]*?)?[=＝]\s*([\d,.]+)\s*[mM만]?\s*\(/i);
     if(vipM){
       let v = parseFloat(vipM[1].replace(/,/g,''));
-      // VIP적립 보너스 가산: "VIP800+80적립" → 800 + 80 = 880 (실효 크레딧)
-      const bonusM = text.match(/\+\s*(\d+)\s*적립/i);
-      if(bonusM) v += parseFloat(bonusM[1]);
       if(v>0) return v;
     }
   }
@@ -4145,7 +4146,12 @@ function renderImportPreview(){
       } else if(r._origColAmt > 0){
         r.amount = hasMisu ? Math.round((r._origColAmt - misuAmt)*100)/100 : r._origColAmt;
       } else {
-        r.amount = 0;  // 컬럼 비어있으면 0 유지 (텍스트 파싱으로 덮어쓰지 않음)
+        // 컬럼 비어있으면 시술합계 사용 (예약금5건=16.5m 등 텍스트에 금액 있는 경우)
+      if(treatSumR > 0){
+        r.amount = paidAmt > 0 ? paidAmt : treatSumR;
+      } else {
+        r.amount = 0;
+      }
       }
     } else if(treatSumR < -0.01){
       r.amount = treatSumR;  // 환불
