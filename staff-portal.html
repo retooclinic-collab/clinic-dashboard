@@ -4079,7 +4079,7 @@ function renderImportPreview(){
       if(r._origColAmt < 0){
         r.amount = r._origColAmt;
       } else if(r._origColAmt > 0){
-        r.amount = hasMisu ? Math.round((r._origColAmt - misuAmt)*100)/100 : r._origColAmt;
+        r.amount = r._origColAmt;  // 미수 별도 표기, amount에서 차감 안 함
       } else {
         // 컬럼 비어있으면 시술합계 사용 (예약금5건=16.5m 등 텍스트에 금액 있는 경우)
       if(treatSumR > 0){
