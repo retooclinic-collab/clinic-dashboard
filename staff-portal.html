@@ -353,8 +353,9 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
             <button class="parse-btn" id="parse-btn" onclick="parsePayment()">
               ⚡ 항목 분석
             </button>
+            <button onclick="showApiKeyModal()" style="position:absolute;right:8px;top:8px;background:none;border:none;cursor:pointer;font-size:14px;color:var(--muted);padding:4px" title="AI 파서 API 키 설정">⚙️</button>
           </div>
-          <div class="form-hint">입력 후 AI 분석 버튼을 눌러 시술 항목을 추출하세요</div>
+          <div class="form-hint">입력 후 분석 버튼 클릭 · <span id="ai-parser-status" style="color:var(--muted)">AI 파서: 미설정</span></div>
         </div>
 
         <!-- 파싱 결과 -->
@@ -1758,6 +1759,259 @@ function distributePrices(treatments, total, rawText){
 }
 
 
+/* ══════════════════════════════════════════════
+   AI 파서 (Claude Haiku API)
+   - 시술 텍스트를 Claude에 보내 JSON 파싱 결과 수신
+   - 실패 시 null 반환 → localParse 폴백
+══════════════════════════════════════════════ */
+const AI_PARSER_SYSTEM_PROMPT = `당신은 한국 피부과/성형외과 수납 텍스트 파서입니다.
+주어진 수납 텍스트에서 시술 항목, 수량, 개별가격, 총결제금액, 결제방식을 추출하세요.
+
+## 시술 항목 목록 (정확히 이 이름으로 매핑)
+제네시스+PTT, 제네시스, 수액, 튠페이스, 슈링크, 티타늄, 울쎄라(100샷), 튠라이너, 아이리프팅, 피코슈어, 듀얼피코, 트리플피코,
+여드름관리, CO2, 필러(국산), 필러(수입), 보톡스(국산), 보톡스(수입),
+리투핏주사, 리투업주사, 쥬베룩볼륨, 리쥬란, 쥬베룩, 튠바디, 리투핏주사(바디),
+플라즈마, 라라필, 포텐자(모공), 포텐자(기미), 인텐스울트라, 코레지셀핏, LDM,
+크라이오, 제모(여자), 제모(남자), 새살주사, 펌핑팁, 수면비, 히알라제,
+상담만, TA, 아쿠아필, 포텐자(펌핑), 아그네스, PDRN, 줄기세포, VIP회원권, VIP할인혜택,
+프락셀, 써마지300, 아이써마지225, 하이쿡스, 리쥬란아이, 써마지600, 클라리티,
+리쥬란HB, 소프웨이브(50샷), 위고비, 미라젯, 엠페이스, 온다, 온다(바디), 스킨바이브,
+써마지900샷, 줄기세포30cc, 줄기세포60cc, 줄기세포120cc, 줄기세포240cc,
+BBL, BBL(여드름), BBL(스킨타이트닝), BBL(바디), moxi, 오푸스, 쥬베룩아이,
+리투오, 쥬브아셀, 자가엑소좀, 힐로웨이브, 스컬트라, 아이써마지450샷,
+엑소좀, 플라즈마엑소좀, MOXI, 티타튠, 티타튠max,
+리쥬셀릭크림, 리쥬셀릭앰플, 리쥬셀릭선물세트,
+NAD, 백옥, 미라젯쥬베룩, 알라딘필, 문신제거, 피부관리, 고압산소,
+적립금차감, 선납금차감, 상품권차감, 할인차감, 적립금,
+예약금, 예약금제외, 환불, 위약금, 제품, 지정비용, 점편사제거, 차액결제, 양도
+
+## 매핑 규칙
+- BBL 색소, BBL 포에버영, BBL 홍조, BBL 미백, BBL 화이트닝 → "BBL"
+- BBL 여드름 → "BBL(여드름)"
+- BBL 스킨타이트닝 → "BBL(스킨타이트닝)"
+- 바디BBL, BBL 바디 → "BBL(바디)"
+- 온다 + 바디부위(팔뚝, 복부, 종아리, 허벅지 등) → "온다(바디)"
+- 소프, 소프웨이브 → "소프웨이브(50샷)"
+- 울쎄라, 울쎼라 → "울쎄라(100샷)"
+- 엠페, 엠페이스 → "엠페이스"
+- 코레지 → "코레지셀핏"
+- 진정관리, 진정팩 → "피부관리"
+- 피코토닝, 듀얼토닝 → "듀얼피코"
+- 폭탄수액, 백옥슈팅, 비타민수액, 리커버리수액, 리바이탈수액 → "수액"
+- 제오민 → "보톡스(수입)"
+- 목필러, 턱끝F → "필러(수입)"
+- 미라젯쥬브아셀 → 미라젯 + 쥬브아셀 (2개 항목)
+- 포텐자펌핑, 펌핑쥬베룩 → "포텐자(펌핑)"
+- sv, SV, 서비스 → 해당 시술 가격 0원 (서비스 제공)
+- (○○대체) 괄호 안 대체 표기의 시술은 별도 항목으로 추가하지 않음
+
+## 수량 판단
+- "울쎄라400샷" → qty = 400/100 = 4
+- "소프200샷" → qty = 200/50 = 4
+- "써마지600" → "써마지600" 항목 qty=1 (샷수가 항목명에 포함)
+- "엠페이스2-1,2-2" → qty=2 (2개 영역)
+- "엠페이스3회" → qty=3
+- "온다(팔뚝)120KJ" → 온다(바디) qty=1
+- 티타늄 KJ: 40KJ=1회, 80KJ=2회, 120KJ=3회
+
+## 가격
+- 숫자 뒤 m, M, 만, 만원 = 만원 단위 (예: 49.5m = 49.5만원)
+- 시술명 뒤 숫자가 가격: "BBL여드름49.5m" → 49.5
+- "=총NNN차감" 은 합산 표기이므로 무시
+
+## 결제금액/결제방식
+- "=447.7(카)" → 총결제금액 447.7, 결제방식 카드
+- "=277.2m(위챗)" → 총결제금액 277.2, 결제방식 위챗
+- VIP700+49적립=700m(카) → 총결제금액 700, 결제방식 카드, VIP할인혜택 49
+- 카 = 카드, 현 = 현금(자진), 알리 = 알리페이, 위챗 = 위챗, 이체 = 이체(현영), 제로 = 제로페이
+- "예약금제외" → 예약금 차감 항목으로 처리
+- 미수 N → 미수 금액 별도 표기
+
+## 적립금/VIP할인혜택
+- "VIP700+49적립=700m" → 적립금=총액에서역산(101.1등), VIP할인혜택=49
+- "+N적립" → VIP할인혜택 = N
+
+## 출력 JSON 형식 (반드시 이 형식으로)
+{
+  "treatments": [
+    {"item": "시술명", "qty": 1, "price": 49.5},
+    {"item": "시술명2", "qty": 2, "price": 176}
+  ],
+  "totalAmount": 447.7,
+  "payMethods": [{"method": "카드", "amt": 447.7}],
+  "misu": 0,
+  "vipDiscount": 0,
+  "credit": 0
+}
+
+price는 만원 단위. 텍스트에 명시된 가격이 있으면 그것을 사용하고, 없으면 null로.
+JSON만 출력하세요. 설명 없이.`;
+
+async function aiParse(raw) {
+  const apiKey = localStorage.getItem('claude_api_key');
+  if (!apiKey) return null;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system: AI_PARSER_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: raw }]
+      })
+    });
+
+    if (!resp.ok) {
+      console.warn('[AI파서] API 에러:', resp.status, await resp.text());
+      return null;
+    }
+
+    const data = await resp.json();
+    const text = data.content?.[0]?.text || '';
+    // JSON 블록 추출 (```json ... ``` 또는 bare JSON)
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
+    if (!jsonMatch) { console.warn('[AI파서] JSON 파싱 실패:', text); return null; }
+
+    const parsed = JSON.parse(jsonMatch[1]);
+    console.log('[AI파서] 성공:', parsed);
+    return parsed;
+  } catch (e) {
+    console.warn('[AI파서] 오류:', e);
+    return null;
+  }
+}
+
+/* AI 배치 파싱: 여러 건을 한번에 보내서 처리 (일괄업로드용) */
+async function aiBatchParse(rows) {
+  const apiKey = localStorage.getItem('claude_api_key');
+  if (!apiKey || rows.length === 0) return;
+
+  // 최대 30건씩 배치 (토큰 한도 고려)
+  const BATCH_SIZE = 30;
+  for (let batchStart = 0; batchStart < rows.length; batchStart += BATCH_SIZE) {
+    const batch = rows.slice(batchStart, batchStart + BATCH_SIZE);
+    const numbered = batch.map((r, i) => `[${batchStart + i}] ${r.payText}`).join('\n');
+
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 4096,
+          system: AI_PARSER_SYSTEM_PROMPT + `\n\n## 배치 모드
+여러 건의 수납 텍스트가 [번호] 형식으로 주어집니다.
+각 건을 파싱하여 JSON 배열로 반환하세요.
+[{"index":0, ...파싱결과}, {"index":1, ...파싱결과}, ...]
+index는 입력의 [번호]와 동일하게.`,
+          messages: [{ role: 'user', content: numbered }]
+        })
+      });
+
+      if (!resp.ok) {
+        console.warn('[AI배치] API 에러:', resp.status);
+        continue;
+      }
+
+      const data = await resp.json();
+      const text = data.content?.[0]?.text || '';
+      const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/(\[[\s\S]*\])/);
+      if (!jsonMatch) { console.warn('[AI배치] JSON 파싱 실패'); continue; }
+
+      const results = JSON.parse(jsonMatch[1]);
+      console.log('[AI배치] ' + results.length + '건 파싱 완료');
+
+      // 결과를 _importRows에 반영
+      results.forEach(result => {
+        const idx = result.index;
+        const row = _importRows[idx];
+        if (!row || row.treatments) return; // 이미 처리됨
+
+        if (result.treatments && result.treatments.length > 0) {
+          const treats = result.treatments.map(t => ({
+            item: t.item,
+            qty: t.qty || 1,
+            price: t.price ?? null
+          }));
+          // distributePrices로 가격 분배
+          const amt = result.totalAmount || row.amount || extractAmount(row.payText) || 0;
+          if (amt && !row.amount) row.amount = amt;
+          row.treatments = distributePrices(treats, row.amount || amt, row.payText);
+          row._parseSource = 'ai';
+
+          // 결제방식
+          if (result.payMethods && result.payMethods.length > 0) {
+            row.paymentMethods = {
+              methods: result.payMethods.map(p => p.method),
+              splitDetails: result.payMethods
+            };
+          }
+
+          // 미수
+          if (result.misu > 0) {
+            row._misuAmt = result.misu;
+          }
+        }
+      });
+    } catch (e) {
+      console.warn('[AI배치] 오류:', e);
+    }
+  }
+}
+
+/* AI 파싱 결과를 localParse 형식으로 변환 */
+function convertAiResult(aiResult, raw) {
+  if (!aiResult || !aiResult.treatments) return null;
+
+  const treatments = aiResult.treatments.map(t => ({
+    item: t.item,
+    qty: t.qty || 1,
+    price: t.price ?? null,
+    _fromAI: true
+  }));
+
+  return {
+    treatments,
+    totalAmount: aiResult.totalAmount || null,
+    payMethods: aiResult.payMethods || null,
+    misu: aiResult.misu || 0,
+    vipDiscount: aiResult.vipDiscount || 0,
+    credit: aiResult.credit || 0,
+    _aiParsed: true
+  };
+}
+
+/* 통합 파서: AI 우선 → regex 폴백 */
+async function smartParse(raw) {
+  // AI 파서 시도
+  const aiResult = await aiParse(raw);
+  if (aiResult) {
+    const converted = convertAiResult(aiResult, raw);
+    if (converted && converted.treatments.length > 0) {
+      // AI 결과에서 amount/payment 정보도 포함
+      converted._source = 'ai';
+      return converted;
+    }
+  }
+  // 폴백: 기존 regex 파서
+  const regexResult = localParse(raw);
+  regexResult._source = 'regex';
+  return regexResult;
+}
+
+
 function localParse(raw){
   const _eventGroupRawTokens = []; // 이벤트 그룹에서 처리된 원본 토큰 (중복감지 방지용)
   // ── VIP 멀티라인 처리: VIP 헤더줄 제거, 주석줄 제거 후 내역만 파싱 ──
@@ -3078,7 +3332,12 @@ async function parsePayment(){
   btn.innerHTML = '⚡ 분석 중...';
 
   try {
-    const parsed = localParse(text);
+    // ── AI 우선 파싱, 실패 시 regex 폴백 ──
+    const parsed = await smartParse(text);
+    const isAI = parsed._source === 'ai';
+    if(isAI) console.log('[파서] AI 파싱 사용');
+    else console.log('[파서] regex 폴백 사용');
+
     // ── 시술의사 자동 세팅 ──
     {
       const docSel = document.getElementById('f-doctor');
@@ -3101,17 +3360,30 @@ async function parsePayment(){
         checkAmountMatch();
       }
     }
-    // ── 결제금액: 텍스트에서 추출되면 항상 업데이트 ──
-    const extracted = hasCreditPayAll ? 0 : extractAmount(text);
+    // ── 결제금액: AI 결과 우선, 없으면 기존 추출 ──
+    let extracted;
+    if(isAI && parsed.totalAmount) {
+      extracted = parsed.totalAmount;
+    } else {
+      extracted = hasCreditPayAll ? 0 : extractAmount(text);
+    }
     if(extracted !== null && !hasCreditPayAll && amountInput){
       amountInput.value = extracted;
       checkAmountMatch();
     }
     const total = hasCreditPayAll ? 0 : (extracted || parseFloat(amountInput?.value) || 0);
     showParseResult(parsed, total);
-    // ── 결제방식 자동 추출 (재분석 시 초기화) ──
+    // ── 결제방식: AI 결과 우선, 없으면 기존 추출 ──
     window._paymentMethods = null;
-    const payInfo = extractPayment(text);
+    let payInfo;
+    if(isAI && parsed.payMethods && parsed.payMethods.length > 0) {
+      payInfo = {
+        methods: parsed.payMethods.map(p => p.method),
+        splitDetails: parsed.payMethods
+      };
+    } else {
+      payInfo = extractPayment(text);
+    }
     showPaymentMethod(payInfo);
   } catch(e) {
     showToast('분석 오류: '+e.message, 'error');
@@ -3129,7 +3401,10 @@ function showParseResult(parsed, total){
   list.innerHTML = '';
 
   const treatments = parsed.treatments||[];
-  document.getElementById('treatment-count').textContent = treatments.length;
+  const srcBadge = parsed._source === 'ai'
+    ? '<span style="background:#10b981;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px">AI</span>'
+    : '<span style="background:#64748b;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px">regex</span>';
+  document.getElementById('treatment-count').innerHTML = treatments.length + srcBadge;
 
   // 총액 결정
   const amt = total || parseFloat(document.getElementById('f-amount').value) || 0;
@@ -3552,7 +3827,7 @@ function parseDate(s, prevDate){
   return prevDate || '';
 }
 
-function parseImportData(){
+async function parseImportData(){
   const text = document.getElementById('import-text').value;
   if(!text.trim()){ showToast('데이터를 붙여넣기 해주세요','error'); return; }
   try {
@@ -3782,7 +4057,7 @@ function processImportText(text){
     showToast('파싱 실패. 아래 형식 확인:\n날짜\\t차트\\t이름\\t분류1\\t결제내역\\t금액\\t상담자','error');
     return;
   }
-  renderImportPreview();
+  await renderImportPreview();
 }
 
 /* ── 엑셀 파일 처리 ── */
@@ -3869,7 +4144,7 @@ function showXlsxSheetPicker(names){
   ta.parentElement.insertBefore(div.firstChild, ta);
 }
 
-function pickXlsxSheetSelected(){
+async function pickXlsxSheetSelected(){
   const wb = window._xlsxWorkbook;
   if(!wb) return;
   const year = document.getElementById('xlsx-year').value;
@@ -4014,7 +4289,7 @@ function processBackupCSV(text){
 
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요. 헤더를 확인해주세요','error'); return; }
   showToast(`${_importRows.length}건 파싱됨`, 'success');
-  renderImportPreview();
+  await renderImportPreview();
 }
 
 function isHeaderRow(row){
@@ -4022,14 +4297,26 @@ function isHeaderRow(row){
   return str.includes('날짜') || str.includes('차트') || str.includes('date');
 }
 
-function renderImportPreview(){
+async function renderImportPreview(){
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요','error'); return; }
 
+  // ── AI 배치 파싱 시도 ──
+  const apiKey = localStorage.getItem('claude_api_key');
+  const needParse = _importRows.filter(r => !r.treatments && r.payText);
+  if(apiKey && needParse.length > 0){
+    showToast('AI 파서로 '+needParse.length+'건 분석 중...', 'info');
+    try {
+      await aiBatchParse(needParse);
+    } catch(e){ console.warn('[AI배치파서] 오류, regex 폴백:', e); }
+  }
+
+  // ── regex 폴백: AI에서 처리 안 된 건 ──
   _importRows.forEach(function(r){
     if(!r.treatments){
       try {
         var parsed = localParse(r.payText);
         r.treatments = distributePrices(parsed.treatments, r.amount, r.payText);
+        r._parseSource = 'regex';
         if(!r.doctor && parsed.doctor) r.doctor = parsed.doctor;
       } catch(e){ r.treatments = []; }
     }
@@ -4128,7 +4415,8 @@ function renderImportPreview(){
     html += '<td style="padding:6px;text-align:right;color:'+amtColor+';font-weight:700;font-size:11px">' + r.amount + '만</td>';
     html += '<td style="padding:6px;color:#94a3b8;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (r.staff||'') + '</td>';
     html += '<td style="padding:6px;color:#a5f3fc;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (r.doctor||'-') + '</td>';
-    html += '<td style="padding:6px;text-align:center"><span style="font-size:10px;padding:2px 6px;border:1px solid '+badgeColor+';border-radius:10px;color:'+badgeColor+';cursor:pointer" onclick="toggleImportTreat('+i+')">' + treatCount + (sumOk?'✓':'⚠') + '</span></td>';
+    var srcTag = r._parseSource === 'ai' ? '<span style="font-size:8px;color:#10b981;margin-left:2px">AI</span>' : '';
+    html += '<td style="padding:6px;text-align:center"><span style="font-size:10px;padding:2px 6px;border:1px solid '+badgeColor+';border-radius:10px;color:'+badgeColor+';cursor:pointer" onclick="toggleImportTreat('+i+')">' + treatCount + (sumOk?'✓':'⚠') + srcTag + '</span></td>';
     html += '<td style="padding:6px;white-space:nowrap"><button onclick="openImportEditModal('+i+')" style="font-size:10px;padding:3px 7px;background:#38bdf8;color:#0f172a;border:none;border-radius:7px;cursor:pointer;font-weight:700">수정</button> <button onclick="deleteImportRow('+i+')" style="font-size:10px;padding:3px 7px;background:#ef4444;color:#fff;border:none;border-radius:7px;cursor:pointer;font-weight:700">삭제</button></td>';
     html += '</tr>';
 
@@ -4449,15 +4737,21 @@ function ieAddTreat(idx){
 }
 
 
-function reparseImportRow(idx){
+async function reparseImportRow(idx){
   const text = document.getElementById('ie-paytext')?.value.trim();
   if(!text) return;
   const amt = parseFloat(document.getElementById('ie-amount')?.value)||extractAmount(text)||0;
   if(amt) document.getElementById('ie-amount').value = amt;
   try {
-    const parsed = localParse(text);
+    const parsed = await smartParse(text);
     window._ieTreats = distributePrices(parsed.treatments, amt, text);
     renderIETreatList(idx);
+    // AI 결제방식
+    if(parsed._source === 'ai' && parsed.payMethods?.length){
+      window._iePays = parsed.payMethods.map(p=>({method:p.method, amt:p.amt||0}));
+      renderIEPayList(idx);
+      return;
+    }
   } catch(e){}
   try {
     const pi = extractPayment(text);
@@ -5653,28 +5947,32 @@ async function confirmDeleteRecord(id){
   }
 }
 
-function reparseEditModal(){
+async function reparseEditModal(){
   const text = document.getElementById('edit-paytext')?.value.trim();
   if(!text){ showToast('결제내역을 입력해주세요','error'); return; }
   const amt = parseFloat(document.getElementById('edit-amount')?.value)||extractAmount(text)||0;
   if(amt) document.getElementById('edit-amount').value = amt;
   try {
-    const parsed = localParse(text);
+    const parsed = await smartParse(text);
     window._editTreatments = distributePrices(parsed.treatments, amt, text);
     renderEditTreatList();
-  } catch(e) { console.warn(e); }
-  // 결제방식 재추출
-  try {
-    const payInfo = extractPayment(text);
-    if(payInfo?.methods?.length){
-      window._editPayItems = payInfo.splitDetails?.length
-        ? payInfo.splitDetails.map(d=>({method:d.method,amt:d.amt||0}))
-        : payInfo.methods.map(m=>({method:m, amt:payInfo.methods.length===1?amt:0}));
+    // AI 결제방식
+    if(parsed._source === 'ai' && parsed.payMethods?.length){
+      window._editPayItems = parsed.payMethods.map(p=>({method:p.method, amt:p.amt||0}));
       renderEditPayList();
+    } else {
+      const payInfo = extractPayment(text);
+      if(payInfo?.methods?.length){
+        window._editPayItems = payInfo.splitDetails?.length
+          ? payInfo.splitDetails.map(d=>({method:d.method,amt:d.amt||0}))
+          : payInfo.methods.map(m=>({method:m, amt:payInfo.methods.length===1?amt:0}));
+        renderEditPayList();
+      }
     }
   } catch(e) { console.warn(e); }
+  const src = window._editTreatments?.[0]?._fromAI ? 'AI' : 'regex';
   const el = document.getElementById('edit-parse-result');
-  if(el) el.innerHTML = `<span style="color:var(--green)">✓ ${(window._editTreatments||[]).length}개 항목 재추출됨</span>`;
+  if(el) el.innerHTML = `<span style="color:var(--green)">✓ ${(window._editTreatments||[]).length}개 항목 재추출됨 <span style="font-size:10px;color:#10b981">${src}</span></span>`;
 }
 
 async function saveEditModal(id){
@@ -5812,6 +6110,69 @@ function showToast(msg, type='info'){
   t.className='toast '+type+' show';
   setTimeout(()=>t.className='toast '+type, 2500);
 }
+
+/* ══════════════════════════════════════════════
+   AI 파서 API 키 설정 모달
+══════════════════════════════════════════════ */
+function showApiKeyModal(){
+  const existing = localStorage.getItem('claude_api_key') || '';
+  const masked = existing ? existing.slice(0,10) + '...' + existing.slice(-4) : '';
+  const modal = document.createElement('div');
+  modal.id = 'api-key-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:32px;width:400px;max-width:90vw">
+      <h3 style="margin-bottom:16px;font-size:16px">🤖 AI 파서 설정</h3>
+      <p style="font-size:13px;color:var(--sub);margin-bottom:12px">Claude API 키를 입력하면 AI가 시술 텍스트를 파싱합니다.<br>키가 없으면 기존 regex 파서를 사용합니다.</p>
+      ${masked ? `<p style="font-size:12px;color:var(--green);margin-bottom:12px">현재 키: ${masked}</p>` : ''}
+      <input type="password" id="api-key-input" placeholder="sk-ant-..." value="${existing}"
+        style="width:100%;padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;margin-bottom:16px">
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="clearApiKey()" style="padding:8px 16px;background:var(--red);color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer">삭제</button>
+        <button onclick="document.getElementById('api-key-modal').remove()" style="padding:8px 16px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:13px;cursor:pointer">취소</button>
+        <button onclick="saveApiKey()" style="padding:8px 16px;background:var(--accent);color:#0f172a;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">저장</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target === modal) modal.remove(); });
+}
+
+function saveApiKey(){
+  const key = document.getElementById('api-key-input').value.trim();
+  if(key){
+    localStorage.setItem('claude_api_key', key);
+    showToast('API 키 저장 완료', 'success');
+  } else {
+    localStorage.removeItem('claude_api_key');
+    showToast('API 키 삭제됨', 'info');
+  }
+  updateAiParserStatus();
+  document.getElementById('api-key-modal')?.remove();
+}
+
+function clearApiKey(){
+  localStorage.removeItem('claude_api_key');
+  showToast('API 키 삭제됨', 'info');
+  updateAiParserStatus();
+  document.getElementById('api-key-modal')?.remove();
+}
+
+function updateAiParserStatus(){
+  const el = document.getElementById('ai-parser-status');
+  if(!el) return;
+  const key = localStorage.getItem('claude_api_key');
+  if(key){
+    el.textContent = 'AI 파서: 활성';
+    el.style.color = 'var(--green)';
+  } else {
+    el.textContent = 'AI 파서: 미설정';
+    el.style.color = 'var(--muted)';
+  }
+}
+
+// 페이지 로드 시 상태 업데이트
+document.addEventListener('DOMContentLoaded', updateAiParserStatus);
+setTimeout(updateAiParserStatus, 1000);
 </script>
 </body>
 </html>
