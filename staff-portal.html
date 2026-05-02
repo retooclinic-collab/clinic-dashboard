@@ -2544,10 +2544,10 @@ function localParse(raw){
     const jbCc = raw.match(/쥬베룩\s*(\d+)\s*cc/i);
     const jbBottle = raw.match(/쥬베룩\s*(\d+)\s*병/i);
     const jbQtyM = raw.match(/쥬베룩\s*(\d+)\s*회/i);
-    if(jbCc) results.push({item:'쥬베룩볼륨', qty:1});
-    else if(jbBottle) results.push({item:'쥬베룩볼륨', qty: parseInt(jbBottle[1])});
-    else if(jbQtyM) results.push({item:'쥬베룩볼륨', qty: parseInt(jbQtyM[1])});
-    else if(/쥬베룩/i.test(raw) && !(/미라젯\s*쥬베룩/i.test(raw))) results.push({item:'쥬베룩볼륨', qty:1});
+    if(jbCc) results.push({item:'쥬베룩', qty:1});
+    else if(jbBottle) results.push({item:'쥬베룩', qty: parseInt(jbBottle[1])});
+    else if(jbQtyM) results.push({item:'쥬베룩', qty: parseInt(jbQtyM[1])});
+    else if(/쥬베룩/i.test(raw) && !(/미라젯\s*쥬베룩/i.test(raw))) results.push({item:'쥬베룩', qty:1});
   }
 
   // ── 쥬브아셀 (쥬브아셀N병 안에 미라젯 포함되면 미라젯도 추출) ──
