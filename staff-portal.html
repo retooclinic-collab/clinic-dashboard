@@ -234,9 +234,14 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
             placeholder="구글시트에서 복사(Ctrl+C) 후 여기에 붙여넣기(Ctrl+V)..."></textarea>
         </div>
 
-        <button onclick="parseImportData()" style="margin-top:10px;width:100%;padding:14px;background:var(--accent);color:#0f172a;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">
-          🔍 미리보기 확인
-        </button>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button onclick="parseImportData()" style="flex:1;padding:14px;background:var(--accent);color:#0f172a;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">
+            🔍 미리보기 확인
+          </button>
+          <button onclick="showApiKeyModal()" style="padding:14px 16px;background:var(--panel);border:1px solid var(--border);border-radius:12px;font-size:14px;cursor:pointer;color:var(--muted)" title="AI 파서 API 키 설정">⚙️</button>
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:var(--muted)">AI 파서: <span id="import-ai-status">미설정</span></div>
+        <script>(function(){ var k=localStorage.getItem('claude_api_key'); if(k){ var el=document.getElementById('import-ai-status'); if(el){el.textContent='활성 ✓';el.style.color='#10b981';} } })()</script>
 
         <div id="import-preview" style="display:none;margin-top:14px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
