@@ -3827,7 +3827,7 @@ function parseDate(s, prevDate){
   return prevDate || '';
 }
 
-async function parseImportData(){
+function parseImportData(){
   const text = document.getElementById('import-text').value;
   if(!text.trim()){ showToast('데이터를 붙여넣기 해주세요','error'); return; }
   try {
@@ -4057,7 +4057,7 @@ function processImportText(text){
     showToast('파싱 실패. 아래 형식 확인:\n날짜\\t차트\\t이름\\t분류1\\t결제내역\\t금액\\t상담자','error');
     return;
   }
-  await renderImportPreview();
+  renderImportPreview();
 }
 
 /* ── 엑셀 파일 처리 ── */
@@ -4144,7 +4144,7 @@ function showXlsxSheetPicker(names){
   ta.parentElement.insertBefore(div.firstChild, ta);
 }
 
-async function pickXlsxSheetSelected(){
+function pickXlsxSheetSelected(){
   const wb = window._xlsxWorkbook;
   if(!wb) return;
   const year = document.getElementById('xlsx-year').value;
@@ -4289,7 +4289,7 @@ function processBackupCSV(text){
 
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요. 헤더를 확인해주세요','error'); return; }
   showToast(`${_importRows.length}건 파싱됨`, 'success');
-  await renderImportPreview();
+  renderImportPreview();
 }
 
 function isHeaderRow(row){
@@ -4297,19 +4297,28 @@ function isHeaderRow(row){
   return str.includes('날짜') || str.includes('차트') || str.includes('date');
 }
 
-async function renderImportPreview(){
+function renderImportPreview(){
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요','error'); return; }
 
-  // ── AI 배치 파싱 시도 ──
-  const apiKey = localStorage.getItem('claude_api_key');
-  const needParse = _importRows.filter(r => !r.treatments && r.payText);
+  // ── AI 배치 파싱 시도 (비동기 — 완료 후 테이블 자동 갱신) ──
+  var apiKey = localStorage.getItem('claude_api_key');
+  var needParse = _importRows.filter(function(r){ return !r.treatments && r.payText; });
   if(apiKey && needParse.length > 0){
     showToast('AI 파서로 '+needParse.length+'건 분석 중...', 'info');
-    try {
-      await aiBatchParse(needParse);
-    } catch(e){ console.warn('[AI배치파서] 오류, regex 폴백:', e); }
+    aiBatchParse(needParse).then(function(){
+      // AI 파싱 완료 후 regex 폴백 + 테이블 다시 그리기
+      _applyRegexFallbackAndRenderTable();
+    }).catch(function(e){
+      console.warn('[AI배치파서] 오류, regex 폴백:', e);
+      _applyRegexFallbackAndRenderTable();
+    });
   }
 
+  // 동기적으로 regex 폴백 + 테이블 그리기
+  _applyRegexFallbackAndRenderTable();
+}
+
+function _applyRegexFallbackAndRenderTable(){
   // ── regex 폴백: AI에서 처리 안 된 건 ──
   _importRows.forEach(function(r){
     if(!r.treatments){
