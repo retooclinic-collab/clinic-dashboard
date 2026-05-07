@@ -2266,6 +2266,67 @@ function renderDailyTotals(){
   // 의사별 소계 테이블
   h+=buildSortableTable('doc','시술의사별 소계','👩‍⚕️',byDoc,'의사');
 
+  // ── 유입경로별 실장 객단가 크로스탭 ──
+  (function(){
+    var crossTab = {};
+    var allStaffs = {};
+    _dailyFiltered.forEach(function(it){
+      var c = it.cat1 || '(미지정)';
+      var s = it.staff || '(미지정)';
+      var amt = (parseFloat(it.amount)||0) * 10000;
+      if(!crossTab[c]) crossTab[c] = {};
+      if(!crossTab[c][s]) crossTab[c][s] = {count:0, total:0};
+      crossTab[c][s].count++;
+      crossTab[c][s].total += amt;
+      allStaffs[s] = true;
+    });
+    var staffList = Object.keys(allStaffs).sort();
+    var catList = Object.keys(crossTab).sort(function(a,b){
+      var ta=0, tb=0;
+      Object.keys(crossTab[a]).forEach(function(k){ ta+=crossTab[a][k].total; });
+      Object.keys(crossTab[b]).forEach(function(k){ tb+=crossTab[b][k].total; });
+      return tb - ta;
+    });
+    if(catList.length > 0 && staffList.length > 0){
+      h+='<details style="margin-bottom:8px;" open><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">📊 유입경로별 실장 객단가</summary>';
+      h+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:11px;">';
+      h+='<thead><tr style="background:#f1f5f9;"><th style="padding:5px 8px;text-align:left;color:#64748b;">유입경로</th>';
+      staffList.forEach(function(s){ h+='<th style="padding:5px 8px;text-align:center;color:#64748b;white-space:nowrap;">'+esc(s)+'</th>'; });
+      h+='<th style="padding:5px 8px;text-align:center;color:#2563eb;font-weight:700;">전체</th></tr></thead><tbody>';
+      catList.forEach(function(cat){
+        h+='<tr style="border-bottom:1px solid #e2e8f0;">';
+        h+='<td style="padding:5px 8px;font-weight:600;color:#1e293b;white-space:nowrap;">'+esc(cat)+'</td>';
+        var catTotal=0, catCount=0;
+        staffList.forEach(function(s){
+          var d = crossTab[cat][s];
+          if(d && d.count > 0){
+            var avg = d.total / d.count;
+            catTotal += d.total; catCount += d.count;
+            h+='<td style="padding:5px 8px;text-align:center;"><span style="color:#059669;font-weight:700;">'+formatW(avg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+d.count+')</span></td>';
+          } else {
+            h+='<td style="padding:5px 8px;text-align:center;color:#cbd5e1;">-</td>';
+          }
+        });
+        var catAvg = catCount > 0 ? catTotal / catCount : 0;
+        h+='<td style="padding:5px 8px;text-align:center;font-weight:700;"><span style="color:#2563eb;">'+formatW(catAvg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+catCount+')</span></td>';
+        h+='</tr>';
+      });
+      // 전체 합계 행
+      h+='<tr style="border-top:2px solid #cbd5e1;background:#f8fafc;"><td style="padding:5px 8px;font-weight:700;color:#2563eb;">전체</td>';
+      var grandTotal=0, grandCount=0;
+      staffList.forEach(function(s){
+        var sTotal=0, sCount=0;
+        catList.forEach(function(cat){ var d=crossTab[cat][s]; if(d){ sTotal+=d.total; sCount+=d.count; } });
+        grandTotal+=sTotal; grandCount+=sCount;
+        var sAvg = sCount > 0 ? sTotal / sCount : 0;
+        h+='<td style="padding:5px 8px;text-align:center;font-weight:700;"><span style="color:#475569;">'+formatW(sAvg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+sCount+')</span></td>';
+      });
+      var gAvg = grandCount > 0 ? grandTotal / grandCount : 0;
+      h+='<td style="padding:5px 8px;text-align:center;font-weight:700;"><span style="color:#2563eb;">'+formatW(gAvg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+grandCount+')</span></td>';
+      h+='</tr></tbody></table></div></details>';
+    }
+  })();
+
   // ── 시술항목 TOP 15 (사용 개수순) ──
   h+=buildTreatmentTop15(cfg2);
 
