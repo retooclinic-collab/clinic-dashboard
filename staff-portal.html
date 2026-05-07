@@ -5429,7 +5429,69 @@ function renderStatsPanel(){
     return html;
   };
 
-  content.innerHTML = renderGroup('👤 상담자별', staffStats) + renderGroup('📍 분류별 (내원경로)', cat1Stats) + renderGroup('🩺 의사별', doctorStats);
+  // ── 유입경로별 실장 객단가 크로스탭 ──
+  const crossTab = {}; // { cat1: { staff: { count, total } } }
+  const allStaffs = new Set();
+  visible.forEach(it => {
+    const c = it.cat1 || '(미지정)';
+    const s = it.staff || '(미지정)';
+    const amt = (it.type !== 'vip') ? (parseFloat(it.amount)||0) : 0;
+    if(!crossTab[c]) crossTab[c] = {};
+    if(!crossTab[c][s]) crossTab[c][s] = {count:0, total:0};
+    crossTab[c][s].count++;
+    crossTab[c][s].total += amt;
+    allStaffs.add(s);
+  });
+  const staffList = [...allStaffs].sort();
+  const catList = Object.keys(crossTab).sort((a,b) => {
+    const ta = Object.values(crossTab[a]).reduce((s,v)=>s+v.total,0);
+    const tb = Object.values(crossTab[b]).reduce((s,v)=>s+v.total,0);
+    return tb - ta;
+  });
+
+  let crossHtml = '<div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">';
+  crossHtml += '<div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px">📊 유입경로별 실장 객단가</div>';
+  crossHtml += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+  crossHtml += '<tr style="background:#0a0f1a"><th style="padding:6px 8px;text-align:left;border-bottom:1px solid var(--border);color:var(--muted)">유입경로</th>';
+  staffList.forEach(s => {
+    crossHtml += '<th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border);color:var(--sub);white-space:nowrap">' + s + '</th>';
+  });
+  crossHtml += '<th style="padding:6px 8px;text-align:center;border-bottom:1px solid var(--border);color:var(--accent);font-weight:700">전체</th></tr>';
+
+  catList.forEach(cat => {
+    crossHtml += '<tr style="border-bottom:1px solid #1a2236">';
+    crossHtml += '<td style="padding:5px 8px;color:var(--text);font-weight:600;white-space:nowrap">' + cat + '</td>';
+    var catTotal = 0, catCount = 0;
+    staffList.forEach(s => {
+      var d = crossTab[cat][s];
+      if(d && d.count > 0){
+        var avg = Math.round(d.total / d.count * 10) / 10;
+        catTotal += d.total; catCount += d.count;
+        crossHtml += '<td style="padding:5px 8px;text-align:center"><span style="color:var(--green);font-weight:700">' + avg + '</span><span style="color:var(--muted);font-size:10px;margin-left:2px">(' + d.count + ')</span></td>';
+      } else {
+        crossHtml += '<td style="padding:5px 8px;text-align:center;color:#334155">-</td>';
+      }
+    });
+    var catAvg = catCount > 0 ? Math.round(catTotal / catCount * 10) / 10 : 0;
+    crossHtml += '<td style="padding:5px 8px;text-align:center;font-weight:700"><span style="color:var(--accent)">' + catAvg + '</span><span style="color:var(--muted);font-size:10px;margin-left:2px">(' + catCount + ')</span></td>';
+    crossHtml += '</tr>';
+  });
+
+  // 전체 합계 행
+  crossHtml += '<tr style="border-top:2px solid var(--border);background:#0a0f1a"><td style="padding:6px 8px;color:var(--accent);font-weight:700">전체</td>';
+  var grandTotal = 0, grandCount = 0;
+  staffList.forEach(s => {
+    var sTotal = 0, sCount = 0;
+    catList.forEach(cat => { var d = crossTab[cat][s]; if(d){ sTotal += d.total; sCount += d.count; } });
+    grandTotal += sTotal; grandCount += sCount;
+    var sAvg = sCount > 0 ? Math.round(sTotal / sCount * 10) / 10 : 0;
+    crossHtml += '<td style="padding:6px 8px;text-align:center;font-weight:700"><span style="color:var(--sub)">' + sAvg + '</span><span style="color:var(--muted);font-size:10px;margin-left:2px">(' + sCount + ')</span></td>';
+  });
+  var gAvg = grandCount > 0 ? Math.round(grandTotal / grandCount * 10) / 10 : 0;
+  crossHtml += '<td style="padding:6px 8px;text-align:center;font-weight:700"><span style="color:var(--accent)">' + gAvg + '</span><span style="color:var(--muted);font-size:10px;margin-left:2px">(' + grandCount + ')</span></td>';
+  crossHtml += '</tr></table></div></div>';
+
+  content.innerHTML = renderGroup('👤 상담자별', staffStats) + renderGroup('📍 분류별 (내원경로)', cat1Stats) + renderGroup('🩺 의사별', doctorStats) + crossHtml;
 }
 
 /* ── 그룹 필터 (상담자/의사/분류1) ── */
