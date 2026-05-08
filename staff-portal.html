@@ -710,6 +710,9 @@ window.fbArchiveAll = async (items, progressCb) => {
 window.startListenHistory = (uid, email) => {
   const isAdmin = email === 'retooclinic@gmail.com';
   window._isAdmin = isAdmin;
+  // 통계 버튼: 관리자만 노출
+  var statsBtn = document.getElementById('btn-stats-toggle');
+  if(statsBtn) statsBtn.style.display = isAdmin ? '' : 'none';
   let q;
   if(isAdmin){
     q = query(collection(db,'consultations'));
@@ -5381,6 +5384,7 @@ function setThisMonthFilter(){
 
 /* ── 통계 패널 토글 ── */
 function toggleStatsPanel(){
+  if(!window._isAdmin){ showToast('관리자만 볼 수 있습니다','error'); return; }
   const panel = document.getElementById('stats-panel');
   if(!panel) return;
   const isHidden = panel.style.display === 'none';
