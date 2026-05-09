@@ -436,7 +436,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <option value="">📍 분류 전체</option>
         </select>
         <button onclick="resetGroupFilter()" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">필터 초기화</button>
-        <button onclick="toggleStatsPanel()" id="btn-stats-toggle" style="font-size:11px;color:var(--accent);background:none;border:1px solid var(--accent);border-radius:8px;padding:6px 10px;cursor:pointer">📊 통계</button>
+        <button onclick="toggleStatsPanel()" id="btn-stats-toggle" style="display:none;font-size:11px;color:var(--accent);background:none;border:1px solid var(--accent);border-radius:8px;padding:6px 10px;cursor:pointer">📊 통계</button>
       </div>
       <!-- 통계 패널 -->
       <div id="stats-panel" style="display:none;margin-bottom:14px;background:#0a0f1a;border:1px solid var(--border);border-radius:12px;padding:16px;max-height:400px;overflow-y:auto">
