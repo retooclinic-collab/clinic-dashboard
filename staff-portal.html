@@ -1951,7 +1951,7 @@ index는 입력의 [번호]와 동일하게.`,
         const idx = result.index;
         const row = _importRows[idx];
         if (!row) return;
-        if (row.treatments && !row._aiPending) return; // 이미 처리됨 (AI 대기 중이면 덮어씀)
+        if (row.treatments && row._parseSource) return; // 이미 처리됨
 
         if (result.treatments && result.treatments.length > 0) {
           const treats = result.treatments.map(t => ({
@@ -4339,34 +4339,31 @@ function isHeaderRow(row){
 function renderImportPreview(){
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요','error'); return; }
 
-  // ── AI 배치 파싱 시도 (비동기 — 완료 후 테이블 자동 갱신) ──
+  // ── AI 우선 파싱: API 키 있으면 전건 AI → 실패분만 regex 폴백 ──
   var apiKey = localStorage.getItem('claude_api_key');
   var needParse = _importRows.filter(function(r){ return !r.treatments && r.payText; });
   if(apiKey && needParse.length > 0){
     // 저장 버튼 비활성화 + AI 분석 중 표시
     var importBtn = document.getElementById('import-btn');
-    if(importBtn){ importBtn.disabled=true; importBtn.style.opacity='0.4'; importBtn.style.cursor='not-allowed'; importBtn.innerHTML='⏳ AI 분석 중... 잠시 기다려주세요'; }
-    showToast('AI 파서로 '+needParse.length+'건 분석 중...', 'info');
-    // AI 대상 행 마킹 → regex 폴백이 건너뜀
-    needParse.forEach(function(r){ r._aiPending = true; });
+    if(importBtn){ importBtn.disabled=true; importBtn.style.opacity='0.4'; importBtn.style.cursor='not-allowed'; importBtn.innerHTML='⏳ AI 분석 중... ('+needParse.length+'건)'; }
+    showToast('AI 파서로 '+needParse.length+'건 분석 중... 완료될 때까지 기다려주세요', 'info');
+    // 로딩 표시만 먼저 그리기 (데이터 없이)
+    _renderImportTableLoading(needParse.length);
     aiBatchParse(needParse).then(function(){
-      needParse.forEach(function(r){ delete r._aiPending; });
       var aiCount = _importRows.filter(function(r){ return r._parseSource==='ai'; }).length;
-      showToast('AI 분석 완료! '+aiCount+'건 AI 파싱됨', 'success');
+      var regexCount = needParse.length - aiCount;
+      // AI가 못 채운 건만 regex 폴백
       _applyRegexFallbackAndRenderTable();
-      // 저장 버튼 활성화
+      showToast('AI '+aiCount+'건 완료' + (regexCount > 0 ? ', regex 폴백 '+regexCount+'건' : ''), 'success');
       var btn = document.getElementById('import-btn');
       if(btn){ btn.disabled=false; btn.style.opacity='1'; btn.style.cursor='pointer'; btn.innerHTML='✅ Firebase에 전체 저장'; }
     }).catch(function(e){
-      console.warn('[AI배치파서] 오류, regex 폴백:', e);
-      needParse.forEach(function(r){ delete r._aiPending; });
-      showToast('AI 파서 오류 — regex로 처리됨', 'error');
+      console.warn('[AI배치파서] 오류, 전건 regex 폴백:', e);
+      showToast('AI 파서 오류 — 전건 regex로 처리됨', 'error');
       _applyRegexFallbackAndRenderTable();
       var btn = document.getElementById('import-btn');
       if(btn){ btn.disabled=false; btn.style.opacity='1'; btn.style.cursor='pointer'; btn.innerHTML='✅ Firebase에 전체 저장'; }
     });
-    // AI 모드: 먼저 AI 파싱 대상이 아닌 행만 regex 처리 + 테이블 표시
-    _applyRegexFallbackAndRenderTable();
     return;
   }
 
@@ -4374,10 +4371,20 @@ function renderImportPreview(){
   _applyRegexFallbackAndRenderTable();
 }
 
+function _renderImportTableLoading(count){
+  var container = document.getElementById('import-preview-body');
+  if(!container) return;
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">'
+    + '<div style="font-size:24px;margin-bottom:8px">⏳</div>'
+    + '<div style="font-size:13px">AI 파서로 '+count+'건 분석 중...</div>'
+    + '<div style="font-size:11px;margin-top:4px;color:var(--muted)">완료되면 자동으로 표가 나타납니다</div>'
+    + '</div>';
+  document.getElementById('import-preview').style.display = 'block';
+}
+
 function _applyRegexFallbackAndRenderTable(){
   // ── regex 폴백: AI에서 처리 안 된 건 ──
   _importRows.forEach(function(r){
-    if(r._aiPending) return; // AI 분석 대기 중 → regex 스킵
     if(!r.treatments){
       try {
         var parsed = localParse(r.payText);
