@@ -2640,19 +2640,29 @@ function localParse(raw){
   if(/포텐자.*?모공/i.test(raw)) results.push({item:'포텐자(모공)', qty:1});
   if(/포텐자.*?기미/i.test(raw)) results.push({item:'포텐자(기미)', qty:1});
 
-  // ── 필러 (수입) - 턱끝F, 목필러, 눈밑필러, 입술F 등 포함 ──
+  // ── 필러 (수입/국산) ──
   // "F" = 필러 약어: 입술F(수입)1cc, 턱끝F(수입), 코F 등
-  const _fillerAliasRaw = raw.replace(/(?:턱끝|눈밑|관자|이마|옆볼|입술|턱|코|목)[fF]/gi, m => m.slice(0,-1)+'필러');
-  const fillerImpMatches = [..._fillerAliasRaw.matchAll(/(?:턱끝필러|목필러|눈밑필러|관자필러|이마필러|옆볼필러|입술필러|턱필러|코필러|필러)\s*\(?수입\)?\s*(\d+)\s*cc|(?:수입)\s*필러\s*(\d+)\s*cc/gi)];
-  if(fillerImpMatches.length>0){
-    let totalCC=0;
-    fillerImpMatches.forEach(m=>{ totalCC+=parseInt(m[1]||m[2]||1); });
-    results.push({item:'필러(수입)', qty: totalCC});
-  } else if(/(?:수입)\s*필러|필러.*?수입|턱끝[fF].*?수입|입술[fF필러].*?수입|턱[fF필러].*?수입|목필러.*?수입|[fF]\s*\(?수입\)?/i.test(raw)){
-    results.push({item:'필러(수입)', qty:1});
+  // 수입 브랜드: 쥬비덤, 레스틸렌, 볼루마, 볼리프트, 볼벨라 → 자동 수입
+  const _fillerAliasRaw = raw.replace(/(?:턱끝|눈밑|관자|이마|옆볼|앞볼|입술|턱|코|목|볼)[fF]/gi, m => m.slice(0,-1)+'필러');
+  const _isImportBrand = /쥬비덤|레스틸렌|볼루마|볼리프트|볼벨라/i.test(raw);
+  // cc 추출: "필러(브랜드Ncc)" 또는 "필러 Ncc"
+  const fillerCcAll = [..._fillerAliasRaw.matchAll(/(?:턱끝필러|목필러|눈밑필러|관자필러|이마필러|옆볼필러|앞볼필러|입술필러|턱필러|코필러|볼필러|필러)\s*(?:\([^)]*?(\d+)\s*cc[^)]*\)|\s*(\d+)\s*cc)/gi)];
+  const _isExplicitImport = /(?:수입)\s*필러|필러.*?수입|턱끝[fF].*?수입|입술[fF필러].*?수입|턱[fF필러].*?수입|목필러.*?수입|[fF]\s*\(?수입\)?/i.test(raw);
+  const _isExplicitDomestic = /(?:국산|국)\s*필러|필러.*?국산|입술[fF필러].*?국[^산]|입술(?:[fF]|필러)?.*?\(국\)/i.test(raw);
+  const _hasFillerKeyword = /필러/i.test(_fillerAliasRaw);
+  if(_hasFillerKeyword && !_isExplicitDomestic){
+    // 수입 필러: 명시적 수입 or 수입 브랜드명 or 국산 표시 없으면 기본 수입
+    if(_isExplicitImport || _isImportBrand || !_isExplicitDomestic){
+      if(fillerCcAll.length > 0){
+        let totalCC = 0;
+        fillerCcAll.forEach(m => { totalCC += parseInt(m[1]||m[2]||1); });
+        results.push({item:'필러(수입)', qty: totalCC});
+      } else {
+        results.push({item:'필러(수입)', qty:1});
+      }
+    }
   }
-  const fillerDomMatch = /(?:국산|국)\s*필러|필러.*?국산|입술[fF필러].*?국[^산]|입술(?:[fF]|필러)?.*?\(국\)/i.test(raw);
-  if(fillerDomMatch){
+  if(_isExplicitDomestic){
     const ccm = raw.match(/(?:필러|[fF])\s*(\d+)\s*cc/i);
     results.push({item:'필러(국산)', qty: ccm?parseInt(ccm[1]):1});
   }
