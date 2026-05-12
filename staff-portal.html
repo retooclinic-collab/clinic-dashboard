@@ -230,7 +230,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
 
         <!-- 붙여넣기 -->
         <div class="form-group">
-          <textarea id="import-text" class="form-textarea" style="min-height:160px;font-size:12px;font-family:monospace"
+          <textarea id="import-text" class="form-textarea" style="min-height:260px;font-size:12px;font-family:monospace"
             placeholder="구글시트에서 복사(Ctrl+C) 후 여기에 붙여넣기(Ctrl+V)..."></textarea>
         </div>
 
@@ -957,7 +957,7 @@ let TREATMENT_ITEMS = [
   '리쥬란HB','소프웨이브(50샷)','위고비','미라젯','엠페이스','온다','온다(바디)','스킨바이브',
   '써마지900샷','줄기세포30cc','줄기세포60cc','줄기세포120cc','줄기세포240cc',
   'BBL','BBL(여드름)','BBL(스킨타이트닝)','BBL(바디)','moxi','오푸스','쥬베룩아이',
-  '리투오','쥬브아셀','자가엑소좀','힐로웨이브','스컬트라','아이써마지450샷',
+  '리투오','쥬브아셀','릴리이드','자가엑소좀','힐로웨이브','스컬트라','아이써마지450샷',
   '엑소좀','플라즈마엑소좀','MOXI',
   '티타튠','티타튠max',
   '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트',
@@ -979,7 +979,7 @@ const CHARGE_PRICE = {
   '리쥬란':55, '리쥬란HB':49.5, '리쥬란아이':55,
   '힐로웨이브':66, '미라젯':38.5, '미라젯쥬베룩':99,
   '쥬베룩볼륨':38.5, '쥬베룩아이':49.5,
-  '쥬브아셀':88, '리투오':88,
+  '쥬브아셀':88, '리투오':88, '릴리이드':44,
   '엠페이스':88, '오푸스':55,
   '포텐자(펌핑)':71.5, '포텐자(모공)':44, '포텐자(기미)':44,
   'BBL':22, 'BBL(여드름)':49.5, 'BBL(스킨타이트닝)':71.5, 'BBL(바디)':22,
@@ -1023,7 +1023,7 @@ const _ITEM_KEYWORDS = {
   '미라젯':/미라젯(?!쥬베룩|리쥬란|쥬브아셀|리투오)/i,
   '쥬베룩':/콜라겐\s*샤워/i,
   '쥬베룩볼륨':/쥬베룩(?!\s*아이)|쥬볼/i, '쥬베룩아이':/쥬베룩\s*아이/i,
-  '쥬브아셀':/쥬브아셀/i, '리투오':/리투오/i,
+  '쥬브아셀':/쥬브아셀/i, '리투오':/리투오/i, '릴리이드':/릴리이드/i,
   '엠페이스':/엠페(?:이스)?/i, '오푸스':/오푸스/i,
   '포텐자(펌핑)':/포텐자.*?펌핑|펌핑팁|펌핑쥬베룩/i,
   '포텐자(모공)':/포텐자.*?모공/i, '포텐자(기미)':/포텐자.*?기미/i,
@@ -1053,7 +1053,7 @@ const _ITEM_KEYWORDS = {
   '인텐스울트라':/인텐스울트라/i, '위고비':/위고비/i,
   '스킨바이브':/스킨바이브/i, '하이쿡스':/하이쿡스/i,
   '플라즈마엑소좀':/플라즈마엑소좀/i,
-  '피부관리':/진정(?:관리|팩)|피부관리/i,
+  '피부관리':/진정(?:관리|팩)|피부관리|커스텀케어/i,
   '고압산소':/고압산소/i,
   '지정비용':/지정비용|지정\s*비/i,
   '제품':/마스크팩|제품|크림\d*박스/i,
@@ -1773,98 +1773,333 @@ function distributePrices(treatments, total, rawText){
    - 시술 텍스트를 Claude에 보내 JSON 파싱 결과 수신
    - 실패 시 null 반환 → localParse 폴백
 ══════════════════════════════════════════════ */
-const AI_PARSER_SYSTEM_PROMPT = `당신은 한국 피부과/성형외과 수납 텍스트 파서입니다.
-주어진 수납 텍스트에서 시술 항목, 수량, 개별가격, 총결제금액, 결제방식을 추출하세요.
+const AI_PARSER_SYSTEM_PROMPT = `당신은 청담리투의원(한국 피부과/성형외과) 수납 텍스트 전문 파서입니다.
+이 병원의 수납 메모 형식, 약어, 콤보 시술, 가격 체계를 완벽히 이해하고 있습니다.
 
-## 시술 항목 목록 (정확히 이 이름으로 매핑)
-제네시스+PTT, 제네시스, 수액, 튠페이스, 슈링크, 티타늄, 울쎄라(100샷), 튠라이너, 아이리프팅, 피코슈어, 듀얼피코, 트리플피코,
-여드름관리, CO2, 필러(국산), 필러(수입), 보톡스(국산), 보톡스(수입),
-리투핏주사, 리투업주사, 쥬베룩볼륨, 리쥬란, 쥬베룩, 튠바디, 리투핏주사(바디),
-플라즈마, 라라필, 포텐자(모공), 포텐자(기미), 인텐스울트라, 코레지셀핏, LDM,
-크라이오, 제모(여자), 제모(남자), 새살주사, 펌핑팁, 수면비, 히알라제,
-상담만, TA, 아쿠아필, 포텐자(펌핑), 아그네스, PDRN, 줄기세포, VIP회원권, VIP할인혜택,
-프락셀, 써마지300, 아이써마지225, 하이쿡스, 리쥬란아이, 써마지600, 클라리티,
-리쥬란HB, 소프웨이브(50샷), 위고비, 미라젯, 엠페이스, 온다, 온다(바디), 스킨바이브,
-써마지900샷, 줄기세포30cc, 줄기세포60cc, 줄기세포120cc, 줄기세포240cc,
-BBL, BBL(여드름), BBL(스킨타이트닝), BBL(바디), moxi, 오푸스, 쥬베룩아이,
-리투오, 쥬브아셀, 자가엑소좀, 힐로웨이브, 스컬트라, 아이써마지450샷,
-엑소좀, 플라즈마엑소좀, MOXI, 티타튠, 티타튠max,
-리쥬셀릭크림, 리쥬셀릭앰플, 리쥬셀릭선물세트,
-NAD, 백옥, 미라젯쥬베룩, 알라딘필, 문신제거, 피부관리, 고압산소,
-적립금차감, 선납금차감, 상품권차감, 할인차감, 적립금,
-예약금, 예약금제외, 환불, 위약금, 제품, 지정비용, 점편사제거, 차액결제, 양도
+━━━━━━━━━━━━━━━━━━━━━━━━
+1. 절대 규칙
+━━━━━━━━━━━━━━━━━━━━━━━━
+- 아래 "허용 항목"에 있는 이름만 사용. 없는 항목(차액결제, 튠라이너R 등) 절대 만들지 마세요.
+- 시술명 바로 뒤 숫자 = 가격(만원), 수량 아님! "엠페이스88"→qty=1,price=88. "오푸스55"→qty=1,price=55.
+- 수량은 반드시 단위가 있을 때만: N회, N병, N샷, Ncc, N개
+- +는 시술 구분자. (국)/(수입)/(제오민) 브랜드표기는 해당 시술에만 — 다른 시술에 절대 전파하지 마세요.
 
-## 매핑 규칙
-- BBL 색소, BBL 포에버영, BBL 홍조, BBL 미백, BBL 화이트닝 → "BBL"
-- BBL 여드름 → "BBL(여드름)"
-- BBL 스킨타이트닝 → "BBL(스킨타이트닝)"
-- 바디BBL, BBL 바디 → "BBL(바디)"
-- 온다 + 바디부위(팔뚝, 복부, 종아리, 허벅지 등) → "온다(바디)"
-- 소프, 소프웨이브 → "소프웨이브(50샷)"
-- 울쎄라, 울쎼라 → "울쎄라(100샷)"
-- 엠페, 엠페이스 → "엠페이스"
-- 코레지 → "코레지셀핏"
-- 진정관리, 진정팩 → "피부관리"
-- 피코토닝, 듀얼토닝 → "듀얼피코"
-- 폭탄수액, 백옥슈팅, 비타민수액, 리커버리수액, 리바이탈수액 → "수액"
-- 제오민 → "보톡스(수입)"
-- 목필러, 턱끝F → "필러(수입)"
-- 미라젯쥬브아셀 → 미라젯 + 쥬브아셀 (2개 항목)
-- 콜라겐샤워 → "쥬베룩"
-- 쥬볼 → "쥬베룩볼륨"
-- 볼륨튠(튠페이스+쥬볼)N회 → 세트: 튠페이스 qty=N + 쥬베룩볼륨 qty=N (N회가 세트 전체에 적용)
-- 포텐자펌핑, 펌핑쥬베룩 → "포텐자(펌핑)"
-- sv, SV, 서비스 → 해당 시술 가격 0원 (서비스 제공)
-- (○○대체) 괄호 안 대체 표기의 시술은 별도 항목으로 추가하지 않음
-- 리투오(또는쥬브아셀), 쥬브아셀(또는리투오), 리투오 또는 쥬브아셀 → 쥬브아셀만 카운트 (리투오 무시)
+━━━━━━━━━━━━━━━━━━━━━━━━
+2. 허용 항목 + 표준가격(만원)
+━━━━━━━━━━━━━━━━━━━━━━━━
+울쎄라(100샷):60, 소프웨이브(50샷):66,
+써마지300:165, 써마지600:275, 써마지900샷:429,
+아이써마지225:132, 아이써마지450샷:198,
+튠페이스:55, 튠라이너:55, 튠바디:55, 티타늄:99, 티타튠:132, 티타튠max:165,
+온다:99, 온다(바디):99,
+리쥬란:55, 리쥬란HB:49.5, 리쥬란아이:55,
+힐로웨이브:66, 미라젯:38.5, 미라젯쥬베룩:99,
+쥬베룩볼륨:38.5, 쥬베룩아이:49.5, 쥬베룩:38.5,
+쥬브아셀:88, 리투오:88, 릴리이드:44,
+엠페이스:88, 오푸스:55, 스킨바이브:60.5,
+포텐자(펌핑):71.5, 포텐자(모공):44, 포텐자(기미):44,
+BBL:22, BBL(여드름):49.5, BBL(스킨타이트닝):71.5, BBL(바디):22,
+필러(수입):55, 필러(국산):33,
+보톡스(국산):11, 보톡스(수입):22,
+듀얼피코:33, 피코슈어:33, 트리플피코:33, 클라리티:27.5, 프락셀:33,
+moxi:66, LDM:27.5, 플라즈마:33, 플라즈마엑소좀:55,
+라라필:22, 아쿠아필:11, 인텐스울트라:27.5, 코레지셀핏:33,
+아그네스:33, 아이리프팅:38.5, 알라딘필:33,
+자가엑소좀:165, 엑소좀:55, 위고비:26, 스컬트라:55,
+줄기세포30cc:145, 줄기세포60cc:198, 줄기세포120cc:330, 줄기세포240cc:506,
+하이쿡스:5.5,
+수액:8.8, NAD:16.5, 백옥:8.8, PDRN:16.5,
+리투핏주사:17.6, 리투업주사:17.6, 리투핏주사(바디):17.6,
+새살주사:27.5, 히알라제:16.5, 크라이오:22, 수면비:22,
+제모(여자):11, 제모(남자):11, 고압산소:11,
+여드름관리:11, CO2:5.5, 피부관리:16.5, 문신제거:33,
+상담만:2.2, TA:1.1,
+제네시스+PTT:38.5, 제네시스:38.5,
+리쥬셀릭크림:4.2, 리쥬셀릭앰플:4.8, 리쥬셀릭선물세트:12.5
+조정항목(price=0): VIP회원권, 예약금, 예약금제외, 적립금차감, 선납금차감, 상품권차감, 할인차감, 적립금, 환불, 위약금, 제품, 지정비용, 점편사제거, 양도
+VIP할인혜택(별도 필드)
 
-## 수량 판단
-- "울쎄라400샷" → qty = 400/100 = 4
-- "소프200샷" → qty = 200/50 = 4
-- "써마지600" → "써마지600" 항목 qty=1 (샷수가 항목명에 포함)
-- "엠페이스2-1,2-2" → qty=2 (2개 영역)
-- "엠페이스3회" → qty=3
-- "온다(팔뚝)120KJ" → 온다(바디) qty=1
-- 티타늄 KJ: 40KJ=1회, 80KJ=2회, 120KJ=3회
+★ 표준가격을 알면 "시술명+숫자"에서 숫자가 가격인지 수량인지 판별 가능.
+  예: 엠페이스 표준가=88 → "엠페이스88"=price=88,qty=1. "엠페이스2회"=qty=2.
 
-## 가격
-- 숫자 뒤 m, M, 만, 만원 = 만원 단위 (예: 49.5m = 49.5만원)
-- 시술명 뒤 숫자가 가격: "BBL여드름49.5m" → 49.5
-- "=총NNN차감" 은 합산 표기이므로 무시
+━━━━━━━━━━━━━━━━━━━━━━━━
+3. 약어→항목명 매핑 사전 (완전판)
+━━━━━━━━━━━━━━━━━━━━━━━━
+울쎄라,울쎼라 → 울쎄라(100샷)
+소프,소프웨이브 → 소프웨이브(50샷)
+엠페,엠페이스 → 엠페이스
+코레지,코레지셀핏 → 코레지셀핏
+쥬볼 → 쥬베룩볼륨
+콜라겐샤워 → 쥬베룩
+튠페,튠페이스 → 튠페이스
+제네시스ptt,제네시스+ptt → 제네시스+PTT
+피코토닝,듀얼토닝,피코(단독) → 듀얼피코
+피코슈어,피코웨이,피코포커스 → 피코슈어
+포텐자펌핑,펌핑팁,펌핑쥬베룩 → 포텐자(펌핑)
+인텐스,인텐스울트라 → 인텐스울트라
+진정관리,진정팩,커스텀케어 → 피부관리
+폭탄수액,백옥슈팅,비타민수액,리커버리수액,리바이탈수액 → 수액
+백옥(단독) → 백옥 (수액과 별도 항목!)
+마스크팩,크림N박스 → 제품
+아이리쥬란,리쥬란아이 → 리쥬란아이
+써마지225(눈꺼풀),써마지225샷(눈꺼풀메인) → 아이써마지225
+써마지450(눈),써마지450샷(눈) → 아이써마지450샷
+온다+바디부위(팔뚝,복부,종아리,허벅지,바디) → 온다(바디)
+BBL색소,포에버영,홍조,미백,화이트닝 → BBL
+BBL여드름 → BBL(여드름) | BBL스킨타이트닝 → BBL(스킨타이트닝) | 바디BBL → BBL(바디)
 
-## 결제금액/결제방식
-- "=447.7(카)" → 총결제금액 447.7, 결제방식 카드
-- "=277.2m(위챗)" → 총결제금액 277.2, 결제방식 위챗
-- VIP700+49적립=700m(카) → 총결제금액 700, 결제방식 카드, VIP할인혜택 49
-- 카 = 카드, 현 = 현금(자진), 알리 = 알리페이, 위챗 = 위챗, 이체 = 이체(현영), 제로 = 제로페이
-- "예약금제외" → 예약금 차감 항목으로 처리
-- 미수 N → 미수 금액 별도 표기
+보톡스 약어: b,B,btx = 보톡스. 제오민,(제) = 수입. (국),(국산) = 국산.
+스킨b,스킨보톡스,얼전스킨보톡스 → 보톡스 1부위 (전얼굴 스킨보톡스)
+"스킨b 제오민업그레이드" → 보톡스(수입) qty=1 (국산→제오민 업그레이드 추가금)
+쥬브아셀8%,쥬브아셀V = 쥬브아셀 (농도/버전 표기는 무시, 필러 아님!)
+필러 약어: F,f = 필러. 턱끝F,목필러,입술F → 필러. 부위명+F → 부위필러.
+리투오(또는쥬브아셀), 리투오/쥬브아셀, 리투오or쥬브아셀 → 쥬브아셀만 카운트
+(○○대체) 괄호 안 대체 표기 → 항목 추가 안 함 (메모)
+sv,SV,서비스 → 해당 시술 price=0
+볼륨튠(튠페이스+쥬볼)N회 → 튠페이스 qty=N + 쥬베룩볼륨 qty=N
 
-## 적립금/VIP할인혜택
-- "VIP700+49적립=700m" → 적립금=총액에서역산(101.1등), VIP할인혜택=49
-- "+N적립" → VIP할인혜택 = N
+━━━━━━━━━━━━━━━━━━━━━━━━
+4. 수량(qty) 변환 — 완전 규칙
+━━━━━━━━━━━━━━━━━━━━━━━━
+[샷→qty]
+울쎄라: N샷÷100. 울쎄라400샷→qty=4
+소프웨이브: N샷÷50. 소프300샷→qty=6, 소프150샷→qty=3, 소프200샷→qty=4
 
-## 출력 JSON 형식 (반드시 이 형식으로)
-{
-  "treatments": [
-    {"item": "시술명", "qty": 1, "price": 49.5},
-    {"item": "시술명2", "qty": 2, "price": 176}
-  ],
-  "totalAmount": 447.7,
-  "payMethods": [{"method": "카드", "amt": 447.7}],
-  "misu": 0,
-  "vipDiscount": 0,
-  "credit": 0
-}
+[써마지 — 숫자는 항목명!]
+써마지300→써마지300 qty=1 | 써마지600→써마지600 qty=1 | 써마지900→써마지900샷 qty=1
 
-price는 만원 단위. 텍스트에 명시된 가격이 있으면 그것을 사용하고, 없으면 null로.
-JSON만 출력하세요. 설명 없이.`;
+[cc→qty]
+리쥬란: 2cc=1단위. 2cc→1, 4cc→2, 6cc→3, 8cc→4
+리쥬란HB: 1cc=1단위. 1cc→1, 2cc→2, 3cc→3
+릴리이드: 1cc=1단위. 1cc→1, 1.5cc→1, 2cc→2
+리쥬란아이: 1cc=1단위. 1cc→1, 2cc→2
+힐로웨이브: 2cc=1단위. 2cc→1, 4cc→2
+필러: 1cc=1단위. 1cc→1, 2cc→2, 3cc→3
+쥬베룩볼륨: 병 단위. 1병→1, 2병→2 (cc 아님!)
+
+[KJ→qty]
+티타늄: 40KJ=1회. 40KJ→1, 80KJ→2, 120KJ→3
+온다: 100KJ=1회. 100KJ→1, 200KJ→2
+
+[엠페이스 — 주의!]
+엠페이스N회 → qty=N (예: 엠페이스2회→2, 엠페이스4회→4)
+엠페이스N-M,N-M → qty=영역수 (예: 엠페이스2-1,2-2→qty=2)
+엠페이스(N분) → qty=N÷20 (예: 엠페이스(40분)→qty=2, (60분)→qty=3)
+엠페이스+숫자(단위없음) → 숫자는 가격! qty=1 (예: 엠페이스88→qty=1,price=88)
+
+[오푸스]
+오푸스N회 → qty=N | 오푸스N회sv → qty=N,price=0
+오푸스+숫자(단위없음) → 가격. 오푸스55→qty=1,price=55
+
+[N회/N병]
+시술명+N회 → qty=N | 시술명+N병 → qty=N
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+5. 보톡스 — 부위 개수 = qty
+━━━━━━━━━━━━━━━━━━━━━━━━
+인식 부위: 이마,미간,눈가,턱,사각턱,입꼬리,자갈턱,콧볼,콧등,침샘,승모근,측두근,귀밑,턱밑
+수입 판별: 제오민,(제),(all제오민) → 보톡스(수입)
+국산 판별: (국),(국산) → 보톡스(국산)
+
+패턴별 qty:
+"이마보톡스(제오민)" → 보톡스(수입) qty=1
+"이마,눈가보톡스(제오민)" → 보톡스(수입) qty=2
+"이마b미간b(all제오민)" → 보톡스(수입) qty=2
+"이마b미간b눈가b(제)" → 보톡스(수입) qty=3
+"사각턱보톡스(국)" → 보톡스(국산) qty=1
+"사각턱b(제오민)" → 보톡스(수입) qty=1
+"승모근보톡스" → 보톡스(국산 또는 수입, 표기에 따라) qty=1
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+6. 필러 — 수입/국산 판별
+━━━━━━━━━━━━━━━━━━━━━━━━
+수입 브랜드(자동 수입): 쥬비덤, 레스틸렌, 볼루마, 볼리프트, 볼벨라
+(수입) 명시 → 필러(수입) | (국산)/(국) 명시 → 필러(국산)
+수입/국산 미표기 → 기본값 = 필러(수입)
+
+부위+F/필러: 입술F, 입술필러, 턱끝F, 목필러, 앞볼필러, 옆볼필러, 볼필러, 코필러, 이마필러, 관자필러, 눈밑필러 → 전부 "필러"
+qty = cc수. 1cc→1, 2cc→2
+
+★ 핵심: "입술필러1cc(수입)55+턱보톡스(국)16.5" 에서
+  - (수입)은 필러에만 적용 → 필러(수입)
+  - (국)은 보톡스에만 적용 → 보톡스(국산)
+  - + 경계를 넘어서 판단하지 마세요!
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+7. 미라젯 콤보 시술
+━━━━━━━━━━━━━━━━━━━━━━━━
+미라젯쥬베룩 → 미라젯 + 쥬베룩볼륨 (2개 항목으로 분해)
+미라젯쥬베룩N회 → 미라젯 qty=N + 쥬베룩볼륨 qty=N
+미라젯리쥬란Ncc → 미라젯 qty=1 + 리쥬란 qty=N÷2
+미라젯리쥬란HB Ncc → 미라젯 qty=1 + 리쥬란HB qty=N
+미라젯쥬브아셀N회 → 미라젯 qty=N + 쥬브아셀 qty=N
+미라젯리투오N회 → 미라젯 qty=N + 리투오 qty=N
+미라젯(리투오+리쥬란HB2cc) → 미라젯1 + 리투오1 + 리쥬란HB2 (괄호 안 = 서브항목)
+★ 쥬브아셀8%, 쥬브아셀V 등 농도/버전 표기는 무시하고 쥬브아셀로 처리
+
+★ 미라젯과 쥬베룩이 +로 분리돼 있어도 같은 텍스트에 둘 다 있으면:
+  쥬베룩 = 쥬베룩볼륨으로 처리 ("미라젯38.5+쥬베룩2cc" → 미라젯1+쥬베룩볼륨1)
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+8. 이벤트 그룹 ("N월e")
+━━━━━━━━━━━━━━━━━━━━━━━━
+"4월e 티타튠2회+미라젯쥬베룩2회 247.5" → 이벤트 묶음
+- 개별 시술로 분해: 티타튠qty=2, 미라젯qty=2, 쥬베룩볼륨qty=2
+- 뒤의 숫자(247.5)는 묶음 총가격 → 개별 price=null
+- 이벤트 그룹 밖 시술은 개별 가격 적용
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+9. 가격 체계
+━━━━━━━━━━━━━━━━━━━━━━━━
+- 시술명 뒤 숫자(단위 없음) = 해당 시술 가격(만원)
+- m,M,만,만원 = 만원 단위 확인
+- "=NNN차감 후 남은금액x" = 합산 표기 → 무시
+- "=총NNNm차감" = 합산 → 무시
+- "-N할인", "-Nm할인" → 할인차감 qty=1, price=N
+- "-예약금" → 예약금제외 qty=1, price=0
+- VIP700, VIP1000 → VIP회원권 qty=1, price=0 (숫자는 등급)
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+10. 결제/VIP/적립금
+━━━━━━━━━━━━━━━━━━━━━━━━
+결제방식: 카=카드, 현/자진=현금(자진), 알리=알리페이, 위챗=위챗, 이체/현영=이체(현영), 제로=제로페이
+"=447.7(카)" → totalAmount=447.7, 카드
+"=100(현,자진)" → totalAmount=100, 현금(자진)
+복합: "=200(카,위챗)" → 2가지 결제수단
+"미수N" → misu=N
+VIP 등급별 할인: VIP500→vipDiscount=25, VIP700→vipDiscount=49, VIP1000→vipDiscount=100
+"+N적립" → vipDiscount=N (명시적)
+★ VIP가 있으면 반드시 VIP회원권 항목 + vipDiscount 값 출력!
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+11. 핵심 예시 (few-shot은 대화 턴에서 제공됨, 여기는 참고용)
+━━━━━━━━━━━━━━━━━━━━━━━━
+[입력] "입술필러1cc(수입)55+턱보톡스(국)16.5=71.5m(현,자진)"
+[정답] 필러(수입):1:55, 보톡스(국산):1:16.5 (수입은 필러에만, 국은 보톡스에만!)
+
+[입력] "앞볼필러(쥬비덤2cc)110+사각턱b(제오민)33-예약금제외=139.7m(알리)"
+[정답] 필러(수입):2:110, 보톡스(수입):1:33, 예약금제외:1:0 (쥬비덤=수입필러, b=보톡스!)
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+12. ★★★ 자주 틀리는 패턴 — 반드시 주의! ★★★
+━━━━━━━━━━━━━━━━━━━━━━━━
+✗ b/B/btx = 보톡스! 절대 필러가 아닙니다!
+  "이마b(국)sv" → 보톡스(국산) qty=1 price=0
+  "이마b(제)" → 보톡스(수입) qty=1
+  "스킨b 제오민업그레이드" → 보톡스(수입) qty=1
+✗ F/f = 필러! 보톡스가 아닙니다!
+  "입술F" → 필러 | "턱끝F" → 필러
+✗ 쥬브아셀8%, 쥬브아셀V = 쥬브아셀 (필러 아님! 농도/버전 무시)
+✗ 커스텀케어 = 피부관리 (독립 시술 아님)
+✗ 힐라이트sv = 피부관리 price=0 (이미 피부관리가 있으면 중복 추가 안 함)
+✗ 미라젯쥬브아셀 = 미라젯 + 쥬브아셀 (반드시 2개 분리)
+✗ 미라젯리투오 = 미라젯 + 리투오 (반드시 2개 분리)
+✗ 릴리이드 = 독립 항목 (필러도 리쥬란도 아님)
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+13. ★★★ 분석 방법 (반드시 따르세요!) ★★★
+━━━━━━━━━━━━━━━━━━━━━━━━
+JSON 출력 전에 반드시 <analysis> 태그 안에서 각 토큰을 분석하세요.
+이 과정을 건너뛰면 필러/보톡스 오분류 등 치명적 오류가 발생합니다.
+
+분석 순서:
+1. 텍스트를 +, 줄바꿈, 쉼표 기준으로 토큰 분리
+2. 각 토큰을 하나씩 분석:
+   - 어떤 시술? (약어 사전 참조)
+   - 숫자의 의미? (가격 vs 수량 — 단위 확인!)
+   - b/B/btx → 보톡스! (절대 필러 아님!)
+   - F/f → 필러! (절대 보톡스 아님!)
+   - (국)/(국산) → 국산 | (제오민)/(제)/(수입) → 수입
+   - sv/SV → 서비스 (price=0)
+3. VIP 확인: VIP500/700/1000 → VIP회원권 qty=1 + vipDiscount(500→25, 700→49, 1000→100)
+4. 예약금: -예약금, 예약금제외 → 예약금제외 qty=1
+5. 할인: -N할인 → 할인차감 qty=1
+
+<analysis>
+토큰1: ... → 시술명 qty=N price=X
+토큰2: ... → 시술명 qty=N price=X
+...
+</analysis>
+{"treatments":[...],...}
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+14. 출력 형식
+━━━━━━━━━━━━━━━━━━━━━━━━
+<analysis> 분석 </analysis> 다음에
+{"treatments":[{"item":"시술명","qty":1,"price":49.5}],"totalAmount":447.7,"payMethods":[{"method":"카드","amt":447.7}],"misu":0,"vipDiscount":0,"credit":0}
+price=만원. 텍스트에 가격 있으면 사용, 없으면 null.`;
+
+/* few-shot 대화 턴: 모든 파싱 경험을 AI 클론에 이식 — 총 20건 */
+const AI_FEWSHOT_EXAMPLES = [
+  // ━━━ 1. b=보톡스(필러아님!), 쥬브아셀8%=쥬브아셀, 커스텀케어=피부관리 ━━━
+  { role: 'user', content: '5월e)울쎄라300샷+소프웨이브250샷+미라젯쥬브아셀8%1병+커스텀케어+이마b(국)sv=572m(카)' },
+  { role: 'assistant', content: '<analysis>\n5월e) → 이벤트\n울쎄라300샷 → 울쎄라(100샷) qty=3\n소프웨이브250샷 → 소프웨이브(50샷) qty=5\n미라젯쥬브아셀8%1병 → 미라젯1 + 쥬브아셀1 (8%=농도무시)\n커스텀케어 → 피부관리1\n이마b(국)sv → b=보톡스! 국산, sv=서비스 → 보톡스(국산)1 price=0\n</analysis>\n{"treatments":[{"item":"울쎄라(100샷)","qty":3,"price":null},{"item":"소프웨이브(50샷)","qty":5,"price":null},{"item":"미라젯","qty":1,"price":null},{"item":"쥬브아셀","qty":1,"price":null},{"item":"피부관리","qty":1,"price":null},{"item":"보톡스(국산)","qty":1,"price":0}],"totalAmount":572,"payMethods":[{"method":"카드","amt":572}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 2. VIP500+vipDiscount=25, 스킨b=보톡스(수입), 미라젯리투오분리, 릴리이드, 예약금제외 ━━━
+  { role: 'user', content: '500vip+차액 65.7=565.7m(카)\n-5월e 써마지600+미라젯리투오+얼전스킨보톡스(국) 385\n-스킨b 제오민업그레이드 22\n-턱보톡스(제오민) 33\n-듀얼피코 33\n-리쥬란e 리쥬란hb 3cc+릴리이드1.5cc 121\n총 594-예약금=590.7m 차감 후 남은 금액x' },
+  { role: 'assistant', content: '<analysis>\n500vip → VIP회원권1, vipDiscount=25\n써마지600 → 써마지600 qty=1\n미라젯리투오 → 미라젯1 + 리투오1 (분리!)\n얼전스킨보톡스(국) → 보톡스(국산)1\n스킨b 제오민업그레이드 → b=보톡스! 제오민=수입 → 보톡스(수입)1\n턱보톡스(제오민) → 보톡스(수입)1 → 수입합계2\n듀얼피코33 → 듀얼피코1\n리쥬란hb 3cc → 리쥬란HB qty=3\n릴리이드1.5cc → 릴리이드1\n-예약금 → 예약금제외1\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"써마지600","qty":1,"price":null},{"item":"미라젯","qty":1,"price":null},{"item":"리투오","qty":1,"price":null},{"item":"보톡스(국산)","qty":1,"price":null},{"item":"보톡스(수입)","qty":2,"price":null},{"item":"듀얼피코","qty":1,"price":33},{"item":"리쥬란HB","qty":3,"price":null},{"item":"릴리이드","qty":1,"price":null},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":565.7,"payMethods":[{"method":"카드","amt":565.7}],"misu":0,"vipDiscount":25,"credit":0}' },
+  // ━━━ 3. 필러+보톡스 동시 (b=보톡스, 필러=필러) ━━━
+  { role: 'user', content: '앞볼필러(쥬비덤2cc)110+사각턱b(제오민)33+이마b(제)22-예약금제외=161.7m(알리)' },
+  { role: 'assistant', content: '<analysis>\n앞볼필러(쥬비덤2cc)110 → 필러! 쥬비덤=수입 2cc=qty2 → 필러(수입)2\n사각턱b(제오민)33 → b=보톡스! 수입1\n이마b(제)22 → b=보톡스! 수입1 → 수입합계2\n-예약금제외 → 예약금제외1\n</analysis>\n{"treatments":[{"item":"필러(수입)","qty":2,"price":110},{"item":"보톡스(수입)","qty":2,"price":55},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":161.7,"payMethods":[{"method":"알리페이","amt":161.7}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 4. VIP700+vipDiscount=49, 엠페이스2회, 소프300샷=6, 보톡스(수입)2부위, 예약금제외+할인차감 ━━━
+  { role: 'user', content: '700vip=700m(위챗)\n700+49\n엠페이스2회176+소프웨이브300샷396+쥬베룩볼륨1병88+쥬베룩아이49.5+이마,눈가보톡스(제오민)44-예약금-1.2m할인=749m차감 후 남은금액x/길' },
+  { role: 'assistant', content: '<analysis>\n700vip → VIP회원권1, vipDiscount=49\n엠페이스2회176 → 엠페이스 qty=2 price=176\n소프웨이브300샷396 → 소프웨이브(50샷) qty=300÷50=6 price=396\n쥬베룩볼륨1병88 → 쥬베룩볼륨1 price=88\n쥬베룩아이49.5 → 쥬베룩아이1 price=49.5\n이마,눈가보톡스(제오민)44 → 보톡스(수입) qty=2(이마+눈가) price=44\n-예약금 → 예약금제외1\n-1.2m할인 → 할인차감1 price=1.2\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"엠페이스","qty":2,"price":176},{"item":"소프웨이브(50샷)","qty":6,"price":396},{"item":"쥬베룩볼륨","qty":1,"price":88},{"item":"쥬베룩아이","qty":1,"price":49.5},{"item":"보톡스(수입)","qty":2,"price":44},{"item":"예약금제외","qty":1,"price":0},{"item":"할인차감","qty":1,"price":1.2}],"totalAmount":749,"payMethods":[{"method":"위챗","amt":749}],"misu":0,"vipDiscount":49,"credit":0}' },
+  // ━━━ 5. 리쥬란HB 2cc=2단위, 이마b미간b=보톡스2부위(수입) ━━━
+  { role: 'user', content: '리쥬란HB2cc77+이마b미간b(all제오민)44=121m(카)' },
+  { role: 'assistant', content: '<analysis>\n리쥬란HB2cc77 → 리쥬란HB qty=2(1cc=1) price=77\n이마b미간b(all제오민)44 → b=보톡스! 이마+미간=2부위, 제오민=수입 → 보톡스(수입)2 price=44\n</analysis>\n{"treatments":[{"item":"리쥬란HB","qty":2,"price":77},{"item":"보톡스(수입)","qty":2,"price":44}],"totalAmount":121,"payMethods":[{"method":"카드","amt":121}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 6. 소프6, 리쥬란4cc÷2=2, 미라젯+쥬베룩=쥬베룩볼륨, sv=price0 ━━━
+  { role: 'user', content: '소프웨이브300샷396+리쥬란4cc110+미라젯38.5+쥬베룩2cc sv+이마보톡스(제오민)sv=544.5m(카)' },
+  { role: 'assistant', content: '<analysis>\n소프웨이브300샷396 → 소프웨이브(50샷) qty=6 price=396\n리쥬란4cc110 → 리쥬란 qty=4÷2=2 price=110\n미라젯38.5 → 미라젯1 price=38.5\n쥬베룩2cc sv → 미라젯있으니 쥬베룩볼륨1, sv=price0\n이마보톡스(제오민)sv → 보톡스(수입)1 price=0\n</analysis>\n{"treatments":[{"item":"소프웨이브(50샷)","qty":6,"price":396},{"item":"리쥬란","qty":2,"price":110},{"item":"미라젯","qty":1,"price":38.5},{"item":"쥬베룩볼륨","qty":1,"price":0},{"item":"보톡스(수입)","qty":1,"price":0}],"totalAmount":544.5,"payMethods":[{"method":"카드","amt":544.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 7. 입술필러(수입)+힐로웨이브2cc÷2=1, 엠페이스88=가격(qty아님!) ━━━
+  { role: 'user', content: '입술필러1cc(수입)55+힐로웨이브2cc66+엠페이스88-예약금=205.7m(위챗)' },
+  { role: 'assistant', content: '<analysis>\n입술필러1cc(수입)55 → 필러(수입)1 price=55\n힐로웨이브2cc66 → 힐로웨이브 qty=2÷2=1 price=66\n엠페이스88 → 88=가격! 표준가88 → 엠페이스1 price=88\n-예약금 → 예약금제외1\n</analysis>\n{"treatments":[{"item":"필러(수입)","qty":1,"price":55},{"item":"힐로웨이브","qty":1,"price":66},{"item":"엠페이스","qty":1,"price":88},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":205.7,"payMethods":[{"method":"위챗","amt":205.7}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 8. 미라젯(서브항목), /뒤=메모무시 ━━━
+  { role: 'user', content: '미라젯38.5(리투오1병88+리쥬란HB2cc77/이마포함얼전)+LDM27.5=231m(카)' },
+  { role: 'assistant', content: '<analysis>\n미라젯38.5 → 미라젯1 price=38.5\n(리투오1병88 → 리투오1 price=88\n리쥬란HB2cc77 → 리쥬란HB qty=2 price=77\n/이마포함얼전 → 메모, 무시)\nLDM27.5 → LDM1 price=27.5\n</analysis>\n{"treatments":[{"item":"미라젯","qty":1,"price":38.5},{"item":"리투오","qty":1,"price":88},{"item":"리쥬란HB","qty":2,"price":77},{"item":"LDM","qty":1,"price":27.5}],"totalAmount":231,"payMethods":[{"method":"카드","amt":231}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 9. 입술필러(수입)=필러, 턱보톡스(국)=보톡스 — +경계 넘어 브랜드 전파 안함! ━━━
+  { role: 'user', content: '입술필러1cc(수입)55+턱보톡스(국)16.5=71.5m(현,자진)' },
+  { role: 'assistant', content: '<analysis>\n입술필러1cc(수입)55 → 필러(수입)1 price=55\n턱보톡스(국)16.5 → 보톡스(국산)1 price=16.5\n★(수입)은 필러에만, (국)은 보톡스에만!\n</analysis>\n{"treatments":[{"item":"필러(수입)","qty":1,"price":55},{"item":"보톡스(국산)","qty":1,"price":16.5}],"totalAmount":71.5,"payMethods":[{"method":"현금(자진)","amt":71.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 10. 이벤트그룹(개별price=null), 온다100KJ=1, 힐로웨이브2cc=1 ━━━
+  { role: 'user', content: '5월e 티타튠2회+미라젯쥬베룩2회 247.5+온다100KJ143+힐로웨이브2cc66-예약금=453.2m(알리)' },
+  { role: 'assistant', content: '<analysis>\n5월e 티타튠2회 → 티타튠2 price=null(이벤트묶음)\n미라젯쥬베룩2회 → 미라젯2+쥬베룩볼륨2 price=null(이벤트)\n247.5 → 묶음총가\n온다100KJ143 → 온다 qty=100÷100=1 price=143\n힐로웨이브2cc66 → 힐로웨이브 qty=2÷2=1 price=66\n-예약금 → 예약금제외1\n</analysis>\n{"treatments":[{"item":"티타튠","qty":2,"price":null},{"item":"미라젯","qty":2,"price":null},{"item":"쥬베룩볼륨","qty":2,"price":null},{"item":"온다","qty":1,"price":143},{"item":"힐로웨이브","qty":1,"price":66},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":453.2,"payMethods":[{"method":"알리페이","amt":453.2}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 11. 4월e 복합이벤트, 티타늄40KJ=1, 소프150샷=3, 리투오/쥬브아셀→쥬브아셀만, 포에버영=BBL ━━━
+  { role: 'user', content: '4월e 티타늄40kj+소프웨이브150샷 209+4월e 리투오/쥬브아셀3회+bbl(포에버영)3회 242+미라젯3회49.5-0.5할인=500M(이체)' },
+  { role: 'assistant', content: '<analysis>\n티타늄40kj → 티타늄 qty=40÷40=1\n소프웨이브150샷 → 소프웨이브(50샷) qty=150÷50=3\n209 → 이벤트묶음가\n리투오/쥬브아셀3회 → 쥬브아셀만 qty=3\nbbl(포에버영)3회 → BBL qty=3\n242 → 이벤트묶음가\n미라젯3회49.5 → 미라젯3 price=49.5\n-0.5할인 → 할인차감1 price=0.5\n</analysis>\n{"treatments":[{"item":"티타늄","qty":1,"price":null},{"item":"소프웨이브(50샷)","qty":3,"price":null},{"item":"쥬브아셀","qty":3,"price":null},{"item":"BBL","qty":3,"price":null},{"item":"미라젯","qty":3,"price":49.5},{"item":"할인차감","qty":1,"price":0.5}],"totalAmount":500,"payMethods":[{"method":"이체(현영)","amt":500}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 12. BBL여드름, 제네시스+PTT, 리쥬란4cc÷2=2, 미라젯+쥬베룩=쥬베룩볼륨, 진정관리=피부관리 ━━━
+  { role: 'user', content: 'BBL여드름49.5+제네시스ptt38.5+미라젯+리쥬란4cc+쥬베룩2cc+진정관리+진정팩148.5-예약금제외=233.2m(위챗)' },
+  { role: 'assistant', content: '<analysis>\nBBL여드름49.5 → BBL(여드름)1 price=49.5\n제네시스ptt38.5 → 제네시스+PTT qty=1 price=38.5\n미라젯 → 미라젯1\n리쥬란4cc → 리쥬란 qty=4÷2=2\n쥬베룩2cc → 미라젯있으니 쥬베룩볼륨1\n진정관리+진정팩 → 피부관리1 (중복=1건)\n148.5 → 묶음가\n-예약금제외 → 예약금제외1\n</analysis>\n{"treatments":[{"item":"BBL(여드름)","qty":1,"price":49.5},{"item":"제네시스+PTT","qty":1,"price":38.5},{"item":"미라젯","qty":1,"price":null},{"item":"리쥬란","qty":2,"price":null},{"item":"쥬베룩볼륨","qty":1,"price":null},{"item":"피부관리","qty":1,"price":null},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":233.2,"payMethods":[{"method":"위챗","amt":233.2}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 13. VIP700=등급(가격아님), 써마지225+눈꺼풀→아이써마지225 ━━━
+  { role: 'user', content: 'VIP700=673.7m(카) 소프300샷+써마지225샷(눈꺼풀메인)132' },
+  { role: 'assistant', content: '<analysis>\nVIP700 → VIP회원권1 (700=등급, 가격아님)\n소프300샷 → 소프웨이브(50샷) qty=6\n써마지225샷(눈꺼풀메인)132 → 아이써마지225 qty=1 price=132\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"소프웨이브(50샷)","qty":6,"price":null},{"item":"아이써마지225","qty":1,"price":132}],"totalAmount":673.7,"payMethods":[{"method":"카드","amt":673.7}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 14. 울쎄라400÷100=4, 소프200÷50=4, BBL색소+홍조=BBL1건, 진정관리=피부관리 ━━━
+  { role: 'user', content: '울쎄라400샷231+소프200샷+BBL색소+BBL홍조+LDM22+진정관리16.5=269.5m(카)' },
+  { role: 'assistant', content: '<analysis>\n울쎄라400샷231 → 울쎄라(100샷) qty=4 price=231\n소프200샷 → 소프웨이브(50샷) qty=4\nBBL색소+BBL홍조 → 같은BBL세션 → BBL1\nLDM22 → LDM1 price=22\n진정관리16.5 → 피부관리1 price=16.5\n</analysis>\n{"treatments":[{"item":"울쎄라(100샷)","qty":4,"price":231},{"item":"소프웨이브(50샷)","qty":4,"price":null},{"item":"BBL","qty":1,"price":null},{"item":"LDM","qty":1,"price":22},{"item":"피부관리","qty":1,"price":16.5}],"totalAmount":269.5,"payMethods":[{"method":"카드","amt":269.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 15. 줄기세포120cc, 하이쿡스=재료(price0), 수면비 ━━━
+  { role: 'user', content: '줄기세포120cc330+하이쿡스+수면비22=352m(카)' },
+  { role: 'assistant', content: '<analysis>\n줄기세포120cc330 → 줄기세포120cc qty=1 price=330\n하이쿡스 → 하이쿡스1 price=0(재료)\n수면비22 → 수면비1 price=22\n</analysis>\n{"treatments":[{"item":"줄기세포120cc","qty":1,"price":330},{"item":"하이쿡스","qty":1,"price":0},{"item":"수면비","qty":1,"price":22}],"totalAmount":352,"payMethods":[{"method":"카드","amt":352}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 16. 엠페이스2-1,2-2=2영역, 이마b(제)=보톡스수입 ━━━
+  { role: 'user', content: '엠페이스2-1,2-2(40분)176+이마b(제)22=198m(카)' },
+  { role: 'assistant', content: '<analysis>\n엠페이스2-1,2-2(40분)176 → 2영역=qty2 price=176\n이마b(제)22 → b=보톡스! (제)=수입 → 보톡스(수입)1 price=22\n</analysis>\n{"treatments":[{"item":"엠페이스","qty":2,"price":176},{"item":"보톡스(수입)","qty":1,"price":22}],"totalAmount":198,"payMethods":[{"method":"카드","amt":198}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 17. 700vip 복합, 리쥬란6cc÷2=3, 포에버영+색소+홍조=BBL1, 입술필러=수입 ━━━
+  { role: 'user', content: '700vip+차액100.2=800.2m(위챗)\n[상담내용]\n-티타늄80kj 132\n-온다100kj 143\n-튠라이너2회 110\n-오푸스55\n-BBL(포에버영+색소+홍조) 66\n-리쥬란e 리쥬란6cc+쥬베룩3cc 192.5\n-입술필러1cc 55' },
+  { role: 'assistant', content: '<analysis>\n700vip → VIP회원권1, vipDiscount=49\n티타늄80kj → 티타늄 qty=80÷40=2\n온다100kj → 온다 qty=100÷100=1\n튠라이너2회 → 튠라이너2\n오푸스55 → 오푸스1 price=55\nBBL(포에버영+색소+홍조)66 → BBL1 price=66\n리쥬란6cc → 리쥬란 qty=6÷2=3\n쥬베룩3cc → 쥬베룩볼륨1\n192.5 → 묶음가\n입술필러1cc 55 → 필러(수입)1 price=55\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"티타늄","qty":2,"price":null},{"item":"온다","qty":1,"price":null},{"item":"튠라이너","qty":2,"price":null},{"item":"오푸스","qty":1,"price":55},{"item":"BBL","qty":1,"price":66},{"item":"리쥬란","qty":3,"price":null},{"item":"쥬베룩볼륨","qty":1,"price":null},{"item":"필러(수입)","qty":1,"price":55}],"totalAmount":800.2,"payMethods":[{"method":"위챗","amt":800.2}],"misu":0,"vipDiscount":49,"credit":0}' },
+  // ━━━ 18. NAD+백옥+수액 각각 별도 ━━━
+  { role: 'user', content: 'NAD16.5+백옥8.8+수액(리커버리)8.8=34.1m(카)' },
+  { role: 'assistant', content: '<analysis>\nNAD16.5 → NAD1 price=16.5\n백옥8.8 → 백옥1 price=8.8\n수액(리커버리)8.8 → 수액1 price=8.8\n</analysis>\n{"treatments":[{"item":"NAD","qty":1,"price":16.5},{"item":"백옥","qty":1,"price":8.8},{"item":"수액","qty":1,"price":8.8}],"totalAmount":34.1,"payMethods":[{"method":"카드","amt":34.1}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 19. 포텐자 모공+기미 별도, 아쿠아필 ━━━
+  { role: 'user', content: '포텐자(모공)44+포텐자(기미)44+아쿠아필11=99m(카)' },
+  { role: 'assistant', content: '<analysis>\n포텐자(모공)44 → 포텐자(모공)1 price=44\n포텐자(기미)44 → 포텐자(기미)1 price=44\n아쿠아필11 → 아쿠아필1 price=11\n</analysis>\n{"treatments":[{"item":"포텐자(모공)","qty":1,"price":44},{"item":"포텐자(기미)","qty":1,"price":44},{"item":"아쿠아필","qty":1,"price":11}],"totalAmount":99,"payMethods":[{"method":"카드","amt":99}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 20. 문신제거2회, 수면비 ━━━
+  { role: 'user', content: '문신제거2회66+수면비22=88m(카)' },
+  { role: 'assistant', content: '<analysis>\n문신제거2회66 → 문신제거 qty=2 price=66\n수면비22 → 수면비1 price=22\n</analysis>\n{"treatments":[{"item":"문신제거","qty":2,"price":66},{"item":"수면비","qty":1,"price":22}],"totalAmount":88,"payMethods":[{"method":"카드","amt":88}],"misu":0,"vipDiscount":0,"credit":0}' },
+];
 
 async function aiParse(raw) {
   const apiKey = localStorage.getItem('claude_api_key');
   if (!apiKey) return null;
 
   try {
+    // few-shot: 대화 예시 + 실제 입력
+    const messages = [...AI_FEWSHOT_EXAMPLES, { role: 'user', content: raw }];
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -1874,10 +2109,11 @@ async function aiParse(raw) {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
+        model: 'claude-opus-4-6',
+        max_tokens: 16000,
+        thinking: { type: 'enabled', budget_tokens: 10000 },
         system: AI_PARSER_SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: raw }]
+        messages: messages
       })
     });
 
@@ -1887,12 +2123,29 @@ async function aiParse(raw) {
     }
 
     const data = await resp.json();
-    const text = data.content?.[0]?.text || '';
-    // JSON 블록 추출 (```json ... ``` 또는 bare JSON)
-    const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/(\{[\s\S]*\})/);
+    // extended thinking: content 배열에서 thinking 블록과 text 블록 분리
+    let thinkingText = '';
+    let text = '';
+    if (Array.isArray(data.content)) {
+      for (const block of data.content) {
+        if (block.type === 'thinking') thinkingText = block.thinking || '';
+        else if (block.type === 'text') text = block.text || '';
+      }
+    }
+    if (!text && data.content?.[0]?.text) text = data.content[0].text; // 폴백
+
+    // thinking 로그 (디버깅용 — 모델이 내부적으로 깊게 사고한 내용)
+    if (thinkingText) console.log('[AI파서] 🧠 내부사고:', thinkingText.substring(0, 500) + (thinkingText.length > 500 ? '...' : ''));
+
+    // analysis 태그 이후의 JSON 추출
+    const afterAnalysis = text.replace(/<analysis>[\s\S]*?<\/analysis>/g, '').trim();
+    const jsonMatch = afterAnalysis.match(/```json\s*([\s\S]*?)```/) || afterAnalysis.match(/(\{[\s\S]*\})/);
     if (!jsonMatch) { console.warn('[AI파서] JSON 파싱 실패:', text); return null; }
 
     const parsed = JSON.parse(jsonMatch[1]);
+    // analysis 로그 출력 (디버깅용)
+    const analysisMatch = text.match(/<analysis>([\s\S]*?)<\/analysis>/);
+    if (analysisMatch) console.log('[AI파서] 분석:', analysisMatch[1].trim());
     console.log('[AI파서] 성공:', parsed);
     return parsed;
   } catch (e) {
@@ -1922,14 +2175,15 @@ async function aiBatchParse(rows) {
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 4096,
+          model: 'claude-opus-4-6',
+          max_tokens: 16000,
+          thinking: { type: 'enabled', budget_tokens: 10000 },
           system: AI_PARSER_SYSTEM_PROMPT + `\n\n## 배치 모드
 여러 건의 수납 텍스트가 [번호] 형식으로 주어집니다.
 각 건을 파싱하여 JSON 배열로 반환하세요.
 [{"index":0, ...파싱결과}, {"index":1, ...파싱결과}, ...]
 index는 입력의 [번호]와 동일하게.`,
-          messages: [{ role: 'user', content: numbered }]
+          messages: [...AI_FEWSHOT_EXAMPLES, { role: 'user', content: numbered }]
         })
       });
 
@@ -1939,49 +2193,167 @@ index는 입력의 [번호]와 동일하게.`,
       }
 
       const data = await resp.json();
-      const text = data.content?.[0]?.text || '';
+      // extended thinking: text 블록 추출
+      let text = '';
+      if (Array.isArray(data.content)) {
+        for (const block of data.content) {
+          if (block.type === 'text') { text = block.text || ''; break; }
+        }
+      }
+      if (!text && data.content?.[0]?.text) text = data.content[0].text;
       const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/(\[[\s\S]*\])/);
       if (!jsonMatch) { console.warn('[AI배치] JSON 파싱 실패'); continue; }
 
       const results = JSON.parse(jsonMatch[1]);
       console.log('[AI배치] ' + results.length + '건 파싱 완료');
 
-      // 결과를 _importRows에 반영
+      // 결과를 _importRows에 반영 — AI-primary + regex qty보정 + 조정항목보완 + 텍스트증거검증 (smartParse v5 동일)
+      const _adjustItems = new Set(['예약금제외','할인차감','적립금차감','선납금차감','상품권차감','환불','위약금','양도','VIP회원권','적립금','지정비용','점편사제거','제품','TA','상담만']);
       results.forEach(result => {
         const idx = result.index;
         const row = _importRows[idx];
         if (!row) return;
-        if (row.treatments && row._parseSource) return; // 이미 처리됨
+        if (row.treatments && row._parseSource) return;
 
-        if (result.treatments && result.treatments.length > 0) {
-          const treats = result.treatments.map(t => ({
-            item: t.item,
-            qty: t.qty || 1,
-            price: t.price ?? null
-          }));
-          // distributePrices로 가격 분배
-          const amt = result.totalAmount || row.amount || extractAmount(row.payText) || 0;
-          if (amt && !row.amount) row.amount = amt;
-          row.treatments = distributePrices(treats, row.amount || amt, row.payText);
-          row._parseSource = 'ai';
+        const amt = result.totalAmount || row.amount || extractAmount(row.payText) || 0;
+        if (amt && !row.amount) row.amount = amt;
 
-          // 결제방식
-          if (result.payMethods && result.payMethods.length > 0) {
-            row.paymentMethods = {
-              methods: result.payMethods.map(p => p.method),
-              splitDetails: result.payMethods
-            };
+        const regexResult = localParse(row.payText);
+        const regexTreats = regexResult.treatments || [];
+        const regexMap = new Map();
+        regexTreats.forEach(t => regexMap.set(t.item, t));
+
+        if (!result.treatments || result.treatments.length === 0) {
+          row.treatments = distributePrices(
+            regexTreats.map(t=>({item:t.item, qty:t.qty, price:t._fixedAmt??t._unitPrice??null})),
+            row.amount || amt, row.payText
+          );
+          row._parseSource = 'regex';
+        } else {
+          const aiMap = new Map();
+          result.treatments.forEach(t => aiMap.set(t.item, t));
+          let merged = [];
+
+          // AI 기반 + regex qty 보정
+          result.treatments.forEach(aiT => {
+            const ft = { item: aiT.item, qty: aiT.qty || 1, price: aiT.price ?? null };
+            const rt = regexMap.get(aiT.item);
+            if (rt) {
+              if (ft.qty !== rt.qty) ft.qty = rt.qty;
+              if (rt._fixedAmt !== undefined) ft.price = rt._fixedAmt;
+              else if (rt._unitPrice !== undefined) ft.price = rt._unitPrice;
+            }
+            merged.push(ft);
+          });
+
+          // AI가 빠뜨린 regex 항목 전부 보완 (AI가 왕이지만 누락은 regex가 잡는다)
+          regexTreats.forEach(rt => {
+            if (!aiMap.has(rt.item)) {
+              merged.push({ item: rt.item, qty: rt.qty, price: rt._fixedAmt ?? rt._unitPrice ?? null, _regexAdded: true });
+            }
+          });
+
+          // 텍스트 증거 검증: 필러 오탐 방지
+          const _hasFillerKw = /필러|[fF]\s*[\d(]|[fF]\s*cc|입술[fFpP]|턱끝[fF]|앞볼|옆볼|볼필러|코필러|쥬비덤|레스틸렌|볼루마/i.test(row.payText);
+          if (!_hasFillerKw) {
+            const hadFiller = merged.some(t => t.item.startsWith('필러'));
+            merged = merged.filter(t => !t.item.startsWith('필러'));
+            if (hadFiller) {
+              ['보톡스(국산)','보톡스(수입)'].forEach(bk => {
+                if (regexMap.has(bk) && !aiMap.has(bk)) {
+                  const rt = regexMap.get(bk);
+                  merged.push({ item: rt.item, qty: rt.qty, price: rt._fixedAmt ?? null });
+                }
+              });
+            }
           }
 
-          // 미수
-          if (result.misu > 0) {
-            row._misuAmt = result.misu;
-          }
+          row.treatments = distributePrices(merged, row.amount || amt, row.payText);
+          row._parseSource = 'ai+검증';
         }
+
+        // 결제방식 (AI 결과에서 참고)
+        if (result.payMethods && result.payMethods.length > 0) {
+          row.paymentMethods = {
+            methods: result.payMethods.map(p => p.method),
+            splitDetails: result.payMethods
+          };
+        }
+        if (result.misu > 0) row._misuAmt = result.misu;
       });
     } catch (e) {
       console.warn('[AI배치] 오류:', e);
     }
+  }
+
+  // ── 배치 2차 AI 검증: 파싱된 결과를 한번에 검증 (1회 API 호출) ──
+  const toVerify = rows.filter(r => _importRows[rows.indexOf(r)] && _importRows[rows.indexOf(r)].treatments);
+  if (toVerify.length > 0 && apiKey) {
+    try {
+      const verifyItems = [];
+      rows.forEach((r, i) => {
+        const row = _importRows[i];
+        if (!row || !row.treatments) return;
+        verifyItems.push({ index: i, raw: r.payText, items: row.treatments.map(t => t.item + ' x' + (t.qty||1)).join(', ') });
+      });
+      if (verifyItems.length > 0) {
+        const verifyContent = verifyItems.map(v => `[${v.index}] 원문: ${v.raw}\n결과: ${v.items}`).join('\n\n');
+        const vResp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+          body: JSON.stringify({
+            model: 'claude-opus-4-6', max_tokens: 8000,
+            thinking: { type: 'enabled', budget_tokens: 5000 },
+            messages: [{ role: 'user', content: `수납 파싱 결과를 검증하세요.
+
+★ 핵심 규칙:
+- b/B/btx = 보톡스 (필러 아님!)
+- F/f = 필러 (보톡스 아님!)
+- 쥬브아셀8%/V = 쥬브아셀 (필러 아님!)
+- 커스텀케어/진정관리 = 피부관리
+- sv = 서비스 (price=0)
+- 미라젯쥬브아셀 = 미라젯 + 쥬브아셀 (분리)
+- 울쎄라 N샷→qty=N÷100 | 소프웨이브 N샷→qty=N÷50
+
+아래 각 건의 파싱 결과를 검증하세요.
+오류가 있는 건만 수정하여 JSON 배열로 반환: [{"index":번호,"corrections":[{"remove":"잘못된항목"},{"add":"올바른항목","qty":1}]}]
+모두 정확하면 "OK" 출력.
+
+${verifyContent}` }]
+          })
+        });
+        if (vResp.ok) {
+          const vData = await vResp.json();
+          // extended thinking: text 블록 추출
+          let vText = '';
+          if (Array.isArray(vData.content)) {
+            for (const block of vData.content) {
+              if (block.type === 'text') { vText = (block.text || '').trim(); break; }
+            }
+          }
+          if (!vText) vText = (vData.content?.[0]?.text || '').trim();
+          if (vText !== 'OK' && vText !== '"OK"') {
+            const vJson = vText.match(/```json\s*([\s\S]*?)```/) || vText.match(/(\[[\s\S]*\])/);
+            if (vJson) {
+              const corrections = JSON.parse(vJson[1]);
+              corrections.forEach(c => {
+                const row = _importRows[c.index];
+                if (!row || !row.treatments || !c.corrections) return;
+                c.corrections.forEach(fix => {
+                  if (fix.remove) row.treatments = row.treatments.filter(t => t.item !== fix.remove);
+                  if (fix.add) row.treatments.push({ item: fix.add, qty: fix.qty || 1, price: fix.price ?? null });
+                });
+                row._parseSource = 'ai+2차검증';
+              });
+              console.log('[AI배치] 2차 검증 수정:', corrections.length + '건');
+            }
+          } else {
+            console.log('[AI배치] 2차 검증: 모두 정확');
+          }
+        }
+      }
+    } catch(e) { console.warn('[AI배치] 2차 검증 오류:', e); }
   }
 }
 
@@ -2007,22 +2379,156 @@ function convertAiResult(aiResult, raw) {
   };
 }
 
-/* 통합 파서: AI 우선 → regex 폴백 */
+/* ── 2차 AI 검증: 병합 결과를 AI에게 다시 보내서 최종 점검 ── */
+async function verifyParse(raw, treatments) {
+  const apiKey = localStorage.getItem('claude_api_key');
+  if (!apiKey || !treatments || treatments.length === 0) return null;
+  const itemSummary = treatments.map(t => t.item + ' x' + t.qty + (t._fixedAmt !== undefined ? ' ₩'+t._fixedAmt : '')).join(', ');
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({
+        model: 'claude-opus-4-6', max_tokens: 8000,
+        thinking: { type: 'enabled', budget_tokens: 5000 },
+        messages: [{ role: 'user', content: `수납 파싱 결과를 검증하세요.
+
+★ 핵심 규칙:
+- b/B/btx = 보톡스 (필러 아님!). "이마b(국)" = 보톡스(국산) qty=1
+- F/f = 필러 (보톡스 아님!). "입술F" = 필러
+- 쥬브아셀8%/V = 쥬브아셀 (필러 아님! 농도/버전 표기 무시)
+- 커스텀케어/진정관리/힐라이트 = 피부관리
+- sv/SV = 서비스 (price=0)
+- 미라젯쥬브아셀 = 미라젯 + 쥬브아셀 (2개 분리)
+- 미라젯리투오 = 미라젯 + 리투오 (2개 분리)
+- 울쎄라 N샷 → qty=N÷100 | 소프웨이브 N샷 → qty=N÷50
+- VIP700, VIP1000 등 → VIP회원권 qty=1
+- -예약금, 예약금제외 → 예약금제외 qty=1
+- -N할인, -Nm할인 → 할인차감 qty=1
+
+원문: ${raw}
+
+현재 파싱 결과: ${itemSummary}
+
+위 결과에서 잘못된 항목이 있으면 수정한 전체 treatments JSON을 출력하세요.
+형식: [{"item":"시술명","qty":1,"price":55},...]
+수정할 것이 없으면 정확히 "OK" 한 글자만 출력.` }]
+      })
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    // extended thinking: text 블록 추출
+    let text = '';
+    if (Array.isArray(data.content)) {
+      for (const block of data.content) {
+        if (block.type === 'text') { text = (block.text || '').trim(); break; }
+      }
+    }
+    if (!text) text = (data.content?.[0]?.text || '').trim();
+    if (text === 'OK' || text === '"OK"') return null; // 수정 없음
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/(\[[\s\S]*\])/);
+    if (!jsonMatch) return null;
+    const parsed = JSON.parse(jsonMatch[1]);
+    console.log('[2차검증] 수정됨:', parsed);
+    return parsed;
+  } catch(e) { console.warn('[2차검증] 오류:', e); return null; }
+}
+
+/* 통합 파서 v5: AI-primary + regex qty보정 + 조정항목 보완 + 텍스트증거 검증 + 2차 AI 검증
+   ① AI가 시술 분류의 최종 결정권 (Opus)
+   ② regex는 qty 수학 계산만 보정 (샷÷100, cc÷2, KJ÷40)
+   ③ 조정항목만 regex에서 보완 (예약금제외, 할인차감, VIP회원권 등)
+   ④ 텍스트 증거 검증: 필러 오탐 방지
+   ⑤ 2차 AI 검증: 최종 결과를 AI에게 다시 보여서 틀린 거 잡기 */
 async function smartParse(raw) {
-  // AI 파서 시도
+  // 1) regex 파서 실행
+  const regexResult = localParse(raw);
+
+  // 2) AI 파서 실행
   const aiResult = await aiParse(raw);
-  if (aiResult) {
-    const converted = convertAiResult(aiResult, raw);
-    if (converted && converted.treatments.length > 0) {
-      // AI 결과에서 amount/payment 정보도 포함
-      converted._source = 'ai';
-      return converted;
+  if (!aiResult) { regexResult._source = 'regex'; return regexResult; }
+  const converted = convertAiResult(aiResult, raw);
+  if (!converted || !converted.treatments || converted.treatments.length === 0) {
+    regexResult._source = 'regex'; return regexResult;
+  }
+
+  // 3) 양쪽 맵 구축
+  const regexTreats = regexResult.treatments || [];
+  const aiTreats = converted.treatments;
+  const regexMap = new Map();
+  regexTreats.forEach(t => regexMap.set(t.item, t));
+  const aiMap = new Map();
+  aiTreats.forEach(t => aiMap.set(t.item, t));
+
+  // 4) AI 기반 최종 목록 (AI가 시술 선택의 결정권)
+  let finalTreats = [];
+  let qtyFixed = 0;
+  const _adjustItems = new Set(['예약금제외','할인차감','적립금차감','선납금차감','상품권차감','환불','위약금','양도','VIP회원권','적립금','지정비용','점편사제거','제품','TA','상담만']);
+
+  aiTreats.forEach(aiT => {
+    const ft = { item: aiT.item, qty: aiT.qty || 1, _fixedAmt: aiT.price ?? undefined, _fromAI: true };
+    const rt = regexMap.get(aiT.item);
+    if (rt) {
+      // 공통 항목: qty만 regex 보정 (수학 변환)
+      if (ft.qty !== rt.qty) { ft.qty = rt.qty; ft._qtyFromRegex = true; qtyFixed++; }
+      if (rt._fixedAmt !== undefined) ft._fixedAmt = rt._fixedAmt;
+      if (rt._unitPrice !== undefined) ft._unitPrice = rt._unitPrice;
+      if (rt._isSv) ft._isSv = true;
+    }
+    finalTreats.push(ft);
+  });
+
+  // 5) AI가 빠뜨린 regex 항목 전부 보완 (AI가 왕이지만 누락은 regex가 잡는다)
+  let regAdded = 0;
+  regexTreats.forEach(rt => {
+    if (!aiMap.has(rt.item)) {
+      finalTreats.push({ item: rt.item, qty: rt.qty, _fixedAmt: rt._fixedAmt, _unitPrice: rt._unitPrice, _isSv: rt._isSv, _regexAdded: true });
+      regAdded++;
+    }
+  });
+
+  // 6) 텍스트 증거 검증: AI 오탐 방지
+  const _hasFillerKw = /필러|[fF]\s*[\d(]|[fF]\s*cc|입술[fFpP]|턱끝[fF]|앞볼|옆볼|볼필러|코필러|관자필러|이마필러|눈밑필러|목필러|쥬비덤|레스틸렌|볼루마|볼리프트|볼벨라/i.test(raw);
+  if (!_hasFillerKw) {
+    const removed = finalTreats.filter(t => t.item.startsWith('필러'));
+    if (removed.length > 0) {
+      finalTreats = finalTreats.filter(t => !t.item.startsWith('필러'));
+      console.log('[smartParse] 필러 오탐 제거 (텍스트 증거 없음):', removed.map(t=>t.item));
+      // 필러 제거 후, regex에 보톡스 있으면 추가
+      ['보톡스(국산)','보톡스(수입)'].forEach(bk => {
+        if (regexMap.has(bk) && !aiMap.has(bk)) {
+          const rt = regexMap.get(bk);
+          finalTreats.push({ item: rt.item, qty: rt.qty, _fixedAmt: rt._fixedAmt, _isSv: rt._isSv, _regexAdded: true });
+          console.log('[smartParse] 보톡스 복원:', bk, 'qty=' + rt.qty);
+        }
+      });
     }
   }
-  // 폴백: 기존 regex 파서
-  const regexResult = localParse(raw);
-  regexResult._source = 'regex';
-  return regexResult;
+
+  // 7) 2차 AI 검증: 최종 점검
+  const verified = await verifyParse(raw, finalTreats);
+  if (verified && Array.isArray(verified) && verified.length > 0) {
+    // 2차 검증 결과 반영: AI가 수정한 항목으로 교체, regex 메타 정보 유지
+    const newTreats = verified.map(vt => {
+      const rt = regexMap.get(vt.item);
+      return {
+        item: vt.item, qty: vt.qty || 1,
+        _fixedAmt: rt?._fixedAmt ?? vt.price ?? undefined,
+        _unitPrice: rt?._unitPrice, _isSv: rt?._isSv || (vt.price === 0),
+        _verified: true
+      };
+    });
+    finalTreats = newTreats;
+    console.log('[smartParse] 2차 검증 반영:', newTreats.length + '건');
+  }
+
+  // 8) 결과 조립
+  const result = { ...regexResult, treatments: finalTreats,
+    _source: 'ai+검증' + (qtyFixed ? ',qty보정' + qtyFixed : '') + (adjAdded ? ',조정+' + adjAdded : '')
+  };
+  console.log('[smartParse] 최종:', finalTreats.length + '건');
+  return result;
 }
 
 
@@ -2384,13 +2890,13 @@ function localParse(raw){
   }
 
   // ── 엠페이스 ──
-  // "엠페이스2-1,2(40분)176" → 영역번호(콤마 포함) 등 중간 텍스트 허용
-  // "엠페이스2-1,2-2 176m" → qty=2, 영역번호 2-1,2-2
-  const empeM = raw.match(/엠페(?:이스)?.*?\(?\d+\s*분\)?\s*(\d+)?\s*회/i);
-  const empeQtyArea = raw.match(/엠페(?:이스)?\s*(\d+)\s*[-]/i);  // "엠페이스2-1,2-2" → qty=2
-  const empeMin = raw.match(/엠페(?:이스)?.*?\(?(\d+)\s*분\)?/i);
-  const empeS = /엠페(?:이스)?/i.test(raw) && !empeM && !empeQtyArea;
-  if(empeM) results.push({item:'엠페이스', qty: empeM[1]?parseInt(empeM[1]):1});
+  // "엠페이스2회176" → qty=2, "엠페이스2-1,2-2" → qty=2 (영역번호)
+  // "엠페이스(40분)" → qty=2 (20분당 1회), "엠페이스88" → qty=1 (88은 가격)
+  const empeHoe = raw.match(/엠페(?:이스)?\s*(\d+)\s*회/i);  // N회 직접 매칭 (최우선)
+  const empeQtyArea = raw.match(/엠페(?:이스)?\s*([1-9])\s*-\s*\d/i);  // "엠페이스2-1" (영역번호, 1자리만)
+  const empeMin = raw.match(/엠페(?:이스)?[^+\-]*?\(?(\d+)\s*분\)?/i);
+  const empeS = /엠페(?:이스)?/i.test(raw) && !empeHoe && !empeQtyArea && !empeMin;
+  if(empeHoe) results.push({item:'엠페이스', qty: parseInt(empeHoe[1])});
   else if(empeQtyArea) results.push({item:'엠페이스', qty: parseInt(empeQtyArea[1])});
   else if(empeMin){
     // 60분 → 3회 (20분당 1회)
@@ -2554,14 +3060,17 @@ function localParse(raw){
   else if(/쥬베룩\s*아이/i.test(raw)) results.push({item:'쥬베룩아이', qty:1});
 
   // ── 쥬베룩 (단독, 볼륨/아이가 아닌 일반 쥬베룩) ──
+  // 미라젯이 같이 있으면 쥬베룩 = 쥬베룩볼륨으로 처리 (미라젯쥬베룩 콤보)
+  const _hasMjAnywhere = /미라젯/i.test(raw);
   if(!jbvChangeContext && !_egHasJbv && !(/쥬베룩\s*볼륨/i.test(raw)) && !(/쥬베룩\s*아이/i.test(raw)) && !hasMjJbv){
     const jbCc = raw.match(/쥬베룩\s*(\d+)\s*cc/i);
     const jbBottle = raw.match(/쥬베룩\s*(\d+)\s*병/i);
     const jbQtyM = raw.match(/쥬베룩\s*(\d+)\s*회/i);
-    if(jbCc) results.push({item:'쥬베룩', qty:1});
-    else if(jbBottle) results.push({item:'쥬베룩', qty: parseInt(jbBottle[1])});
-    else if(jbQtyM) results.push({item:'쥬베룩', qty: parseInt(jbQtyM[1])});
-    else if(/쥬베룩/i.test(raw) && !(/미라젯\s*쥬베룩/i.test(raw))) results.push({item:'쥬베룩', qty:1});
+    const _jbItemName = _hasMjAnywhere ? '쥬베룩볼륨' : '쥬베룩';
+    if(jbCc) results.push({item:_jbItemName, qty:1});
+    else if(jbBottle) results.push({item:_jbItemName, qty: parseInt(jbBottle[1])});
+    else if(jbQtyM) results.push({item:_jbItemName, qty: parseInt(jbQtyM[1])});
+    else if(/쥬베룩/i.test(raw) && !(/미라젯\s*쥬베룩/i.test(raw))) results.push({item:_jbItemName, qty:1});
   }
 
   // ── 쥬브아셀 (쥬브아셀N병 안에 미라젯 포함되면 미라젯도 추출) ──
@@ -2581,6 +3090,15 @@ function localParse(raw){
         hasMjFromJba = true;
       }
     } else if(/쥬브아셀/i.test(raw)) results.push({item:'쥬브아셀', qty:1});
+  }
+
+  // ── 릴리이드 (cc 기반, 1cc=1단위) ──
+  if(/릴리이드/i.test(raw)){
+    const rlCcM = raw.match(/릴리이드\s*(\d+(?:\.\d+)?)\s*cc/i);
+    const rlQtyM = raw.match(/릴리이드\s*(\d+)\s*(?:회|병)/i);
+    if(rlCcM) results.push({item:'릴리이드', qty: Math.max(1, parseInt(rlCcM[1]))});
+    else if(rlQtyM) results.push({item:'릴리이드', qty: parseInt(rlQtyM[1])});
+    else results.push({item:'릴리이드', qty:1});
   }
 
   // ── 리투오 (미라젯 콤보에서 이미 처리된 경우 스킵) ──
@@ -2647,8 +3165,8 @@ function localParse(raw){
   const _isImportBrand = /쥬비덤|레스틸렌|볼루마|볼리프트|볼벨라/i.test(raw);
   // cc 추출: "필러(브랜드Ncc)" 또는 "필러 Ncc"
   const fillerCcAll = [..._fillerAliasRaw.matchAll(/(?:턱끝필러|목필러|눈밑필러|관자필러|이마필러|옆볼필러|앞볼필러|입술필러|턱필러|코필러|볼필러|필러)\s*(?:\([^)]*?(\d+)\s*cc[^)]*\)|\s*(\d+)\s*cc)/gi)];
-  const _isExplicitImport = /(?:수입)\s*필러|필러.*?수입|턱끝[fF].*?수입|입술[fF필러].*?수입|턱[fF필러].*?수입|목필러.*?수입|[fF]\s*\(?수입\)?/i.test(raw);
-  const _isExplicitDomestic = /(?:국산|국)\s*필러|필러.*?국산|입술[fF필러].*?국[^산]|입술(?:[fF]|필러)?.*?\(국\)/i.test(raw);
+  const _isExplicitImport = /(?:수입)\s*필러|필러[^+]*?수입|턱끝[fF][^+]*?수입|입술[fF필러][^+]*?수입|턱[fF필러][^+]*?수입|목필러[^+]*?수입|[fF]\s*\(?수입\)?/i.test(raw);
+  const _isExplicitDomestic = /(?:국산|국)\s*필러|필러[^+]*?국산|입술[fF필러][^+]*?국[^산+]|입술(?:[fF]|필러)?[^+]*?\(국\)/i.test(raw);
   const _hasFillerKeyword = /필러/i.test(_fillerAliasRaw);
   if(_hasFillerKeyword && !_isExplicitDomestic){
     // 수입 필러: 명시적 수입 or 수입 브랜드명 or 국산 표시 없으면 기본 수입
@@ -2706,7 +3224,7 @@ function localParse(raw){
   if(/알라딘필/i.test(raw)) results.push({item:'알라딘필', qty:1});
 
   // ── 피부관리 (진정관리 + 진정팩 통합) ──
-  if(/진정관리|진정팩|피부관리|힐라이트/i.test(raw)) results.push({item:'피부관리', qty:1});
+  if(/진정관리|진정팩|피부관리|힐라이트|커스텀케어/i.test(raw)) results.push({item:'피부관리', qty:1});
 
   // ── 제품 (마스크팩 등) ──
   if(/마스크팩|마스크\s*팩/i.test(raw)){
@@ -2750,7 +3268,9 @@ function localParse(raw){
   // ── 미라젯쥬브아셀 조합은 위에서 처리됨 ──
 
   // ── 보톡스 국산 (국산/국 표기 모두) ──
-  const btxDomParts = raw.match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑)\s*(?:보톡스\s*)?b(?:tx)?\s*\(?(?:국산|국t?산?)\)?/gi)||[];
+  // body+보톡스(국) 또는 body+b(국) 둘 다 인식 | 스킨보톡스 포함
+  const _btxBodyParts = '이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑|스킨|얼전';
+  const btxDomParts = raw.match(new RegExp('(?:' + _btxBodyParts + ')\\s*(?:보톡스|b(?:tx)?)\\s*\\(?(?:국산|국t?산?)\\)?', 'gi'))||[];
   const btxDomCombo = raw.match(/(?:이마|미간|눈가|턱|입꼬리)[,+·\s]+(?:이마|미간|눈가|턱|입꼬리)[^)]*\(?국산?\)?/gi)||[];
   // 국산b(이마미간+자갈턱+...) 형식 - exec로 캡처그룹 사용
   let btxDomPrefixQty = 0;
@@ -2768,15 +3288,25 @@ function localParse(raw){
   if(btxDomQty>0) results.push({item:'보톡스(국산)', qty: btxDomQty});
   else if(/보톡스.*?국산|국산.*?보톡스|\(국\)|\(국산\)|국산[가-힣]*b(?:톡스|tx)?(?!\s*\(제오민\))/i.test(raw)) results.push({item:'보톡스(국산)', qty:1});
 
-  // ── 보톡스 수입/제오민 (입꼬리제오민, 사각턱제오민 등 모두 포함) ──
+  // ── 보톡스 수입/제오민 (입꼬리제오민, 사각턱제오민, 스킨b제오민 등 모두 포함) ──
   // "대체/교체/대신" 맥락 괄호 안 제오민 언급은 제외 (예: "아쿠아필(눈가제오민b대체)")
   const btxSubstContext = /\([^)]*(?:제오민|보톡스)[^)]*(?:대체|교체|대신)[^)]*\)/i.test(raw)
                        || /\([^)]*(?:대체|교체|대신)[^)]*(?:제오민|보톡스)[^)]*\)/i.test(raw);
-  const btxImpParts = btxSubstContext ? [] : (raw.match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|자갈턱|콧볼|콧등|침샘|승모근|측두근|귀밑|턱밑)\s*(?:보톡스\s*)?b(?:tx)?\s*\(?제(?:오민)?\)?/gi)||[]);
+  // body+보톡스(제오민) 또는 body+b(제오민) 또는 body+b 제오민업그레이드 등
+  const btxImpParts = btxSubstContext ? [] : (raw.match(new RegExp('(?:' + _btxBodyParts + ')\\s*(?:보톡스|b(?:tx)?)\\s*[^+,\\n]*?\\(?제(?:오민)?\\)?', 'gi'))||[]);
   const btxImpCombo = btxSubstContext ? [] : (raw.match(/(?:이마|미간|눈가|턱|입꼬리)[,+·\s]+(?:이마|미간|눈가|턱|입꼬리)[^)]*\(?제(?:오민)?\)?/gi)||[]);
-  const btxImpQty = btxImpParts.length > 0 ? btxImpParts.length
-    : btxImpCombo.length > 0 ? (btxImpCombo[0].match(/(?:이마|미간|눈가|턱|입꼬리)/gi)||[]).length
-    : 0;
+  // "이마b미간b(all제오민)", "눈가b이마b(제)" — 다부위+b 나열 후 공유 브랜드
+  const btxImpMultiM = btxSubstContext ? null : raw.match(new RegExp('((?:(?:' + _btxBodyParts + ')\\s*(?:보톡스\\s*)?b(?:tx)?\\s*,?\\s*)+)\\s*\\(?(?:all\\s*)?제(?:오민)?\\)?', 'i'));
+  const btxImpMultiQty = btxImpMultiM ? (btxImpMultiM[1].match(new RegExp('(?:' + _btxBodyParts + ')', 'gi'))||[]).length : 0;
+  // "이마,눈가보톡스(제오민)" — 콤마+보톡스 명시형 다부위
+  const btxImpCombo2 = btxSubstContext ? [] : (raw.match(/(?:이마|미간|눈가|턱|입꼬리)\s*[,]\s*(?:이마|미간|눈가|턱|입꼬리)\s*보톡스\s*\(?제(?:오민)?\)?/gi)||[]);
+  // MAX 방식: "이마,눈가보톡스(제오민)" → btxImpParts=1(눈가만), btxImpCombo2=2(이마+눈가) → MAX=2
+  const btxImpQty = Math.max(
+    btxImpParts.length,
+    btxImpMultiQty,
+    btxImpCombo.length > 0 ? (btxImpCombo[0].match(/(?:이마|미간|눈가|턱|입꼬리)/gi)||[]).length : 0,
+    btxImpCombo2.length > 0 ? (btxImpCombo2[0].match(/(?:이마|미간|눈가|턱|입꼬리)/gi)||[]).length : 0
+  );
   if(btxImpQty>0) results.push({item:'보톡스(수입)', qty: btxImpQty});
   else if(!btxSubstContext && /\(제(?:오민)?\)|제오민|보톡스.*?수입/i.test(raw)) results.push({item:'보톡스(수입)', qty:1});
 
@@ -3120,7 +3650,7 @@ function localParse(raw){
 
       // 시술명 매핑 — 배열 반환 (하나의 토큰이 여러 항목으로 분해될 수 있음)
       // 미라젯 조합 우선 체크 (쥬베룩/리쥬란/쥬브아셀/리투오 보다 앞에)
-      if(/미라젯쥬베룩/.test(t)) return [{item:'쥬베룩볼륨', qty:1}];
+      if(/미라젯쥬베룩/.test(t)) return [{item:'미라젯', qty}, {item:'쥬베룩볼륨', qty}];
       if(/미라젯.*리쥬란\s*hb/.test(t)) return [{item:'미라젯', qty:1}, {item:'리쥬란HB', qty}];
       // 미라젯리쥬란아이 → 미라젯1 + 리쥬란아이(cc기반 qty)
       if(/미라젯.*리쥬란\s*아이|미라젯.*아이리쥬란/.test(t)){
@@ -3193,7 +3723,7 @@ function localParse(raw){
         return bblItems;
       }
       if(/힐로웨이브/.test(t)) return [{item:'힐로웨이브', qty:1}];
-      if(/진정관리|진정팩|피부관리|ldm|엘디엠|힐라이트/i.test(t)) return [{item:'피부관리', qty:1}];
+      if(/진정관리|진정팩|피부관리|ldm|엘디엠|힐라이트|커스텀케어/i.test(t)) return [{item:'피부관리', qty:1}];
       if(/리투오/.test(t)) return [{item:'리투오', qty}];
       if(/아쿠아필/.test(t)) return [{item:'아쿠아필', qty:1}];
       if(/엠페이스/.test(t)) return [{item:'엠페이스', qty}];
@@ -4698,7 +5228,7 @@ function openImportEditModal(idx){
       <div style="margin-bottom:12px">
         <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">결제내역</div>
         <div style="position:relative">
-          <textarea id="ie-paytext" class="form-textarea" style="min-height:70px;padding-bottom:36px">${r.payText||''}</textarea>
+          <textarea id="ie-paytext" class="form-textarea" style="min-height:140px;padding-bottom:36px">${r.payText||''}</textarea>
           <button onclick="reparseImportRow(${idx})" style="position:absolute;right:8px;bottom:8px;background:var(--accent);color:#0f172a;border:none;border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;z-index:1">⚡ 재분석</button>
         </div>
       </div>
@@ -6025,7 +6555,7 @@ function openEditModal(id){
       <div style="margin-bottom:12px">
         <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">결제내역 (수정 후 재분석 가능)</div>
         <div style="position:relative">
-          <textarea id="edit-paytext" class="form-textarea" style="min-height:80px;padding-bottom:38px">${item.paymentText||''}</textarea>
+          <textarea id="edit-paytext" class="form-textarea" style="min-height:140px;padding-bottom:38px">${item.paymentText||''}</textarea>
           <button onclick="reparseEditModal()" style="position:absolute;right:8px;bottom:8px;background:var(--accent);color:#0f172a;border:none;border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;z-index:1">⚡ 재분석</button>
         </div>
         <div id="edit-parse-result" style="margin-top:6px;font-size:11px;color:var(--muted)"></div>
