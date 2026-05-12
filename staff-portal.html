@@ -2639,7 +2639,7 @@ async function smartParse(raw) {
     if (rt) {
       // 공통 항목: qty만 regex 보정 (수학 변환)
       if (ft.qty !== rt.qty) { ft.qty = rt.qty; ft._qtyFromRegex = true; qtyFixed++; }
-      if (rt._fixedAmt !== undefined) ft._fixedAmt = rt._fixedAmt;
+      if (ft._fixedAmt === undefined && rt._fixedAmt !== undefined) ft._fixedAmt = rt._fixedAmt;
       if (rt._unitPrice !== undefined) ft._unitPrice = rt._unitPrice;
       if (rt._isSv) ft._isSv = true;
     }
@@ -2673,15 +2673,42 @@ async function smartParse(raw) {
     }
   }
 
+  // 6.5) null 가격 보완: 2차검증 전에 undefined 가격을 totalAmount 기반으로 분배
+  //   AI가 묶음가를 null로 반환하면, 2차검증이 잘못된 가격을 할당하는 문제 방지
+  const _nullPriceIdxs = finalTreats.map((t,i) => t._fixedAmt === undefined ? i : -1).filter(i=>i>=0);
+  if (_nullPriceIdxs.length > 0 && converted.totalAmount > 0) {
+    const knownSum = finalTreats.reduce((s,t) => s + (t._fixedAmt || 0), 0);
+    const remaining = converted.totalAmount - knownSum;
+    if (remaining > 0 && _nullPriceIdxs.length > 0) {
+      // CHARGE_PRICE 기반 비율 분배
+      const nullEstimates = _nullPriceIdxs.map(i => {
+        const t = finalTreats[i];
+        const unit = CHARGE_PRICE[t.item] || 0;
+        return { idx: i, est: unit * t.qty };
+      });
+      const estSum = nullEstimates.reduce((s,e) => s + e.est, 0);
+      nullEstimates.forEach(e => {
+        const share = estSum > 0 ? Math.round(remaining * e.est / estSum * 100) / 100 : Math.round(remaining / _nullPriceIdxs.length * 100) / 100;
+        finalTreats[e.idx]._fixedAmt = share;
+        finalTreats[e.idx]._priceEstimated = true;
+      });
+      console.log('[smartParse] null가격 분배:', _nullPriceIdxs.length + '건, 잔액=' + remaining);
+    }
+  }
+
   // 7) 2차 AI 검증: 최종 점검
   const verified = await verifyParse(raw, finalTreats);
   if (verified && Array.isArray(verified) && verified.length > 0) {
-    // 2차 검증 결과 반영: AI가 수정한 항목으로 교체, regex 메타 정보 유지
+    // 2차 검증 결과 반영: AI가 수정한 항목으로 교체
+    // 가격 우선순위: 1차AI 원본 가격 > 2차검증 가격 > regex 가격
+    const aiPriceMap = new Map();
+    aiTreats.forEach(t => { if(t.price !== null && t.price !== undefined) aiPriceMap.set(t.item, t.price); });
     const newTreats = verified.map(vt => {
       const rt = regexMap.get(vt.item);
+      const aiOrigPrice = aiPriceMap.get(vt.item);
       return {
         item: vt.item, qty: vt.qty || 1,
-        _fixedAmt: rt?._fixedAmt ?? vt.price ?? undefined,
+        _fixedAmt: aiOrigPrice ?? vt.price ?? rt?._fixedAmt ?? undefined,
         _unitPrice: rt?._unitPrice, _isSv: rt?._isSv || (vt.price === 0),
         _verified: true
       };
