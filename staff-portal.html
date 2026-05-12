@@ -7,13 +7,13 @@
 <style>
 :root{
   --bg:#0f172a;--panel:#1e293b;--card:#243044;--border:#334155;
-  --accent:#38bdf8;--accent2:#0ea5e9;--green:#10b981;--red:#ef4444;
+  --accent:#38bdf8;--accent2:#0ea5e9;--green:#10b981;-h-red:#ef4444;
   --yellow:#f59e0b;--text:#f1f5f9;--muted:#64748b;--sub:#94a3b8;
 }
-*{box-sizing:border-box;margin:0;padding:0}
+*{box-sizing:borderf-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;min-height:100vh}
 /* ── FONTS ── */
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/phretendard/dist/web/static/pretendard.css');
 
 /* ── LOGIN ── */
 #login-screen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center}
@@ -1081,7 +1081,8 @@ function extractTextPrices(raw, treatments){
     .replace(/\d+월?(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)[^=]*?(?:[\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g, ',')
     .replace(/\d+월?(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)(?:[^=]|\([^)]*\))+?[=＝]\s*[\d.]+\s*[mM万]/g, ',')  // =가격 형식
     .replace(/\d+월?(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)[^=,\n]*$/gm, ',')  // =가격 제거 후 남은 이벤트 접두어+시술 부분
-    .replace(/[가-힣]+[eE][가-힣]*\)\s*[^=]*?(?:[\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g, ',')  // 한글 이벤트
+    .replace(/[가-힣]+[eE][가-힣]*\)\s*[^=]*?(?:[\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g, ',')  // 한글 이벤트 (괄호 형식)
+    .replace(/[가-힣]+[eE]\s+[^=\n]*?(?:[\d.]+)\s*(?:[mM万]|(?=[-－,\n+]|$))/g, ',')  // 한글 이벤트 (공백 형식: 리쥬란e 아이리쥬란...)
     .replace(/[-－]\s*예약금.*?(?=[+,\n]|$)/g, '')    // -예약금제외 제거
     .replace(/[-－\s]*[\d.]+\s*[mM만%]?\s*(?:적립금|추가)?할인/gi, '')  // -25적립금할인, -49할인, -50%할인, -0.5할인, -4m추가할인 등 제거
     .replace(/[-－\s]*\d+\s*[mM만]?\s*(?:적립금|선납금|금액|잔액|포인트)\s*(?:차감|제외|사용)/gi, '') // -N적립금차감 제거
@@ -2279,7 +2280,7 @@ async function aiParse(raw) {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-opus-4-6',
         max_tokens: 16000,
         thinking: { type: 'enabled', budget_tokens: 10000 },
         system: AI_PARSER_SYSTEM_PROMPT,
@@ -2349,7 +2350,7 @@ async function aiBatchParse(rows, onProgress) {
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: 'claude-opus-4-6',
           max_tokens: 16000,
           thinking: { type: 'enabled', budget_tokens: 10000 },
           system: AI_PARSER_SYSTEM_PROMPT + `\n\n## 배치 모드
@@ -2479,7 +2480,7 @@ index는 입력의 [번호]와 동일하게.`,
           headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey,
             'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-6', max_tokens: 8000,
+            model: 'claude-opus-4-6', max_tokens: 8000,
             thinking: { type: 'enabled', budget_tokens: 5000 },
             messages: [{ role: 'user', content: `수납 파싱 결과를 검증하세요.
 
@@ -2567,7 +2568,7 @@ async function verifyParse(raw, treatments) {
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey,
         'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6', max_tokens: 8000,
+        model: 'claude-opus-4-6', max_tokens: 8000,
         thinking: { type: 'enabled', budget_tokens: 5000 },
         messages: [{ role: 'user', content: `수납 파싱 결과를 검증하세요.
 
@@ -2804,7 +2805,7 @@ function localParse(raw){
   }
 
   // 패턴2: 가격이 = 뒤에 오는 경우: "4월이벤트 울쎄라400샷+힐로웨이브2cc=286m"
-  const eventPatternEq = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=]|\([^)]*\))+?)[=＝]\s*([\d.]+)\s*[mM万]/g;
+  const eventPatternEq = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=\n]|\([^)]*\))+?)[=＝]\s*([\d.]+)\s*[mM万]/g;
   let evMatch3;
   while((evMatch3 = eventPatternEq.exec(raw)) !== null){
     const groupName = evMatch3[1].replace(/\+/g,'+').trim();
@@ -3875,6 +3876,13 @@ function localParse(raw){
         else if(/울쎄라|울쎼라/.test(t)) qty = Math.max(1, Math.round(n/100));
         else qty = Math.max(1, n);
       }
+      // 울쎄라/소프 bare number (샷 suffix 없음): "울쎄라900", "소프450" → 샷수로 해석
+      if(!shotM && !/\d+\s*(?:cc|kj|회|병|ml|분)/i.test(t)){
+        const bareNum = t.match(/(?:울쎄라|울쎼라)\s*(\d+)/i);
+        if(bareNum){ qty = Math.max(1, Math.round(parseInt(bareNum[1])/100)); }
+        const bareSop = t.match(/소프(?:웨이브)?\s*(\d+)/i);
+        if(bareSop){ qty = Math.max(1, Math.round(parseInt(bareSop[1])/50)); }
+      }
       const sM = t.match(/(\d+)s(?!\w)/); if(sM){
         const n = parseInt(sM[1]);
         if(/소프(?:웨이브)?/.test(t)) qty = Math.max(1, Math.round(n/50));
@@ -4008,80 +4016,41 @@ function localParse(raw){
         });
       });
       if(parsed.length === 0) return;
-      // standalone 가격 감지: 이벤트 외 줄에서 같은 항목의 단가가 명시되어 있으면 사용
-      // 예: "소프+온다 330" 이벤트 + "온다40kj 추가 44" standalone → 온다=44, 소프=286
-      const standaloneLines = raw.split('\n').filter(l => !/\d+월?[eE]/.test(l));
-      let standaloneUsed = false;
-      let standaloneTotal = 0;
+      // 단가 비례배분: 이벤트 그룹 총액을 항목별 CHARGE_PRICE × qty 비율로 분배
+      const unitPrices = parsed.map(p => (p._unitPrice || CHARGE_PRICE[p.item]||1) * p.qty);
+      const sum = unitPrices.reduce((a,b)=>a+b, 0);
+      const shares = parsed.map((p, i) => {
+        return sum > 0
+          ? Math.round(eg.price * (unitPrices[i]/sum) * 10) / 10
+          : Math.round(eg.price / parsed.length * 10) / 10;
+      });
+      const shareSum = shares.reduce((a,b)=>a+b, 0);
+      const diff = Math.round((eg.price - shareSum) * 10) / 10;
+      if(diff !== 0) shares[shares.length - 1] += diff;
+
+      // standalone 줄에서 같은 항목의 단가 추출
+      const standaloneLines = raw.split('\n').filter(l => !/(?:\d+월?|[가-힣]+)[eE](?:\s|\))/.test(l));
+      const standalonePrices = {};
       parsed.forEach(p => {
         const itemKw = _ITEM_KEYWORDS[p.item];
         if(!itemKw) return;
         for(const line of standaloneLines){
           if(!itemKw.test(line)) continue;
-          // 줄에서 마지막 숫자 추출 (샷/회/kj/cc 뒤 제외)
           const cleanLine = line.replace(/\d+\s*(?:cc|샷|회|개|kj|병|ml|분)/gi, '?');
           const nums = [...cleanLine.matchAll(/([\d]+\.?\d*)/g)].map(m=>parseFloat(m[1])).filter(n=>n>=1&&n<2000);
-          if(nums.length > 0){
-            p._standalonePrice = nums[nums.length - 1];
-            break;
-          }
+          if(nums.length > 0){ standalonePrices[p.item] = nums[nums.length - 1]; break; }
         }
       });
-      const withStandalone = parsed.filter(p => p._standalonePrice !== undefined);
-      const withoutStandalone = parsed.filter(p => p._standalonePrice === undefined);
-      // standalone 항목이 일부만 있으면 뺄셈 분배
-      if(withStandalone.length > 0 && withoutStandalone.length > 0){
-        standaloneTotal = withStandalone.reduce((s,p) => s + p._standalonePrice, 0);
-        if(standaloneTotal < eg.price) standaloneUsed = true;
-      }
 
-      let shares;
-      if(standaloneUsed){
-        // standalone 항목: 실제 단가 사용, 나머지: 잔액을 표준가 비율로 분배
-        const remainder = Math.round((eg.price - standaloneTotal)*100)/100;
-        const wpUnitPrices = withoutStandalone.map(p => (p._unitPrice || CHARGE_PRICE[p.item]||1) * p.qty);
-        const wpSum = wpUnitPrices.reduce((a,b)=>a+b, 0);
-        shares = parsed.map((p, i) => {
-          if(p._standalonePrice !== undefined) return p._standalonePrice;
-          const wpIdx = withoutStandalone.indexOf(p);
-          return wpSum > 0
-            ? Math.round(remainder * wpUnitPrices[wpIdx] / wpSum * 10) / 10
-            : Math.round(remainder / withoutStandalone.length * 10) / 10;
-        });
-        // 반올림 오차 보정
-        const sSum = shares.reduce((a,b)=>a+b, 0);
-        const sDiff = Math.round((eg.price - sSum)*10)/10;
-        if(sDiff !== 0){
-          const lastWpIdx = parsed.findLastIndex(p => p._standalonePrice === undefined);
-          if(lastWpIdx >= 0) shares[lastWpIdx] += sDiff;
-          else shares[shares.length - 1] += sDiff;
-        }
-      } else {
-        // 기존 로직: 단가 비례배분
-        const unitPrices = parsed.map(p => (p._unitPrice || CHARGE_PRICE[p.item]||1) * p.qty);
-        const sum = unitPrices.reduce((a,b)=>a+b, 0);
-        shares = parsed.map((p, i) => {
-          return sum > 0
-            ? Math.round(eg.price * (unitPrices[i]/sum))
-            : Math.round(eg.price / parsed.length);
-        });
-        // 반올림 오차 보정: 합계를 eg.price에 맞춤 (마지막 항목에서 조정)
-        const shareSum = shares.reduce((a,b)=>a+b, 0);
-        const diff = Math.round((eg.price - shareSum) * 10) / 10;
-        if(diff !== 0) shares[shares.length - 1] += diff;
-      }
       parsed.forEach((p, i) => {
         const share = shares[i];
-        // 기존 results에 같은 item 있으면 _fixedAmt만 누적 (qty는 메인 파서가 이미 카운트함 → 이중카운트 방지)
+        const standaloneAmt = standalonePrices[p.item] || 0;
         const existing = results.find(r => r.item === p.item);
         if(existing){
-          // 이벤트 그룹 share + standalone 가격 합산
-          // 예: 온다 event share=44 + standalone 추가 44 → _fixedAmt=88
-          existing._fixedAmt = share + (p._standalonePrice || 0);
-          // qty도 이벤트 그룹 기준으로 갱신 (엠페이스4회 등)
+          existing._fixedAmt = (existing._fixedAmt || 0) + share + standaloneAmt;
           if(p.qty > existing.qty) existing.qty = p.qty;
         } else {
-          results.push({item: p.item, qty: p.qty, _fixedAmt: share});
+          results.push({item: p.item, qty: p.qty, _fixedAmt: share + standaloneAmt});
         }
       });
     });
