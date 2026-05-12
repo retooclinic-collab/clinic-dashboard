@@ -4029,7 +4029,7 @@ function localParse(raw){
       if(diff !== 0) shares[shares.length - 1] += diff;
 
       // standalone 줄에서 같은 항목의 단가 추출
-      const standaloneLines = raw.split('\n').filter(l => !/(?:\d+월?|[가-힣]+)[eE](?:\s|\))/.test(l));
+      const standaloneLines = raw.split('\n').filter(l => !/(?:\d+월?|[가-힣]+)(?:[eE](?:\s|\))|이벤트)/.test(l));
       const standalonePrices = {};
       parsed.forEach(p => {
         const itemKw = _ITEM_KEYWORDS[p.item];
