@@ -2320,17 +2320,21 @@ async function aiParse(raw) {
 }
 
 /* AI 배치 파싱: 여러 건을 한번에 보내서 처리 (일괄업로드용) */
-async function aiBatchParse(rows) {
+async function aiBatchParse(rows, onProgress) {
+  const _prog = onProgress || function(){};
   const apiKey = localStorage.getItem('claude_api_key');
   if (!apiKey || rows.length === 0) return;
 
   // 최대 30건씩 배치 (토큰 한도 고려)
   const BATCH_SIZE = 30;
+  const totalBatches = Math.ceil(rows.length / BATCH_SIZE);
   for (let batchStart = 0; batchStart < rows.length; batchStart += BATCH_SIZE) {
     const batch = rows.slice(batchStart, batchStart + BATCH_SIZE);
+    const batchNum = Math.floor(batchStart / BATCH_SIZE) + 1;
     const numbered = batch.map((r, i) => `[${batchStart + i}] ${r.payText}`).join('\n');
 
     try {
+      _prog({ stage: 'ai', done: batchStart, total: rows.length, batchNum, totalBatches });
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -2371,6 +2375,7 @@ index는 입력의 [번호]와 동일하게.`,
 
       const results = JSON.parse(jsonMatch[1]);
       console.log('[AI배치] ' + results.length + '건 파싱 완료');
+      _prog({ stage: 'ai', done: Math.min(batchStart + batch.length, rows.length), total: rows.length, batchNum, totalBatches });
 
       // 결과를 _importRows에 반영 — AI-primary + regex qty보정 + 조정항목보완 + 텍스트증거검증 (smartParse v5 동일)
       const _adjustItems = new Set(['예약금제외','할인차감','적립금차감','선납금차감','상품권차감','환불','위약금','양도','VIP회원권','적립금','지정비용','점편사제거','제품','TA','상담만']);
@@ -2451,6 +2456,7 @@ index는 입력의 [번호]와 동일하게.`,
     }
   }
 
+  _prog({ stage: 'verify', done: 0, total: rows.length });
   // ── 배치 2차 AI 검증: 파싱된 결과를 한번에 검증 (1회 API 호출) ──
   const toVerify = rows.filter(r => _importRows[rows.indexOf(r)] && _importRows[rows.indexOf(r)].treatments);
   if (toVerify.length > 0 && apiKey) {
@@ -2520,6 +2526,7 @@ ${verifyContent}` }]
       }
     } catch(e) { console.warn('[AI배치] 2차 검증 오류:', e); }
   }
+  _prog({ stage: 'done', done: rows.length, total: rows.length });
 }
 
 /* AI 파싱 결과를 localParse 형식으로 변환 */
@@ -2608,11 +2615,13 @@ async function verifyParse(raw, treatments) {
    ③ 조정항목만 regex에서 보완 (예약금제외, 할인차감, VIP회원권 등)
    ④ 텍스트 증거 검증: 필러 오탐 방지
    ⑤ 2차 AI 검증: 최종 결과를 AI에게 다시 보여서 틀린 거 잡기 */
-async function smartParse(raw) {
+async function smartParse(raw, onProgress) {
+  const _sp = onProgress || function(){};
   // 1) regex 파서 실행
   const regexResult = localParse(raw);
 
   // 2) AI 파서 실행
+  _sp('ai');
   const aiResult = await aiParse(raw);
   if (!aiResult) { regexResult._source = 'regex'; return regexResult; }
   const converted = convertAiResult(aiResult, raw);
@@ -2697,6 +2706,7 @@ async function smartParse(raw) {
   }
 
   // 7) 2차 AI 검증: 최종 점검
+  _sp('verify');
   const verified = await verifyParse(raw, finalTreats);
   if (verified && Array.isArray(verified) && verified.length > 0) {
     // 2차 검증 결과 반영: AI가 수정한 항목으로 교체
@@ -4128,11 +4138,14 @@ async function parsePayment(){
 
   const btn = document.getElementById('parse-btn');
   btn.disabled = true;
-  btn.innerHTML = '⚡ 분석 중...';
+  btn.innerHTML = '🧠 1차 AI 분석 중...';
 
   try {
     // ── AI 우선 파싱, 실패 시 regex 폴백 ──
-    const parsed = await smartParse(text);
+    const parsed = await smartParse(text, function(stage) {
+      if (stage === 'ai') btn.innerHTML = '🧠 1차 AI 분석 중...';
+      else if (stage === 'verify') btn.innerHTML = '🔍 2차 검증 중...';
+    });
     const isAI = parsed._source?.startsWith('ai');
     if(isAI) console.log('[파서] AI 파싱 사용');
     else console.log('[파서] regex 폴백 사용');
@@ -5109,7 +5122,7 @@ function renderImportPreview(){
     showToast('AI 파서로 '+needParse.length+'건 분석 중... 완료될 때까지 기다려주세요', 'info');
     // 로딩 표시만 먼저 그리기 (데이터 없이)
     _renderImportTableLoading(needParse.length);
-    aiBatchParse(needParse).then(function(){
+    aiBatchParse(needParse, _updateBatchProgress).then(function(){
       var aiCount = _importRows.filter(function(r){ return r._parseSource==='ai'; }).length;
       var regexCount = needParse.length - aiCount;
       // AI가 못 채운 건만 regex 폴백
@@ -5135,11 +5148,50 @@ function _renderImportTableLoading(count){
   var container = document.getElementById('import-preview-body');
   if(!container) return;
   container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">'
-    + '<div style="font-size:24px;margin-bottom:8px">⏳</div>'
-    + '<div style="font-size:13px">AI 파서로 '+count+'건 분석 중...</div>'
+    + '<div style="font-size:24px;margin-bottom:8px" id="batch-progress-icon">⏳</div>'
+    + '<div style="font-size:14px;font-weight:600;margin-bottom:6px" id="batch-progress-stage">1차 AI 분석 준비 중...</div>'
+    + '<div style="background:rgba(255,255,255,0.1);border-radius:6px;height:8px;max-width:300px;margin:0 auto 8px">'
+    + '  <div id="batch-progress-bar" style="background:var(--primary,#6c5ce7);height:100%;border-radius:6px;width:0%;transition:width 0.4s ease"></div>'
+    + '</div>'
+    + '<div style="font-size:12px" id="batch-progress-detail">0 / '+count+'건</div>'
     + '<div style="font-size:11px;margin-top:4px;color:var(--muted)">완료되면 자동으로 표가 나타납니다</div>'
     + '</div>';
   document.getElementById('import-preview').style.display = 'block';
+}
+
+function _updateBatchProgress(info) {
+  var stageEl = document.getElementById('batch-progress-stage');
+  var barEl = document.getElementById('batch-progress-bar');
+  var detailEl = document.getElementById('batch-progress-detail');
+  var iconEl = document.getElementById('batch-progress-icon');
+  var importBtn = document.getElementById('import-btn');
+  if (!stageEl) return;
+  var pct = info.total > 0 ? Math.round(info.done / info.total * 100) : 0;
+  if (info.stage === 'ai') {
+    // 1차 AI 분석: 전체의 0~70% 할당
+    var aiPct = Math.round(info.done / info.total * 70);
+    barEl.style.width = aiPct + '%';
+    iconEl.textContent = '🧠';
+    if (info.done < info.total) {
+      var batchTxt = info.totalBatches > 1 ? ' (배치 ' + info.batchNum + '/' + info.totalBatches + ')' : '';
+      stageEl.textContent = '1차 AI 분석 중...' + batchTxt;
+    } else {
+      stageEl.textContent = '1차 AI 분석 완료!';
+    }
+    detailEl.textContent = info.done + ' / ' + info.total + '건 완료';
+    if (importBtn) importBtn.innerHTML = '⏳ 1차 분석 ' + info.done + '/' + info.total + '건';
+  } else if (info.stage === 'verify') {
+    barEl.style.width = '75%';
+    iconEl.textContent = '🔍';
+    stageEl.textContent = '2차 AI 검증 중...';
+    detailEl.textContent = '파싱 결과 교차 검증';
+    if (importBtn) importBtn.innerHTML = '⏳ 2차 검증 중...';
+  } else if (info.stage === 'done') {
+    barEl.style.width = '100%';
+    iconEl.textContent = '✅';
+    stageEl.textContent = '분석 완료!';
+    detailEl.textContent = info.total + '건 처리 완료';
+  }
 }
 
 function _applyRegexFallbackAndRenderTable(){
