@@ -4106,7 +4106,7 @@ async function parsePayment(){
   try {
     // ── AI 우선 파싱, 실패 시 regex 폴백 ──
     const parsed = await smartParse(text);
-    const isAI = parsed._source === 'ai';
+    const isAI = parsed._source?.startsWith('ai');
     if(isAI) console.log('[파서] AI 파싱 사용');
     else console.log('[파서] regex 폴백 사용');
 
@@ -4173,7 +4173,7 @@ function showParseResult(parsed, total){
   list.innerHTML = '';
 
   const treatments = parsed.treatments||[];
-  const srcBadge = parsed._source === 'ai'
+  const srcBadge = parsed._source?.startsWith('ai')
     ? '<span style="background:#10b981;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px">AI</span>'
     : '<span style="background:#64748b;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px">regex</span>';
   document.getElementById('treatment-count').innerHTML = treatments.length + srcBadge;
@@ -5553,7 +5553,7 @@ async function reparseImportRow(idx){
     window._ieTreats = distributePrices(parsed.treatments, amt, text);
     renderIETreatList(idx);
     // AI 결제방식
-    if(parsed._source === 'ai' && parsed.payMethods?.length){
+    if(parsed._source?.startsWith('ai') && parsed.payMethods?.length){
       window._iePays = parsed.payMethods.map(p=>({method:p.method, amt:p.amt||0}));
       renderIEPayList(idx);
       return;
@@ -6826,7 +6826,7 @@ async function reparseEditModal(){
     window._editTreatments = distributePrices(parsed.treatments, amt, text);
     renderEditTreatList();
     // AI 결제방식
-    if(parsed._source === 'ai' && parsed.payMethods?.length){
+    if(parsed._source?.startsWith('ai') && parsed.payMethods?.length){
       window._editPayItems = parsed.payMethods.map(p=>({method:p.method, amt:p.amt||0}));
       renderEditPayList();
     } else {
