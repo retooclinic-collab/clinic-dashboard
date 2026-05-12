@@ -2027,9 +2027,84 @@ JSON 출력 전에 반드시 <analysis> 태그 안에서 각 토큰을 분석하
 ━━━━━━━━━━━━━━━━━━━━━━━━
 <analysis> 분석 </analysis> 다음에
 {"treatments":[{"item":"시술명","qty":1,"price":49.5}],"totalAmount":447.7,"payMethods":[{"method":"카드","amt":447.7}],"misu":0,"vipDiscount":0,"credit":0}
-price=만원. 텍스트에 가격 있으면 사용, 없으면 null.`;
+price=만원. 텍스트에 가격 있으면 사용, 없으면 null.
 
-/* few-shot 대화 턴: 모든 파싱 경험을 AI 클론에 이식 — 총 20건 */
+━━━━━━━━━━━━━━━━━━━━━━━━
+15. ★★★ 절대 하지 말 것 (Anti-Hallucination) ★★★
+━━━━━━━━━━━━━━━━━━━━━━━━
+✗ "VIP할인혜택"을 treatments에 넣지 마세요! VIP할인혜택은 후처리 단계에서 자동 생성됩니다. 당신이 만들면 중복!
+✗ "차액결제", "튠라이너R", "튠페이스R", "프리미엄써마지" 같은 허용 목록에 없는 항목을 절대 만들지 마세요!
+✗ 동일 시술을 2개 항목으로 분리하지 마세요! "이마b미간b(제오민)44" → 보톡스(수입) qty=2 (1개 항목!)
+✗ 이벤트 그룹 총가를 개별 시술의 price로 넣지 마세요! 이벤트 묶음가 → 개별 price=null
+✗ "=NNNm차감 후 남은금액" 같은 계산 메모를 시술로 파싱하지 마세요!
+✗ 결제방식 뒤의 메모(/길, /담당자이름 등)를 시술로 파싱하지 마세요!
+✗ "적립금N" 패턴을 시술로 파싱하지 마세요! → vipDiscount나 credit 필드에만 반영!
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+16. 자주 등장하는 함정 패턴
+━━━━━━━━━━━━━━━━━━━━━━━━
+[함정1] "리투오(또는쥬브아셀)" / "리투오or쥬브아셀" → 쥬브아셀만! 리투오+쥬브아셀 2개 아님!
+[함정2] "(○○대체)" → 괄호 안 대체 표기는 메모. 항목 추가 안 함!
+[함정3] "500vip+차액65.7=565.7" → VIP회원권 qty=1, vipDiscount=25. 차액=totalAmount에 포함, 별도 항목 아님!
+[함정4] BBL색소+BBL홍조+BBL미백 → 같은 BBL 세션이면 BBL qty=1 (각각 1이 아님!)
+          단, BBL(여드름), BBL(스킨타이트닝), BBL(바디)는 별도 항목!
+[함정5] "=총594-예약금=590.7m 차감 후 남은 금액x" → 계산 메모! 시술 아님!
+[함정6] "써마지300" → 항목명이 "써마지300" (300은 항목명의 일부, 가격 아님!)
+[함정7] 써마지225(눈), 써마지225(눈꺼풀) → 아이써마지225 (써마지300 아님!)
+[함정8] "엠페이스88" → qty=1, price=88 (88은 가격! 88회 아님!)
+         "엠페이스2회176" → qty=2, price=176 (176은 가격, 2회는 qty)
+[함정9] "-100차감" → 할인차감 qty=1, price=100 (차감도 할인의 일종!)
+[함정10] "미라젯38.5+쥬베룩2cc" → 쥬베룩=쥬베룩볼륨! (미라젯과 같이 나오면 쥬베룩→쥬베룩볼륨)
+[함정11] "티타늄80KJ" → qty=2 (80÷40=2). 80은 가격 아님!
+[함정12] "리쥬란e" → "리쥬란 이벤트"의 약칭. 독립 항목 아님, 뒤따라오는 리쥬란/HB에 포함!
+[함정13] "볼륨튠2회" → 튠페이스 qty=2 + 쥬베룩볼륨 qty=2 (콤보 분해!)
+[함정14] "하이쿡스" → qty=1, price=0 (재료비, 줄기세포와 함께 나옴)
+[함정15] "스킨b 제오민업그레이드" → 보톡스(수입) qty=1 (스킨보톡스=전얼굴1부위)
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+17. 추가 시술 매핑 상세
+━━━━━━━━━━━━━━━━━━━━━━━━
+[적립금/선납금/상품권 차감]
+-N적립금차감, 적립금N차감 → 적립금차감 qty=1 price=0 (금액은 후처리)
+-N선납금차감 → 선납금차감 qty=1 price=0
+-N상품권차감 → 상품권차감 qty=1 price=0
+★ 이 항목들은 price=0 고정! 차감 금액은 시스템이 계산!
+
+[환불/양도/위약금]
+환불, 전액환불 → 환불 qty=1
+양도, 시술양도 → 양도 qty=1
+위약금N% → 위약금 qty=1
+
+[제품]
+리쥬셀릭크림 → 리쥬셀릭크림 qty=1 price=4.2
+리쥬셀릭앰플 → 리쥬셀릭앰플 qty=1 price=4.8
+리쥬셀릭선물세트 → 리쥬셀릭선물세트 qty=1 price=12.5
+크림N박스, 마스크팩 → 제품 qty=1
+
+[주사류]
+리투핏주사, 리투업주사 → 각각 독립 항목 (17.6만원)
+리투핏주사(바디) → 바디 버전 (17.6만원)
+새살주사 → 새살주사 (27.5만원)
+히알라제 → 히알라제 (16.5만원)
+
+[기타 시술]
+자가엑소좀 ≠ 엑소좀! 자가엑소좀=165, 엑소좀=55 (완전 별개!)
+스컬트라 → 스컬트라 (55만원)
+위고비 → 위고비 (26만원)
+아이리프팅 → 아이리프팅 (38.5만원)
+알라딘필 → 알라딘필 (33만원)
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+18. 복합 결제 상세
+━━━━━━━━━━━━━━━━━━━━━━━━
+"=200(카100,현100)" → payMethods:[{method:"카드",amt:100},{method:"현금(자진)",amt:100}]
+"=200(카150,알리50)" → payMethods:[{method:"카드",amt:150},{method:"알리페이",amt:50}]
+"카" → 카드 | "현,자진" or "현자진" → 현금(자진) | "이체" or "현영" → 이체(현영)
+"알리" → 알리페이 | "위챗" → 위챗 | "제로" → 제로페이
+"미수N" → misu=N (미수금)
+결제수단이 안 보이면 payMethods=[] 비워두기`;
+
+/* few-shot 대화 턴: 모든 파싱 경험을 AI 클론에 이식 — 총 50건 */
 const AI_FEWSHOT_EXAMPLES = [
   // ━━━ 1. b=보톡스(필러아님!), 쥬브아셀8%=쥬브아셀, 커스텀케어=피부관리 ━━━
   { role: 'user', content: '5월e)울쎄라300샷+소프웨이브250샷+미라젯쥬브아셀8%1병+커스텀케어+이마b(국)sv=572m(카)' },
@@ -2091,6 +2166,96 @@ const AI_FEWSHOT_EXAMPLES = [
   // ━━━ 20. 문신제거2회, 수면비 ━━━
   { role: 'user', content: '문신제거2회66+수면비22=88m(카)' },
   { role: 'assistant', content: '<analysis>\n문신제거2회66 → 문신제거 qty=2 price=66\n수면비22 → 수면비1 price=22\n</analysis>\n{"treatments":[{"item":"문신제거","qty":2,"price":66},{"item":"수면비","qty":1,"price":22}],"totalAmount":88,"payMethods":[{"method":"카드","amt":88}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 21. -N차감=할인차감, 적립금차감, 복합결제(카+현) ━━━
+  { role: 'user', content: '소프웨이브300샷396+리쥬란4cc110-100차감-30적립금차감=376m(카200,현176)' },
+  { role: 'assistant', content: '<analysis>\n소프웨이브300샷396 → 소프웨이브(50샷) qty=6 price=396\n리쥬란4cc110 → 리쥬란 qty=4÷2=2 price=110\n-100차감 → 할인차감1 price=100\n-30적립금차감 → 적립금차감1 price=0\n=376m(카200,현176) → 복합결제\n</analysis>\n{"treatments":[{"item":"소프웨이브(50샷)","qty":6,"price":396},{"item":"리쥬란","qty":2,"price":110},{"item":"할인차감","qty":1,"price":100},{"item":"적립금차감","qty":1,"price":0}],"totalAmount":376,"payMethods":[{"method":"카드","amt":200},{"method":"현금(자진)","amt":176}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 22. 줄기세포60cc+하이쿡스+수면비, 자가엑소좀≠엑소좀 ━━━
+  { role: 'user', content: '줄기세포60cc198+하이쿡스+자가엑소좀165+수면비22=385m(카)' },
+  { role: 'assistant', content: '<analysis>\n줄기세포60cc198 → 줄기세포60cc qty=1 price=198\n하이쿡스 → 하이쿡스1 price=0(재료)\n자가엑소좀165 → 자가엑소좀1 price=165 (엑소좀55와 다른 항목!)\n수면비22 → 수면비1 price=22\n</analysis>\n{"treatments":[{"item":"줄기세포60cc","qty":1,"price":198},{"item":"하이쿡스","qty":1,"price":0},{"item":"자가엑소좀","qty":1,"price":165},{"item":"수면비","qty":1,"price":22}],"totalAmount":385,"payMethods":[{"method":"카드","amt":385}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 23. 써마지900샷, moxi, 플라즈마엑소좀 ━━━
+  { role: 'user', content: '써마지900샷429+moxi66+플라즈마엑소좀55=550m(카)' },
+  { role: 'assistant', content: '<analysis>\n써마지900샷429 → 써마지900샷 qty=1 price=429 (900=항목명!)\nmoxi66 → moxi qty=1 price=66\n플라즈마엑소좀55 → 플라즈마엑소좀 qty=1 price=55\n</analysis>\n{"treatments":[{"item":"써마지900샷","qty":1,"price":429},{"item":"moxi","qty":1,"price":66},{"item":"플라즈마엑소좀","qty":1,"price":55}],"totalAmount":550,"payMethods":[{"method":"카드","amt":550}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 24. 포텐자(펌핑)+쥬베룩, 아이써마지450, 클라리티 ━━━
+  { role: 'user', content: '아이써마지450샷198+포텐자펌핑71.5+클라리티27.5=297m(카)' },
+  { role: 'assistant', content: '<analysis>\n아이써마지450샷198 → 아이써마지450샷 qty=1 price=198\n포텐자펌핑71.5 → 포텐자(펌핑)1 price=71.5\n클라리티27.5 → 클라리티1 price=27.5\n</analysis>\n{"treatments":[{"item":"아이써마지450샷","qty":1,"price":198},{"item":"포텐자(펌핑)","qty":1,"price":71.5},{"item":"클라리티","qty":1,"price":27.5}],"totalAmount":297,"payMethods":[{"method":"카드","amt":297}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 25. 튠바디, 온다(바디), 제모(여자) ━━━
+  { role: 'user', content: '튠바디55+온다(복부)99+제모(여자)11=165m(카)' },
+  { role: 'assistant', content: '<analysis>\n튠바디55 → 튠바디1 price=55\n온다(복부)99 → 복부=바디 → 온다(바디)1 price=99\n제모(여자)11 → 제모(여자)1 price=11\n</analysis>\n{"treatments":[{"item":"튠바디","qty":1,"price":55},{"item":"온다(바디)","qty":1,"price":99},{"item":"제모(여자)","qty":1,"price":11}],"totalAmount":165,"payMethods":[{"method":"카드","amt":165}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 26. 새살주사, 알라딘필, 크라이오 ━━━
+  { role: 'user', content: '새살주사27.5+알라딘필33+크라이오22=82.5m(카)' },
+  { role: 'assistant', content: '<analysis>\n새살주사27.5 → 새살주사1 price=27.5\n알라딘필33 → 알라딘필1 price=33\n크라이오22 → 크라이오1 price=22\n</analysis>\n{"treatments":[{"item":"새살주사","qty":1,"price":27.5},{"item":"알라딘필","qty":1,"price":33},{"item":"크라이오","qty":1,"price":22}],"totalAmount":82.5,"payMethods":[{"method":"카드","amt":82.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 27. 보톡스 3부위(이마+미간+눈가) 국산, 스킨바이브 ━━━
+  { role: 'user', content: '이마b미간b눈가b(국)33+스킨바이브60.5=93.5m(제로)' },
+  { role: 'assistant', content: '<analysis>\n이마b미간b눈가b(국)33 → b=보톡스! 이마+미간+눈가=3부위 (국)=국산 → 보톡스(국산)3 price=33\n스킨바이브60.5 → 스킨바이브1 price=60.5\n</analysis>\n{"treatments":[{"item":"보톡스(국산)","qty":3,"price":33},{"item":"스킨바이브","qty":1,"price":60.5}],"totalAmount":93.5,"payMethods":[{"method":"제로페이","amt":93.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 28. 필러(국산), 리쥬란아이2cc ━━━
+  { role: 'user', content: '볼필러2cc(국산)66+리쥬란아이2cc110=176m(카)' },
+  { role: 'assistant', content: '<analysis>\n볼필러2cc(국산)66 → 필러(국산) qty=2 price=66\n리쥬란아이2cc110 → 리쥬란아이 qty=2(1cc=1) price=110\n</analysis>\n{"treatments":[{"item":"필러(국산)","qty":2,"price":66},{"item":"리쥬란아이","qty":2,"price":110}],"totalAmount":176,"payMethods":[{"method":"카드","amt":176}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 29. 볼륨튠2회=튠페이스+쥬베룩볼륨, 제네시스(단독) ━━━
+  { role: 'user', content: '볼륨튠2회+제네시스38.5=215.5m(카)' },
+  { role: 'assistant', content: '<analysis>\n볼륨튠2회 → 튠페이스 qty=2 + 쥬베룩볼륨 qty=2 (콤보분해!)\n제네시스38.5 → 제네시스 qty=1 price=38.5 (PTT없는 단독)\n</analysis>\n{"treatments":[{"item":"튠페이스","qty":2,"price":null},{"item":"쥬베룩볼륨","qty":2,"price":null},{"item":"제네시스","qty":1,"price":38.5}],"totalAmount":215.5,"payMethods":[{"method":"카드","amt":215.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 30. 미라젯리쥬란HB2cc, 라라필, 인텐스울트라 ━━━
+  { role: 'user', content: '미라젯리쥬란HB2cc+라라필22+인텐스울트라27.5=88m(카)' },
+  { role: 'assistant', content: '<analysis>\n미라젯리쥬란HB2cc → 미라젯1 + 리쥬란HB qty=2(1cc=1)\n라라필22 → 라라필1 price=22\n인텐스울트라27.5 → 인텐스울트라1 price=27.5\n</analysis>\n{"treatments":[{"item":"미라젯","qty":1,"price":null},{"item":"리쥬란HB","qty":2,"price":null},{"item":"라라필","qty":1,"price":22},{"item":"인텐스울트라","qty":1,"price":27.5}],"totalAmount":88,"payMethods":[{"method":"카드","amt":88}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 31. BBL(스킨타이트닝), BBL(바디), 프락셀 ━━━
+  { role: 'user', content: 'BBL스킨타이트닝71.5+BBL(바디)22+프락셀33=126.5m(카)' },
+  { role: 'assistant', content: '<analysis>\nBBL스킨타이트닝71.5 → BBL(스킨타이트닝)1 price=71.5\nBBL(바디)22 → BBL(바디)1 price=22\n프락셀33 → 프락셀1 price=33\n</analysis>\n{"treatments":[{"item":"BBL(스킨타이트닝)","qty":1,"price":71.5},{"item":"BBL(바디)","qty":1,"price":22},{"item":"프락셀","qty":1,"price":33}],"totalAmount":126.5,"payMethods":[{"method":"카드","amt":126.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 32. 트리플피코, 피코슈어, CO2, 여드름관리 ━━━
+  { role: 'user', content: '트리플피코33+피코슈어33+CO2 5.5+여드름관리11=82.5m(카)' },
+  { role: 'assistant', content: '<analysis>\n트리플피코33 → 트리플피코1 price=33\n피코슈어33 → 피코슈어1 price=33\nCO2 5.5 → CO2 qty=1 price=5.5\n여드름관리11 → 여드름관리1 price=11\n</analysis>\n{"treatments":[{"item":"트리플피코","qty":1,"price":33},{"item":"피코슈어","qty":1,"price":33},{"item":"CO2","qty":1,"price":5.5},{"item":"여드름관리","qty":1,"price":11}],"totalAmount":82.5,"payMethods":[{"method":"카드","amt":82.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 33. 스컬트라, 위고비, 아이리프팅 ━━━
+  { role: 'user', content: '스컬트라55+위고비26+아이리프팅38.5=119.5m(카)' },
+  { role: 'assistant', content: '<analysis>\n스컬트라55 → 스컬트라1 price=55\n위고비26 → 위고비1 price=26\n아이리프팅38.5 → 아이리프팅1 price=38.5\n</analysis>\n{"treatments":[{"item":"스컬트라","qty":1,"price":55},{"item":"위고비","qty":1,"price":26},{"item":"아이리프팅","qty":1,"price":38.5}],"totalAmount":119.5,"payMethods":[{"method":"카드","amt":119.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 34. 엠페이스(60분)=3영역, 오푸스2회sv, 힐로웨이브4cc ━━━
+  { role: 'user', content: '엠페이스(60분)264+오푸스2회sv+힐로웨이브4cc132=396m(카)' },
+  { role: 'assistant', content: '<analysis>\n엠페이스(60분)264 → qty=60÷20=3 price=264\n오푸스2회sv → 오푸스 qty=2 price=0(서비스)\n힐로웨이브4cc132 → 힐로웨이브 qty=4÷2=2 price=132\n</analysis>\n{"treatments":[{"item":"엠페이스","qty":3,"price":264},{"item":"오푸스","qty":2,"price":0},{"item":"힐로웨이브","qty":2,"price":132}],"totalAmount":396,"payMethods":[{"method":"카드","amt":396}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 35. 콜라겐샤워=쥬베룩, 고압산소, PDRN ━━━
+  { role: 'user', content: '콜라겐샤워38.5+PDRN16.5+고압산소11=66m(카)' },
+  { role: 'assistant', content: '<analysis>\n콜라겐샤워38.5 → 콜라겐샤워=쥬베룩! → 쥬베룩1 price=38.5\nPDRN16.5 → PDRN1 price=16.5\n고압산소11 → 고압산소1 price=11\n</analysis>\n{"treatments":[{"item":"쥬베룩","qty":1,"price":38.5},{"item":"PDRN","qty":1,"price":16.5},{"item":"고압산소","qty":1,"price":11}],"totalAmount":66,"payMethods":[{"method":"카드","amt":66}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 36. 리쥬셀릭 제품들, 상담만, TA ━━━
+  { role: 'user', content: '리쥬셀릭크림4.2+리쥬셀릭앰플4.8+상담만2.2+TA1.1=12.3m(카)' },
+  { role: 'assistant', content: '<analysis>\n리쥬셀릭크림4.2 → 리쥬셀릭크림1 price=4.2\n리쥬셀릭앰플4.8 → 리쥬셀릭앰플1 price=4.8\n상담만2.2 → 상담만1 price=2.2\nTA1.1 → TA1 price=1.1\n</analysis>\n{"treatments":[{"item":"리쥬셀릭크림","qty":1,"price":4.2},{"item":"리쥬셀릭앰플","qty":1,"price":4.8},{"item":"상담만","qty":1,"price":2.2},{"item":"TA","qty":1,"price":1.1}],"totalAmount":12.3,"payMethods":[{"method":"카드","amt":12.3}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 37. VIP1000 복합+적립금+선납금차감+할인, 미수 ━━━
+  { role: 'user', content: '1000vip=1000m(카)\n써마지600 275+티타튠max165+엠페이스2회176-50선납금차감-100적립금차감=466m(카) 미수20' },
+  { role: 'assistant', content: '<analysis>\n1000vip → VIP회원권1 vipDiscount=100\n써마지600 275 → 써마지600 qty=1 price=275\n티타튠max165 → 티타튠max qty=1 price=165\n엠페이스2회176 → 엠페이스 qty=2 price=176\n-50선납금차감 → 선납금차감1 price=0\n-100적립금차감 → 적립금차감1 price=0\n미수20 → misu=20\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"써마지600","qty":1,"price":275},{"item":"티타튠max","qty":1,"price":165},{"item":"엠페이스","qty":2,"price":176},{"item":"선납금차감","qty":1,"price":0},{"item":"적립금차감","qty":1,"price":0}],"totalAmount":466,"payMethods":[{"method":"카드","amt":466}],"misu":20,"vipDiscount":100,"credit":0}' },
+  // ━━━ 38. 환불 패턴, 양도 ━━━
+  { role: 'user', content: '환불 엠페이스2회176=176m(카)' },
+  { role: 'assistant', content: '<analysis>\n환불 → 환불1 price=0\n엠페이스2회176 → 엠페이스 qty=2 price=176\n★ 환불 케이스: 시술 목록은 기록용\n</analysis>\n{"treatments":[{"item":"환불","qty":1,"price":0},{"item":"엠페이스","qty":2,"price":176}],"totalAmount":176,"payMethods":[{"method":"카드","amt":176}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 39. 엑소좀(55만), 플라즈마(33만), 아그네스(33만), LDM ━━━
+  { role: 'user', content: '엑소좀55+플라즈마33+아그네스33+LDM27.5=148.5m(알리)' },
+  { role: 'assistant', content: '<analysis>\n엑소좀55 → 엑소좀1 price=55 (자가엑소좀165와 별개!)\n플라즈마33 → 플라즈마1 price=33\n아그네스33 → 아그네스1 price=33\nLDM27.5 → LDM1 price=27.5\n</analysis>\n{"treatments":[{"item":"엑소좀","qty":1,"price":55},{"item":"플라즈마","qty":1,"price":33},{"item":"아그네스","qty":1,"price":33},{"item":"LDM","qty":1,"price":27.5}],"totalAmount":148.5,"payMethods":[{"method":"알리페이","amt":148.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 40. 리투오(또는쥬브아셀)→쥬브아셀만, 미라젯쥬브아셀V, 코레지셀핏 ━━━
+  { role: 'user', content: '미라젯38.5+리투오(또는쥬브아셀)88+코레지셀핏33=159.5m(카)' },
+  { role: 'assistant', content: '<analysis>\n미라젯38.5 → 미라젯1 price=38.5\n리투오(또는쥬브아셀)88 → ★함정! "또는"이니까 쥬브아셀만! → 쥬브아셀1 price=88\n코레지셀핏33 → 코레지셀핏1 price=33\n</analysis>\n{"treatments":[{"item":"미라젯","qty":1,"price":38.5},{"item":"쥬브아셀","qty":1,"price":88},{"item":"코레지셀핏","qty":1,"price":33}],"totalAmount":159.5,"payMethods":[{"method":"카드","amt":159.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 41. 줄기세포240cc+하이쿡스+수면비, 수액+NAD ━━━
+  { role: 'user', content: '줄기세포240cc506+하이쿡스+수면비22+수액8.8+NAD16.5=553.3m(이체)' },
+  { role: 'assistant', content: '<analysis>\n줄기세포240cc506 → 줄기세포240cc qty=1 price=506\n하이쿡스 → 하이쿡스1 price=0(재료)\n수면비22 → 수면비1 price=22\n수액8.8 → 수액1 price=8.8\nNAD16.5 → NAD1 price=16.5\n</analysis>\n{"treatments":[{"item":"줄기세포240cc","qty":1,"price":506},{"item":"하이쿡스","qty":1,"price":0},{"item":"수면비","qty":1,"price":22},{"item":"수액","qty":1,"price":8.8},{"item":"NAD","qty":1,"price":16.5}],"totalAmount":553.3,"payMethods":[{"method":"이체(현영)","amt":553.3}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 42. 5월e 복합이벤트 + 상품권차감, 제로페이 ━━━
+  { role: 'user', content: '5월e 울쎄라200샷+티타늄40kj+미라젯쥬베룩 280-20상품권차감=260m(제로)' },
+  { role: 'assistant', content: '<analysis>\n5월e → 이벤트그룹\n울쎄라200샷 → 울쎄라(100샷) qty=2\n티타늄40kj → 티타늄 qty=40÷40=1\n미라젯쥬베룩 → 미라젯1 + 쥬베룩볼륨1\n280 → 이벤트묶음가\n-20상품권차감 → 상품권차감1 price=0\n</analysis>\n{"treatments":[{"item":"울쎄라(100샷)","qty":2,"price":null},{"item":"티타늄","qty":1,"price":null},{"item":"미라젯","qty":1,"price":null},{"item":"쥬베룩볼륨","qty":1,"price":null},{"item":"상품권차감","qty":1,"price":0}],"totalAmount":260,"payMethods":[{"method":"제로페이","amt":260}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 43. 보톡스 다부위(4부위) 수입 + 승모근, 침샘 ━━━
+  { role: 'user', content: '이마b미간b눈가b입꼬리b(all제오민)88+승모근b(제)22+침샘b(제)22=132m(카)' },
+  { role: 'assistant', content: '<analysis>\n이마b미간b눈가b입꼬리b(all제오민)88 → b=보톡스! 4부위(이마+미간+눈가+입꼬리) 수입 → 보톡스(수입)4 price=88\n승모근b(제)22 → b=보톡스! 수입 → 보톡스(수입) qty추가+1\n침샘b(제)22 → b=보톡스! 수입 → 보톡스(수입) qty추가+1\n★ 전체 보톡스(수입) = 4+1+1 = qty=6\n</analysis>\n{"treatments":[{"item":"보톡스(수입)","qty":6,"price":132}],"totalAmount":132,"payMethods":[{"method":"카드","amt":132}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 44. 릴리이드2cc, 쥬베룩아이, 미라젯쥬브아셀2회 ━━━
+  { role: 'user', content: '미라젯쥬브아셀2회+릴리이드2cc+쥬베룩아이49.5=275.5m(위챗)' },
+  { role: 'assistant', content: '<analysis>\n미라젯쥬브아셀2회 → 미라젯 qty=2 + 쥬브아셀 qty=2 (분리!)\n릴리이드2cc → 릴리이드 qty=2(1cc=1)\n쥬베룩아이49.5 → 쥬베룩아이1 price=49.5\n</analysis>\n{"treatments":[{"item":"미라젯","qty":2,"price":null},{"item":"쥬브아셀","qty":2,"price":null},{"item":"릴리이드","qty":2,"price":null},{"item":"쥬베룩아이","qty":1,"price":49.5}],"totalAmount":275.5,"payMethods":[{"method":"위챗","amt":275.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 45. 티타튠2회, 듀얼피코, BBL 1건(색소+미백), 진정관리=피부관리 ━━━
+  { role: 'user', content: '티타튠2회264+듀얼피코33+BBL(색소+미백)+피부관리16.5=313.5m(카)' },
+  { role: 'assistant', content: '<analysis>\n티타튠2회264 → 티타튠 qty=2 price=264\n듀얼피코33 → 듀얼피코1 price=33\nBBL(색소+미백) → 같은BBL세션 → BBL1\n피부관리16.5 → 피부관리1 price=16.5\n</analysis>\n{"treatments":[{"item":"티타튠","qty":2,"price":264},{"item":"듀얼피코","qty":1,"price":33},{"item":"BBL","qty":1,"price":null},{"item":"피부관리","qty":1,"price":16.5}],"totalAmount":313.5,"payMethods":[{"method":"카드","amt":313.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 46. (○○대체)=메모무시, 힐라이트sv=피부관리price0 ━━━
+  { role: 'user', content: '리쥬란4cc(스킨바이브대체)110+힐라이트sv+오푸스55=165m(카)' },
+  { role: 'assistant', content: '<analysis>\n리쥬란4cc(스킨바이브대체)110 → 리쥬란 qty=4÷2=2 price=110 (스킨바이브대체=메모, 무시!)\n힐라이트sv → 피부관리1 price=0 (힐라이트=피부관리, sv=서비스)\n오푸스55 → 오푸스1 price=55\n</analysis>\n{"treatments":[{"item":"리쥬란","qty":2,"price":110},{"item":"피부관리","qty":1,"price":0},{"item":"오푸스","qty":1,"price":55}],"totalAmount":165,"payMethods":[{"method":"카드","amt":165}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 47. 목필러2cc(수입), 코필러1cc, 눈밑필러 ━━━
+  { role: 'user', content: '목필러2cc(수입)110+코필러1cc55+눈밑필러1cc55=220m(카)' },
+  { role: 'assistant', content: '<analysis>\n목필러2cc(수입)110 → 필러(수입) qty=2 price=110\n코필러1cc55 → 필러(수입) qty=1 price=55\n눈밑필러1cc55 → 필러(수입) qty=1 price=55\n★ 모두 수입필러 → 합계 qty=4\n</analysis>\n{"treatments":[{"item":"필러(수입)","qty":4,"price":220}],"totalAmount":220,"payMethods":[{"method":"카드","amt":220}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 48. 미라젯(리투오+리쥬란HB2cc) 서브항목 분해, 수액(폭탄수액) ━━━
+  { role: 'user', content: '미라젯(리투오88+리쥬란HB2cc77)+폭탄수액8.8=173.8m(카)' },
+  { role: 'assistant', content: '<analysis>\n미라젯 → 미라젯1\n(리투오88 → 리투오1 price=88 (서브항목)\n리쥬란HB2cc77 → 리쥬란HB qty=2 price=77 (서브항목))\n폭탄수액8.8 → 폭탄수액=수액! → 수액1 price=8.8\n</analysis>\n{"treatments":[{"item":"미라젯","qty":1,"price":null},{"item":"리투오","qty":1,"price":88},{"item":"리쥬란HB","qty":2,"price":77},{"item":"수액","qty":1,"price":8.8}],"totalAmount":173.8,"payMethods":[{"method":"카드","amt":173.8}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 49. 지정비용, 점편사제거, 양도 ━━━
+  { role: 'user', content: '양도 티타튠2회+미라젯쥬베룩2회+지정비용+점편사제거' },
+  { role: 'assistant', content: '<analysis>\n양도 → 양도1 price=0\n티타튠2회 → 티타튠 qty=2\n미라젯쥬베룩2회 → 미라젯 qty=2 + 쥬베룩볼륨 qty=2 (분리!)\n지정비용 → 지정비용1 price=0\n점편사제거 → 점편사제거1 price=0\n★ 가격/총액 명시 없음 → price=null, totalAmount=null\n</analysis>\n{"treatments":[{"item":"양도","qty":1,"price":0},{"item":"티타튠","qty":2,"price":null},{"item":"미라젯","qty":2,"price":null},{"item":"쥬베룩볼륨","qty":2,"price":null},{"item":"지정비용","qty":1,"price":0},{"item":"점편사제거","qty":1,"price":0}],"totalAmount":null,"payMethods":[],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 50. 복합: 써마지300+온다200KJ+리쥬란HB3cc+힐로웨이브4cc, VIP500 ━━━
+  { role: 'user', content: '500vip+차액42=542m(카)\n써마지300 165+온다200kj286+리쥬란HB3cc+힐로웨이브4cc 253-예약금=742.7m차감 후 남은금액x' },
+  { role: 'assistant', content: '<analysis>\n500vip → VIP회원권1 vipDiscount=25\n써마지300 165 → 써마지300 qty=1 price=165 (300=항목명!)\n온다200kj286 → 온다 qty=200÷100=2 price=286\n리쥬란HB3cc → 리쥬란HB qty=3\n힐로웨이브4cc → 힐로웨이브 qty=4÷2=2\n253 → 리쥬란HB+힐로웨이브 묶음가\n-예약금 → 예약금제외1\n=742.7m차감 후 남은금액x → 계산메모, 무시!\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"써마지300","qty":1,"price":165},{"item":"온다","qty":2,"price":286},{"item":"리쥬란HB","qty":3,"price":null},{"item":"힐로웨이브","qty":2,"price":null},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":542,"payMethods":[{"method":"카드","amt":542}],"misu":0,"vipDiscount":25,"credit":0}' },
 ];
 
 async function aiParse(raw) {
@@ -2406,6 +2571,8 @@ async function verifyParse(raw, treatments) {
 - VIP700, VIP1000 등 → VIP회원권 qty=1
 - -예약금, 예약금제외 → 예약금제외 qty=1
 - -N할인, -Nm할인 → 할인차감 qty=1
+★ 절대금지: "VIP할인혜택"이라는 항목을 만들지 마세요! 이것은 시스템이 자동 생성하는 항목입니다. 당신이 추가하면 중복 오류!
+★ 허용 목록에 없는 항목을 새로 만들지 마세요!
 
 원문: ${raw}
 
@@ -2525,7 +2692,7 @@ async function smartParse(raw) {
 
   // 8) 결과 조립
   const result = { ...regexResult, treatments: finalTreats,
-    _source: 'ai+검증' + (qtyFixed ? ',qty보정' + qtyFixed : '') + (adjAdded ? ',조정+' + adjAdded : '')
+    _source: 'ai+검증' + (qtyFixed ? ',qty보정' + qtyFixed : '') + (regAdded ? ',조정+' + regAdded : '')
   };
   console.log('[smartParse] 최종:', finalTreats.length + '건');
   return result;
@@ -2728,6 +2895,31 @@ function localParse(raw){
   });
   if(totalDiscount > 0){
     results.push({item:'할인차감', qty:1, _deductAmt: -totalDiscount});
+  }
+
+  // ── -N차감 패턴 (예: -100차감, -50m차감) — 할인차감으로 처리 ──
+  // 적립금차감/선납금차감/상품권차감은 별도 파싱되므로 제외
+  const deductMatches = [...raw.matchAll(/[-－]\s*([\d.]+)\s*[mM만]?\s*차감/gi)];
+  let totalDeductDiscount = 0;
+  deductMatches.forEach(m=>{
+    // 적립금/선납금/상품권 차감은 제외 (별도 처리됨)
+    const before = raw.substring(Math.max(0, m.index - 10), m.index);
+    if(/적립금|선납금|상품권|남은|잔액|포인트/i.test(before)) return;
+    const mEnd2 = m.index + m[0].length;
+    let overlap = false;
+    for(const r of usedRanges){ if(m.index < r.end && mEnd2 > r.start){ overlap=true; break; } }
+    if(!overlap){
+      totalDeductDiscount += parseFloat(m[1]||0);
+    }
+  });
+  if(totalDeductDiscount > 0){
+    // 할인차감이 이미 있으면 합산, 없으면 새로 추가
+    const existingDiscount = results.find(r=>r.item==='할인차감');
+    if(existingDiscount){
+      existingDiscount._deductAmt = (existingDiscount._deductAmt||0) - totalDeductDiscount;
+    } else {
+      results.push({item:'할인차감', qty:1, _deductAmt: -totalDeductDiscount});
+    }
   }
 
   // ── %할인 패턴 (예: -50%할인) → _pctDiscount 마커로 저장 (treatments에 안 넣고 별도 플래그) ──
