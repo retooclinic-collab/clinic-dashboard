@@ -421,7 +421,6 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <button onclick="setQuickFilter(30)" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">30일</button>
           <button onclick="setThisMonthFilter()" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">이번달</button>
           <button id="btn-csv-download" onclick="downloadCurrentCSV()" style="font-size:11px;color:var(--sub);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">⬇ CSV</button>
-          <button id="btn-list-delete-all" onclick="bulkDeleteAll()" style="display:none;font-size:11px;color:var(--red);background:none;border:1px solid var(--red);border-radius:8px;padding:6px 10px;cursor:pointer">🗑 전체삭제</button>
         </div>
       </div>
       <!-- 필터 바 -->
@@ -592,8 +591,7 @@ onAuthStateChanged(auth, async user => {
     if(user.email === 'retooclinic@gmail.com'){
       const adminDel = document.getElementById('admin-delete-section');
       if(adminDel) adminDel.style.display='block';
-      const listDel = document.getElementById('btn-list-delete-all');
-      if(listDel) listDel.style.display='inline-block';
+      
     } else {
       // 직원: 전체삭제 제거, CSV 다운로드 숨김, 수납리스트 숨김 (일괄업로드는 허용)
       const adminDel = document.getElementById('admin-delete-section');
@@ -901,8 +899,7 @@ function setMode(mode){
 
   // 관리자 전용 버튼 (list/import 모드)
   if(showList && window._isAdmin){
-    const listDel = document.getElementById('btn-list-delete-all');
-    if(listDel) listDel.style.display='inline-block';
+    
     const csvBtn = document.getElementById('btn-csv-download');
     if(csvBtn) csvBtn.style.display='inline-block';
   }
@@ -1210,8 +1207,10 @@ function extractTextPrices(raw, treatments){
 
       // 외부(top-level)에서 먼저 가격 추출 → 확실한 가격
       // 같은 항목이 여러 세그먼트에 나오면 (보톡스 등) 가격 합산
-      if(kw.test(outer) || kw.test(seg)){
-        const p = getPrice(outer);
+      const kwInOuter = kw.test(outer);
+      if(kwInOuter || kw.test(seg)){
+        if(kwInOuter){
+          const p = getPrice(outer);
         if(p!==null){
           if(found[t.item]!==undefined && t.qty > 1){
             // 같은 항목 반복 → 합산 (사각턱b 33 + 자갈턱b 22 + 콧볼b 22)
@@ -1221,7 +1220,7 @@ function extractTextPrices(raw, treatments){
             if(!_segItemMap[_segIdx]) _segItemMap[_segIdx] = [];
             _segItemMap[_segIdx].push({item: t.item, price: p});
           }
-        } else if(found[t.item]===undefined && kw.test(outer)){
+        } else if(found[t.item]===undefined){
           // outer에 키워드는 있지만 가격이 없으면, inner에서 순수 숫자 찾기
           // 예: 소프300샷(이마제외얼전)+티타늄40KJ(390.5) → outer "티타늄40KJ" 가격없음, inner "(390.5)"
           for(const inn of inner){
@@ -1232,6 +1231,7 @@ function extractTextPrices(raw, treatments){
             }
           }
         }
+                }
       }
 
       // 괄호 안에서 발견 → 잠정 가격 (합계 초과 시 잔액으로 재계산)
@@ -2064,8 +2064,7 @@ price=만원. 텍스트에 가격 있으면 사용, 없으면 null.
 [함정13] "볼륨튠2회" → 튠페이스 qty=2 + 쥬베룩볼륨 qty=2 (콤보 분해!)
 [함정14] "하이쿡스" → 줄기세포와 함께 나오면 qty=1, price=0 (재료비). 줄기세포 없이 단독이면 qty=1, price=5.5
 [함정15] "스킨b 제오민업그레이드" → 보톡스(수입) qty=1 (스킨보톡스=전얼굴1부위)
-[함정16] "처방전" → qty=1, price=텍스트가격 (보통 1.1). 단독 항목
-[함정17] "멀티스킨6cc" → 멀티스킨부스터 qty=1, price=49.5
+[함정16] "처방전"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 17. 추가 시술 매핑 상세
@@ -2280,7 +2279,7 @@ async function aiParse(raw) {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-opus-4-6',
+        model: 'claude-sonnet-4-6',
         max_tokens: 16000,
         thinking: { type: 'enabled', budget_tokens: 10000 },
         system: AI_PARSER_SYSTEM_PROMPT,
@@ -2350,7 +2349,7 @@ async function aiBatchParse(rows, onProgress) {
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-opus-4-6',
+          model: 'claude-sonnet-4-6',
           max_tokens: 16000,
           thinking: { type: 'enabled', budget_tokens: 10000 },
           system: AI_PARSER_SYSTEM_PROMPT + `\n\n## 배치 모드
@@ -2480,7 +2479,7 @@ index는 입력의 [번호]와 동일하게.`,
           headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey,
             'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
           body: JSON.stringify({
-            model: 'claude-opus-4-6', max_tokens: 8000,
+            model: 'claude-sonnet-4-6', max_tokens: 8000,
             thinking: { type: 'enabled', budget_tokens: 5000 },
             messages: [{ role: 'user', content: `수납 파싱 결과를 검증하세요.
 
@@ -2568,7 +2567,7 @@ async function verifyParse(raw, treatments) {
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey,
         'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
-        model: 'claude-opus-4-6', max_tokens: 8000,
+        model: 'claude-sonnet-4-6', max_tokens: 8000,
         thinking: { type: 'enabled', budget_tokens: 5000 },
         messages: [{ role: 'user', content: `수납 파싱 결과를 검증하세요.
 
@@ -2794,7 +2793,7 @@ function localParse(raw){
   // 패턴1: 가격이 공백 뒤 숫자로 오는 경우 (기존)
   // - 괄호 블록 \([^)]*\) 을 하나의 단위로 건너뛰어 괄호 안 숫자를 가격으로 오인 방지
   // - 합산 가격 "511.5+99" 지원: [\d.]+(?:\+[\d.]+)* → 610.5
-  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=(]|\([^)]*\))*?)\s*([\d.]+(?:\+[\d.]+)*)\s*(?:[mM万]|(?=[-－,\n (]|$))/g;
+  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=(]|\([^)]*\))*?)\s*([\d.]+(?:\+[\d.]+)*)\s*(?:[mM万]|(?=[-－,\n (]|$)|(?=\+(?!\d)))/g;
   let evMatch;
   while((evMatch = eventPattern.exec(raw)) !== null){
     const groupName = evMatch[1].replace(/\+/g,'+').trim();
@@ -2982,14 +2981,14 @@ function localParse(raw){
   }
 
   // ── 울쎄라 (중복 언급 합산, 울쎼라 오타 포함) ──
-  const ulceraAll = [...rawForParse.matchAll(/울쎄라\s*(\d+)\s*샷?/gi), ...rawForParse.matchAll(/울쎼라\s*(\d+)\s*샷?/gi)];
+  const ulceraAll = [...raw.matchAll(/울쎄라\s*(\d+)\s*샷?/gi), ...raw.matchAll(/울쎼라\s*(\d+)\s*샷?/gi)];
   if(ulceraAll.length > 0){
     const totalShots = ulceraAll.reduce((s,m) => s + parseInt(m[1]), 0);
     results.push({item:'울쎄라(100샷)', qty: Math.round(totalShots/100)});
   }
 
   // ── 소프웨이브 (중복 언급 합산: 소프150샷+소프50샷 → 4개) ──
-  const sopwAll = [...rawForParse.matchAll(/소프(?:웨이브)?\s*(\d+)\s*샷?/gi)];
+  const sopwAll = [...raw.matchAll(/소프(?:웨이브)?\s*(\d+)\s*샷?/gi)];
   if(sopwAll.length > 0){
     const totalShots = sopwAll.reduce((s,m) => s + parseInt(m[1]), 0);
     results.push({item:'소프웨이브(50샷)', qty: Math.round(totalShots/50)});
@@ -4011,7 +4010,7 @@ function localParse(raw){
       if(parsed.length === 0) return;
       // standalone 가격 감지: 이벤트 외 줄에서 같은 항목의 단가가 명시되어 있으면 사용
       // 예: "소프+온다 330" 이벤트 + "온다40kj 추가 44" standalone → 온다=44, 소프=286
-      const standaloneLines = raw.split('\n').filter(l => !/(?:\d+월?|[가-힣]+)[eE](?:\s|\))/.test(l));
+      const standaloneLines = raw.split('\n').filter(l => !/\d+월?[eE]/.test(l));
       let standaloneUsed = false;
       let standaloneTotal = 0;
       parsed.forEach(p => {
@@ -4078,7 +4077,7 @@ function localParse(raw){
         if(existing){
           // 이벤트 그룹 share + standalone 가격 합산
           // 예: 온다 event share=44 + standalone 추가 44 → _fixedAmt=88
-          existing._fixedAmt = share + (standaloneUsed ? 0 : (p._standalonePrice || 0));
+          existing._fixedAmt = share + (p._standalonePrice || 0);
           // qty도 이벤트 그룹 기준으로 갱신 (엠페이스4회 등)
           if(p.qty > existing.qty) existing.qty = p.qty;
         } else {
