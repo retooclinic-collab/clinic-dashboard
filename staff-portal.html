@@ -2920,9 +2920,28 @@ async function smartParse(raw, onProgress) {
 
   // 7.6) 예약금제외 금액 텍스트 파싱: "총X-예약금=Ym" → 예약금 = -(X-Y)
   // _balanceDeduct 대신 _deductAmt로 고정하여 distributePrices의 잔액계산 방지
+    // 다환자: AI가 예약금제외를 qty=N 단일항목으로 합칠 수 있으므로 텍스트매치 수에 맞게 분할
   {
     const ybTextMatches = [...raw.matchAll(/총\s*([\d.]+)\s*[-－]\s*예약금\s*=\s*([\d.]+)/gi)];
     if(ybTextMatches.length > 0) {
+        // 예약금제외 항목 수 vs 텍스트 매치 수 비교
+        const ybItems = finalTreats.filter(t => t.item === '예약금제외' && t._balanceDeduct);
+        const ybCount = ybItems.length;
+        // 텍스트매치가 예약금제외 항목보다 많으면 → qty>1 항목을 분할
+        if(ybTextMatches.length > ybCount && ybCount > 0) {
+          const expanded = [];
+          finalTreats.forEach(t => {
+            if(t.item === '예약금제외' && t._balanceDeduct && (t.qty||1) > 1) {
+              // qty>1인 예약금제외를 개별 항목으로 분할
+              for(let i = 0; i < (t.qty||1); i++) {
+                expanded.push({...t, qty: 1});
+              }
+            } else {
+              expanded.push(t);
+            }
+          });
+          finalTreats = expanded;
+        }
       let ybIdx = 0;
       finalTreats = finalTreats.map(t => {
         if(t.item === '예약금제외' && t._balanceDeduct && ybIdx < ybTextMatches.length) {
