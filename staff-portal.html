@@ -421,6 +421,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <button onclick="setQuickFilter(30)" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">30일</button>
           <button onclick="setThisMonthFilter()" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">이번달</button>
           <button id="btn-csv-download" onclick="downloadCurrentCSV()" style="font-size:11px;color:var(--sub);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">⬇ CSV</button>
+          <button id="btn-monthly-backup" onclick="backupMonthlyData()" style="display:none;font-size:11px;color:#34d399;background:none;border:1px solid #34d399;border-radius:8px;padding:6px 10px;cursor:pointer">💾 월별 백업</button>
         </div>
       </div>
       <!-- 필터 바 -->
@@ -511,7 +512,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
 ══════════════════════════════════════════════ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, getDoc, updateDoc, deleteDoc, query, where, onSnapshot, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, query, where, onSnapshot, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-auth.js";
 
 const cfg = {
@@ -705,12 +706,75 @@ window.fbArchiveAll = async (items, progressCb) => {
   return backupCol;
 };
 
+window.backupMonthlyData = async function() {
+  if(!window._isAdmin){ showToast('관리자만 사용할 수 있어요','error'); return; }
+  var year = window._calYear || new Date().getFullYear();
+  var month = window._calMonth;
+  if(month === undefined || month === null) month = new Date().getMonth();
+  var mm = String(month + 1).padStart(2, '0');
+  var prefix = year + '-' + mm;
+  var colName = 'archived_' + year + mm;
+  var label = year + '년 ' + (month+1) + '월';
+  var allItems = window._allItems || [];
+  var monthItems = allItems.filter(function(it) {
+    return !it.deleted && it.date && it.date.startsWith(prefix);
+  });
+  if(monthItems.length === 0){
+    showToast(label + ' 데이터가 없습니다','error');
+    return;
+  }
+  try {
+    var existingSnap = await getDocs(query(collection(db, colName)));
+    if(existingSnap.size > 0){
+      var overwrite = confirm(label + ' 백업이 이미 존재합니다 (' + existingSnap.size + '건).\n덮어쓰시겠습니까?');
+      if(!overwrite) return;
+    }
+  } catch(e){ }
+  if(!confirm(label + ' 데이터 ' + monthItems.length + '건을 백업하시겠습니까?\n컬렉션: ' + colName)){
+    return;
+  }
+  var btn = document.getElementById('btn-monthly-backup');
+  var origText = btn ? btn.innerHTML : '';
+  try {
+    for(var i = 0; i < monthItems.length; i++){
+      var item = monthItems[i];
+      if(!item.id) continue;
+      await setDoc(doc(db, colName, item.id), {
+        ...item,
+        backupAt: new Date().toISOString(),
+        backupBy: window._fbUser?.email || '',
+        backupMonth: prefix
+      });
+      if(btn) btn.innerHTML = '💾 백업 중... ' + (i+1) + '/' + monthItems.length;
+      if(i % 20 === 19) await new Promise(function(r){ setTimeout(r, 200); });
+    }
+    await setDoc(doc(db, 'audit_log', Date.now().toString()), {
+      action: 'monthly_backup',
+      collection: colName,
+      count: monthItems.length,
+      month: prefix,
+      by: window._fbUser?.email || '',
+      byUid: window._fbUser?.uid || '',
+      at: new Date().toISOString(),
+      serverTs: serverTimestamp()
+    });
+    showToast(label + ' 데이터 ' + monthItems.length + '건 백업 완료! (' + colName + ')','success');
+  } catch(err) {
+    console.error('백업 실패:', err);
+    showToast('백업 실패: ' + err.message, 'error');
+  } finally {
+    if(btn) btn.innerHTML = origText;
+  }
+};
+
 window.startListenHistory = (uid, email) => {
   const isAdmin = email === 'retooclinic@gmail.com';
   window._isAdmin = isAdmin;
-  // 통계 버튼: 관리자만 노출
+  // 통계 버튼 + 백업 버튼: 관리자만 노출
   var statsBtn = document.getElementById('btn-stats-toggle');
   if(statsBtn) statsBtn.style.display = isAdmin ? '' : 'none';
+  var backupBtn = document.getElementById('btn-monthly-backup');
+  if(backupBtn) backupBtn.style.display = isAdmin ? '' : 'none';
   let q;
   if(isAdmin){
     q = query(collection(db,'consultations'));
