@@ -1710,23 +1710,20 @@ function distributePrices(treatments, total, rawText){
         });
       }
     } else if(allFromText){
-      // 모두 명시가인데 합계가 total과 다를 때
+      // 모두 명시가인데 합계가 total과 다를 때 → 명시가 보존, 차이를 할인차감으로 흡수
       const hasBalDeduct = priced.some(t=>t._balanceDeduct);
       if(hasBalDeduct){
         // _balanceDeduct 항목이 있으면 명시가 유지 (잔액계산에서 처리됨)
       } else if(Math.abs(sum - total) > 0.05){
-        const deductSet2 = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','VIP할인혜택','위약금','지정비용','제품','양도']);
-        const fixedItems2 = priced.filter(t=>deductSet2.has(t.item));
-        const scaleItems2 = priced.filter(t=>!deductSet2.has(t.item));
-        const fixedTotal2 = fixedItems2.reduce((s,t)=>s+t.price, 0);
-        const scaleTotal2 = scaleItems2.reduce((s,t)=>s+t.price, 0);
-        const target2 = total - fixedTotal2;
-        if(scaleTotal2 > 0 && Math.abs(scaleTotal2 - target2) > 0.05){
-          const scale = target2 / scaleTotal2;
-          priced = priced.map(t=>{
-            if(deductSet2.has(t.item)) return t;
-            return {...t, price:Math.round(t.price*scale*100)/100};
-          });
+        // ★ Fix F: 명시가 스케일링 금지 — 차이를 VIP할인혜택/할인차감으로 흡수
+        const discrepancy = Math.round((sum - total)*100)/100; // 양수=시술합>total → 할인 필요
+        const vipDiscIdx = priced.findIndex(t=>t.item==='VIP할인혜택');
+        if(vipDiscIdx >= 0){
+          // 기존 VIP할인혜택에 차이 흡수
+          priced[vipDiscIdx] = {...priced[vipDiscIdx], price: Math.round((priced[vipDiscIdx].price - discrepancy)*100)/100};
+        } else {
+          // VIP할인혜택 없으면 할인차감으로 추가
+          priced.push({item:'할인차감', qty:1, price: -Math.abs(discrepancy), fromText:true, _deductAmt: -Math.abs(discrepancy)});
         }
       }
     }
@@ -1765,19 +1762,16 @@ function distributePrices(treatments, total, rawText){
       // 모든 항목이 명시가 → _balanceDeduct 있으면 스킵 (잔액계산에서 처리)
       const hasBalDeduct3 = priced.some(t=>t._balanceDeduct);
       if(!hasBalDeduct3){
-        // 차감/고정 항목은 스케일링 제외 → 나머지만 스케일
-        const deductSet = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','VIP할인혜택','위약금','지정비용','제품','양도']);
-        const fixedItems = priced.filter(t=>deductSet.has(t.item));
-        const scaleItems = priced.filter(t=>!deductSet.has(t.item));
-        const fixedTotal = fixedItems.reduce((s,t)=>s+t.price, 0);
-        const scaleTotal = scaleItems.reduce((s,t)=>s+t.price, 0);
-        const target = total - fixedTotal;
-        if(scaleTotal > 0 && Math.abs(scaleTotal - target) > 0.05){
-          const scale = target / scaleTotal;
-          priced = priced.map(t=>{
-            if(deductSet.has(t.item)) return t;
-            return {...t, price:Math.round(t.price*scale*100)/100};
-          });
+        // ★ Fix F: 명시가 스케일링 금지 — 차이를 VIP할인혜택/할인차감으로 흡수
+        const curSum3 = priced.reduce((s,t)=>s+t.price, 0);
+        const disc3 = Math.round((curSum3 - total)*100)/100;
+        if(Math.abs(disc3) > 0.05){
+          const vipIdx3 = priced.findIndex(t=>t.item==='VIP할인혜택');
+          if(vipIdx3 >= 0){
+            priced[vipIdx3] = {...priced[vipIdx3], price: Math.round((priced[vipIdx3].price - disc3)*100)/100};
+          } else {
+            priced.push({item:'할인차감', qty:1, price: -Math.abs(disc3), fromText:true, _deductAmt: -Math.abs(disc3)});
+          }
         }
       }
     }
@@ -2900,6 +2894,27 @@ async function smartParse(raw, onProgress) {
     console.log('[smartParse] 2차 검증 반영:', newTreats.length + '건');
   }
 
+  // 7.5) 팬텀 항목 제거: 동일 시술명이 양수 가격+0/undefined 가격으로 중복 존재 시 0가격 제거
+  // 예: "회원권혜택 티타늄40kj 사용" → 티타늄(0) 팬텀 + 진짜 티타늄(165)
+  const itemPriceMap = new Map();
+  finalTreats.forEach(t => {
+    const p = t._fixedAmt || 0;
+    if (!itemPriceMap.has(t.item) || p > itemPriceMap.get(t.item)) {
+      itemPriceMap.set(t.item, p);
+    }
+  });
+  const beforeLen = finalTreats.length;
+  finalTreats = finalTreats.filter(t => {
+    const bestP = itemPriceMap.get(t.item) || 0;
+    const myP = t._fixedAmt || 0;
+    // 양수 가격 항목이 존재하는데 이 항목이 0가격이면 팬텀 → 제거
+    if (bestP > 0 && myP === 0 && !t._balanceDeduct && !t._isSv) return false;
+    return true;
+  });
+  if (finalTreats.length < beforeLen) {
+    console.log('[smartParse] 팬텀 항목 제거:', (beforeLen - finalTreats.length) + '건');
+  }
+
   // 8) 결과 조립
   const result = { ...regexResult, treatments: finalTreats,
     _source: 'ai+검증' + (qtyFixed ? ',qty보정' + qtyFixed : '') + (regAdded ? ',조정+' + regAdded : '')
@@ -2922,6 +2937,11 @@ function localParse(raw){
       if(/^\s*vip\s*\d/i.test(t) || /^\s*\d+\s*vip/i.test(t)) return false;
       // 적립 합산줄: "1359.7+100=1459.7m 적립" 등 (숫자+숫자=숫자m 적립)
       if(/^\d[\d.]*\s*\+\s*\d[\d.]*\s*=\s*[\d.]+\s*[mM만]\s*적립/i.test(t)) return false;
+      // 장비사용 메모줄 필터: "티타늄40kj 사용", "온다 100kj 사용", "회원권혜택...사용" 등
+      // 시술 키워드가 포함되어도 "Nkj 사용" 패턴이면 장비사용 기록이므로 제외
+      if(/\d+\s*kj\s*사용/i.test(t) && !/[-=]\s*[\d.]+\s*[mM만]/.test(t)) return false;
+      // "회원권혜택" 또는 "환웬귀" 등 VIP 장비사용 메모 (가격 없는 줄)
+      if(/회원권\s*혜택|환웬귀/i.test(t) && !/[-=]\s*[\d.]+\s*[mM만]/.test(t)) return false;
       // 시술 키워드 포함 줄은 메모 필터 스킵 (시술 라인 끝에 "남음" 등 붙어도 보존)
       if(/\d+월\s*[eE)\s]|이벤트|BBL|소프|울쎄라|울쎼라|미라젯|포텐자|리쥬란|쥬베룩|쥬브아셀|티타늄|온다|오푸스|필러|보톡스|튠페|튠라이너|LDM|아쿠아필/i.test(t)) return true;
       // 메모/주석: "예약금N은..." "남은금액없음" "148.5남음" "지인분" 등
