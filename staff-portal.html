@@ -2764,6 +2764,8 @@ async function verifyParse(raw, treatments) {
    ⑤ 2차 AI 검증: 최종 결과를 AI에게 다시 보여서 틀린 거 잡기 */
 async function smartParse(raw, onProgress) {
   const _sp = onProgress || function(){};
+  // 0) 텍스트 전처리: 약칭/오타 → 정식명칭 치환 (AI·regex 모두에 적용)
+  raw = raw.replace(/미간접종/g, '미라젯');
   // 1) regex 파서 실행
   const regexResult = localParse(raw);
 
