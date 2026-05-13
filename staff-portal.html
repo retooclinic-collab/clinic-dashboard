@@ -2344,7 +2344,7 @@ async function aiParse(raw) {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-opus-4-6',
         max_tokens: 16000,
         thinking: { type: 'enabled', budget_tokens: 10000 },
         system: [{type:'text', text:AI_PARSER_SYSTEM_PROMPT, cache_control:{type:'ephemeral'}}],
@@ -2419,7 +2419,7 @@ async function aiBatchParse(rows, onProgress) {
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: 'claude-opus-4-6',
           max_tokens: 16000,
           thinking: { type: 'enabled', budget_tokens: 10000 },
           system: [{type:'text', text:AI_PARSER_SYSTEM_PROMPT + `\n\n## 배치 모드
@@ -2556,7 +2556,7 @@ index는 입력의 [번호]와 동일하게.`, cache_control:{type:'ephemeral'}}
           headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey,
             'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-6', max_tokens: 8000,
+            model: 'claude-opus-4-6', max_tokens: 8000,
             thinking: { type: 'enabled', budget_tokens: 5000 },
             messages: [{ role: 'user', content: `수납 파싱 결과를 검증하세요.
 
@@ -2645,7 +2645,7 @@ async function verifyParse(raw, treatments) {
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey,
         'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6', max_tokens: 8000,
+        model: 'claude-opus-4-6', max_tokens: 8000,
         thinking: { type: 'enabled', budget_tokens: 5000 },
         messages: [{ role: 'user', content: `수납 파싱 결과를 검증하세요.
 
