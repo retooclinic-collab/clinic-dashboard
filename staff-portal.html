@@ -2280,10 +2280,10 @@ async function aiParse(raw) {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-opus-4-6',
+        model: 'claude-sonnet-4-6',
         max_tokens: 16000,
         thinking: { type: 'enabled', budget_tokens: 10000 },
-        system: AI_PARSER_SYSTEM_PROMPT,
+        system: [{type:'text', text:AI_PARSER_SYSTEM_PROMPT, cache_control:{type:'ephemeral'}}],
         messages: messages
       })
     });
@@ -2350,14 +2350,14 @@ async function aiBatchParse(rows, onProgress) {
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-opus-4-6',
+          model: 'claude-sonnet-4-6',
           max_tokens: 16000,
           thinking: { type: 'enabled', budget_tokens: 10000 },
-          system: AI_PARSER_SYSTEM_PROMPT + `\n\n## 배치 모드
+          system: [{type:'text', text:AI_PARSER_SYSTEM_PROMPT + `\n\n## 배치 모드
 여러 건의 수납 텍스트가 [번호] 형식으로 주어집니다.
 각 건을 파싱하여 JSON 배열로 반환하세요.
 [{"index":0, ...파싱결과}, {"index":1, ...파싱결과}, ...]
-index는 입력의 [번호]와 동일하게.`,
+index는 입력의 [번호]와 동일하게.`, cache_control:{type:'ephemeral'}}],
           messages: [...AI_FEWSHOT_EXAMPLES, { role: 'user', content: numbered }]
         })
       });
@@ -2480,7 +2480,7 @@ index는 입력의 [번호]와 동일하게.`,
           headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey,
             'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
           body: JSON.stringify({
-            model: 'claude-opus-4-6', max_tokens: 8000,
+            model: 'claude-sonnet-4-6', max_tokens: 8000,
             thinking: { type: 'enabled', budget_tokens: 5000 },
             messages: [{ role: 'user', content: `수납 파싱 결과를 검증하세요.
 
@@ -2568,7 +2568,7 @@ async function verifyParse(raw, treatments) {
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey,
         'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
       body: JSON.stringify({
-        model: 'claude-opus-4-6', max_tokens: 8000,
+        model: 'claude-sonnet-4-6', max_tokens: 8000,
         thinking: { type: 'enabled', budget_tokens: 5000 },
         messages: [{ role: 'user', content: `수납 파싱 결과를 검증하세요.
 
