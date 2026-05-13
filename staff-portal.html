@@ -2341,6 +2341,11 @@ async function aiBatchParse(rows, onProgress) {
 
     try {
       _prog({ stage: 'ai', done: batchStart, total: rows.length, batchNum, totalBatches });
+      const _timerStart = Date.now();
+      const _timerInterval = setInterval(() => {
+        const elapsed = Math.round((Date.now() - _timerStart) / 1000);
+        _prog({ stage: 'ai-waiting', done: batchStart, total: rows.length, batchNum, totalBatches, elapsed });
+      }, 1000);
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -2362,6 +2367,7 @@ index는 입력의 [번호]와 동일하게.`, cache_control:{type:'ephemeral'}}
         })
       });
 
+      clearInterval(_timerInterval);
       if (!resp.ok) {
         console.warn('[AI배치] API 에러:', resp.status);
         continue;
@@ -2458,11 +2464,17 @@ index는 입력의 [번호]와 동일하게.`, cache_control:{type:'ephemeral'}}
         if (result.misu > 0) row._misuAmt = result.misu;
       });
     } catch (e) {
+      clearInterval(_timerInterval);
       console.warn('[AI배치] 오류:', e);
     }
   }
 
   _prog({ stage: 'verify', done: 0, total: rows.length });
+  const _vTimerStart = Date.now();
+  const _vTimerInterval = setInterval(() => {
+    const elapsed = Math.round((Date.now() - _vTimerStart) / 1000);
+    _prog({ stage: 'verify-waiting', done: 0, total: rows.length, elapsed });
+  }, 1000);
   // ── 배치 2차 AI 검증: 파싱된 결과를 한번에 검증 (1회 API 호출) ──
   const toVerify = rows.filter(r => _importRows[rows.indexOf(r)] && _importRows[rows.indexOf(r)].treatments);
   if (toVerify.length > 0 && apiKey) {
@@ -2532,6 +2544,7 @@ ${verifyContent}` }]
       }
     } catch(e) { console.warn('[AI배치] 2차 검증 오류:', e); }
   }
+  clearInterval(_vTimerInterval);
   _prog({ stage: 'done', done: rows.length, total: rows.length });
 }
 
@@ -5149,24 +5162,38 @@ function _updateBatchProgress(info) {
   if (!stageEl) return;
   var pct = info.total > 0 ? Math.round(info.done / info.total * 100) : 0;
   if (info.stage === 'ai') {
-    // 1차 AI 분석: 전체의 0~70% 할당
     var aiPct = Math.round(info.done / info.total * 70);
     barEl.style.width = aiPct + '%';
     iconEl.textContent = '🧠';
     if (info.done < info.total) {
       var batchTxt = info.totalBatches > 1 ? ' (배치 ' + info.batchNum + '/' + info.totalBatches + ')' : '';
-      stageEl.textContent = '1차 AI 분석 중...' + batchTxt;
+      stageEl.textContent = '1차 AI 분석 준비 중...' + batchTxt;
     } else {
       stageEl.textContent = '1차 AI 분석 완료!';
     }
     detailEl.textContent = info.done + ' / ' + info.total + '건 완료';
     if (importBtn) importBtn.innerHTML = '⏳ 1차 분석 ' + info.done + '/' + info.total + '건';
+  } else if (info.stage === 'ai-waiting') {
+    var waitPct = Math.min(5 + info.elapsed, 65);
+    barEl.style.width = waitPct + '%';
+    iconEl.textContent = '🧠';
+    var batchTxt = info.totalBatches > 1 ? ' (배치 ' + info.batchNum + '/' + info.totalBatches + ')' : '';
+    stageEl.textContent = '1차 AI 분석 중... ' + info.elapsed + '초' + batchTxt;
+    detailEl.textContent = info.total + '건 처리 중 — AI 응답 대기';
+    if (importBtn) importBtn.innerHTML = '⏳ AI 분석 ' + info.elapsed + '초...';
   } else if (info.stage === 'verify') {
-    barEl.style.width = '75%';
+    barEl.style.width = '72%';
     iconEl.textContent = '🔍';
-    stageEl.textContent = '2차 AI 검증 중...';
+    stageEl.textContent = '2차 AI 검증 준비 중...';
     detailEl.textContent = '파싱 결과 교차 검증';
     if (importBtn) importBtn.innerHTML = '⏳ 2차 검증 중...';
+  } else if (info.stage === 'verify-waiting') {
+    var vPct = Math.min(72 + info.elapsed * 0.5, 95);
+    barEl.style.width = vPct + '%';
+    iconEl.textContent = '🔍';
+    stageEl.textContent = '2차 AI 검증 중... ' + info.elapsed + '초';
+    detailEl.textContent = info.total + '건 결과 교차 검증 중';
+    if (importBtn) importBtn.innerHTML = '⏳ 2차 검증 ' + info.elapsed + '초...';
   } else if (info.stage === 'done') {
     barEl.style.width = '100%';
     iconEl.textContent = '✅';
