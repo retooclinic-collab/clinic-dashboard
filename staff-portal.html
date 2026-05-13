@@ -2025,7 +2025,15 @@ qty = cc수. 1cc→1, 2cc→2
 ★ "5월)" = "5월e)"와 동일! "N월)" 형식도 이벤트 그룹!
   "5월) 울쎄라400샷+소프300샷+커스텀케어 654.5" → 이벤트 묶음 (5월e와 동일 처리)
 - 개별 시술로 분해: 티타튠qty=2, 미라젯qty=2, 쥬베룩볼륨qty=2
-- 뒤의 숫자(247.5)는 묶음 총가격 → 개별 price=null
+- 뒤의 숫자(247.5)는 묶음 총가격 → 개별 price는 묶음총액을 표준가 비율로 분배!
+  ★ price=null로 두지 말고, 묶음총액을 각 시술의 표준가 비율로 나눠서 실제 가격을 채울 것!
+  예) "4월e 티타튠2+미라젯쥬베룩2 247.5"
+    → 티타늄2≈143, 튠페이스2≈154, 미라젯2≈77, 쥬베룩2≈110 표준가합≈484
+    → 티타늄: 247.5×143/484≈73.1, 튠페이스: 247.5×154/484≈78.7, ...
+  예) "5월e 울쎄라900+소프450+쥬브아셀 1138.5"
+    → 울쎄라9×35≈315, 소프9×16≈144, 쥬브아셀≈88 합≈547
+    → 울쎄라: 1138.5×315/547≈655.1, 소프: 1138.5×144/547≈299.5, 쥬브아셀: 1138.5×88/547≈183.9
+- 리쥬란e 같은 번들도 마찬가지: 총가격을 각 항목 표준가 비율로 분배!
 - 이벤트 그룹 밖 시술은 개별 가격 적용
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2373,7 +2381,7 @@ const AI_FEWSHOT_EXAMPLES = [
   { role: 'assistant', content: '<analysis>\n울쎄라300샷191.4 → 울쎄라(100샷) qty=3 price=191.4\n쥬브아셀V1병88 → 쥬브아셀1 price=88\n(하이쿡스5.5) → 하이쿡스1 price=5.5 (단독!)\n-예약금제외 → 예약금제외1\ntotalAmount=281.6\n</analysis>\n{"treatments":[{"item":"울쎄라(100샷)","qty":3,"price":191.4},{"item":"쥬브아셀","qty":1,"price":88},{"item":"하이쿡스","qty":1,"price":5.5},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":281.6,"payMethods":[{"method":"위챗","amt":281.6}],"misu":0,"vipDiscount":0,"credit":0}' },
   // ━━━ 55. ★다환자 파싱 (2명 합산) ━━━
   { role: 'user', content: '1500VIP+차액700=2200M(카)\n[상담내용]\n1500+150+700=2350 적립\n<zhangqiumin님>\n-5월e 울쎄라900+소프450+쥬브아셀 1138.5\n-쥬브아셀 88\n-미라젯38.5\n-아이써마지225샷 132\n-티타늄60kj 99\n-리쥬란e 아이리쥬란2cc+미간보톡스(제오민/눈가대체)+미라젯 115.5\n-입술필러1cc 55\n총1666.5-예약금=1663.2m\n회원권혜택 티타늄40kj 사용\n<zhuangshuting님>\n-온다100kj 143\n-티타늄100kj 165\n-튠페이스b 80kj 99\n-울쎄라400샷 251.9\n-힐로웨이브앞볼2cc 66\n총724.9-예약금=721.6m\n두분합산 2384.8m-34.8할인=2350m 차감 후 남은 금액x/길' },
-  { role: 'assistant', content: '<analysis>\n★다환자! 2명 합산\n1500VIP → VIP회원권1 vipDiscount=150\ntotalAmount=2200\n[zhangqiumin] 5월e 이벤트묶음: 울쎄라(100샷)9+소프웨이브(50샷)9+쥬브아셀1 price=null\n쥬브아셀88 → 쥬브아셀1 price=88\n미라젯38.5 → 미라젯1 price=38.5\n아이써마지225 132 → 아이써마지225 qty=1 price=132\n티타늄60kj 99 → 티타늄2 price=99\n리쥬란e묶음: 리쥬란아이2+보톡스(수입)1+미라젯1 price=null\n입술필러1cc 55 → 필러(수입)1 price=55\n예약금제외1\n회원권혜택 티타늄40kj → 티타늄1 price=0\n[zhuangshuting] 온다1 143+티타늄2 165+튠페이스1 99+울쎄라(100샷)4 251.9+힐로웨이브1 66\n예약금제외1\n-34.8할인 → 할인차감1 price=34.8\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"울쎄라(100샷)","qty":9,"price":null},{"item":"소프웨이브(50샷)","qty":9,"price":null},{"item":"쥬브아셀","qty":2,"price":null},{"item":"미라젯","qty":2,"price":null},{"item":"아이써마지225","qty":1,"price":132},{"item":"티타늄","qty":2,"price":99},{"item":"리쥬란아이","qty":2,"price":null},{"item":"보톡스(수입)","qty":1,"price":null},{"item":"필러(수입)","qty":1,"price":55},{"item":"온다","qty":1,"price":143},{"item":"티타늄","qty":2,"price":165},{"item":"튠페이스","qty":1,"price":99},{"item":"울쎄라(100샷)","qty":4,"price":251.9},{"item":"힐로웨이브","qty":1,"price":66},{"item":"예약금제외","qty":2,"price":0},{"item":"할인차감","qty":1,"price":34.8},{"item":"티타늄","qty":1,"price":0}],"totalAmount":2200,"payMethods":[{"method":"카드","amt":2200}],"misu":0,"vipDiscount":150,"credit":0}' },
+  { role: 'assistant', content: '<analysis>\n★다환자! 2명 합산\n1500VIP → VIP회원권1 vipDiscount=150\ntotalAmount=2200\n[zhangqiumin] 5월e 이벤트묶음: 울쎄라(100샷)9+소프웨이브(50샷)9+쥬브아셀1 price=null\n쥬브아셀88 → 쥬브아셀1 price=88\n미라젯38.5 → 미라젯1 price=38.5\n아이써마지225 132 → 아이써마지225 qty=1 price=132\n티타늄60kj 99 → 티타늄2 price=99\n리쥬란e묶음: 리쥬란아이2+보톡스(수입)1+미라젯1 price=null\n입술필러1cc 55 → 필러(수입)1 price=55\n예약금제외1\n회원권혜택 티타늄40kj → 티타늄1 price=0\n[zhuangshuting] 온다1 143+티타늄2 165+튠페이스1 99+울쎄라(100샷)4 251.9+힐로웨이브1 66\n예약금제외1\n-34.8할인 → 할인차감1 price=34.8\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"울쎄라(100샷)","qty":9,"price":655.6},{"item":"소프웨이브(50샷)","qty":9,"price":299.5},{"item":"쥬브아셀","qty":1,"price":183.4},{"item":"쥬브아셀","qty":1,"price":88},{"item":"미라젯","qty":1,"price":38.5},{"item":"아이써마지225","qty":1,"price":132},{"item":"티타늄","qty":2,"price":99},{"item":"리쥬란아이","qty":2,"price":69.4},{"item":"보톡스(수입)","qty":1,"price":7.9},{"item":"미라젯","qty":1,"price":38.2},{"item":"필러(수입)","qty":1,"price":55},{"item":"온다","qty":1,"price":143},{"item":"티타늄","qty":2,"price":165},{"item":"튠페이스","qty":1,"price":99},{"item":"울쎄라(100샷)","qty":4,"price":251.9},{"item":"힐로웨이브","qty":1,"price":66},{"item":"예약금제외","qty":2,"price":0},{"item":"할인차감","qty":1,"price":34.8},{"item":"티타늄","qty":1,"price":0}],"totalAmount":2200,"payMethods":[{"method":"카드","amt":2200}],"misu":0,"vipDiscount":150,"credit":0}' },
 ];
 
 async function aiParse(raw) {
@@ -2842,11 +2850,21 @@ async function smartParse(raw, onProgress) {
   if (verified && Array.isArray(verified) && verified.length > 0) {
     // 2차 검증 결과 반영: AI가 수정한 항목으로 교체
     // 가격 우선순위: 1차AI 원본 가격 > 2차검증 가격 > regex 가격
-    const aiPriceMap = new Map();
-    aiTreats.forEach(t => { if(t.price !== null && t.price !== undefined) aiPriceMap.set(t.item, t.price); });
+    // ★ 인덱스 기반 매칭: 동일 시술명이 여러 환자에게 있을 때 Map dedup 방지
+    const aiPriceArr = aiTreats.map(t => ({ item: t.item, price: t.price }));
+    const aiUsed = new Set();
+    const findAiPrice = (item) => {
+      for (let i = 0; i < aiPriceArr.length; i++) {
+        if (!aiUsed.has(i) && aiPriceArr[i].item === item && aiPriceArr[i].price !== null && aiPriceArr[i].price !== undefined) {
+          aiUsed.add(i);
+          return aiPriceArr[i].price;
+        }
+      }
+      return undefined;
+    };
     const newTreats = verified.map(vt => {
       const rt = regexMap.get(vt.item);
-      const aiOrigPrice = aiPriceMap.get(vt.item);
+      const aiOrigPrice = findAiPrice(vt.item);
       return {
         item: vt.item, qty: vt.qty || 1,
         _fixedAmt: aiOrigPrice ?? vt.price ?? rt?._fixedAmt ?? undefined,
