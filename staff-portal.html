@@ -1908,6 +1908,7 @@ VIP할인혜택(별도 필드)
 쥬볼 → 쥬베룩볼륨
 콜라겐샤워 → 쥬베룩
 튠페,튠페이스 → 튠페이스
+미간접종 → 미라젯 (미간접종=미라젯 시술의 오기/약칭)
 제네시스ptt,제네시스+ptt → 제네시스+PTT
 피코토닝,듀얼토닝,피코(단독) → 듀얼피코
 피코슈어,피코웨이,피코포커스 → 피코슈어
@@ -2884,7 +2885,7 @@ async function smartParse(raw, onProgress) {
       return {
         item: vt.item, qty: vtQty,
         _fixedAmt: bestPrice,
-        _unitPrice: rt?._unitPrice, _isSv: rt?._isSv || (vt.price === 0),
+        _unitPrice: rt?._unitPrice, _isSv: rt?._isSv || false,
         _balanceDeduct: rt?._balanceDeduct || vt.item === '예약금제외',
         _deductAmt: rt?._deductAmt,
         _verified: true
@@ -2913,6 +2914,38 @@ async function smartParse(raw, onProgress) {
   });
   if (finalTreats.length < beforeLen) {
     console.log('[smartParse] 팬텀 항목 제거:', (beforeLen - finalTreats.length) + '건');
+  }
+
+  // 7.6) 예약금제외 금액 텍스트 파싱: "총X-예약금=Ym" → 예약금 = -(X-Y)
+  // _balanceDeduct 대신 _deductAmt로 고정하여 distributePrices의 잔액계산 방지
+  {
+    const ybTextMatches = [...raw.matchAll(/총\s*([\d.]+)\s*[-－]\s*예약금\s*=\s*([\d.]+)/gi)];
+    if(ybTextMatches.length > 0) {
+      let ybIdx = 0;
+      finalTreats = finalTreats.map(t => {
+        if(t.item === '예약금제외' && t._balanceDeduct && ybIdx < ybTextMatches.length) {
+          const gross = parseFloat(ybTextMatches[ybIdx][1]);
+          const net = parseFloat(ybTextMatches[ybIdx][2]);
+          const deductAmt = -Math.round((gross - net) * 100) / 100;
+          ybIdx++;
+          return {...t, _deductAmt: deductAmt, _balanceDeduct: false, _fixedAmt: deductAmt};
+        }
+        return t;
+      });
+      if(ybIdx > 0) console.log('[smartParse] 예약금 텍스트 파싱:', ybIdx + '건');
+    }
+  }
+
+  // 7.7) VIP회원권 다환자 가격 보정: "차액" 패턴 → VIP는 결제수단 (price=0)
+  // "1500VIP+차액700=2200" → VIP회원권은 카운팅 전용, 시술 아님
+  if(/차액/i.test(raw)) {
+    finalTreats = finalTreats.map(t => {
+      if(t.item === 'VIP회원권' && (t._fixedAmt||0) > 0) {
+        console.log('[smartParse] VIP회원권 차액모드: price', t._fixedAmt, '→ 0');
+        return {...t, _fixedAmt: 0};
+      }
+      return t;
+    });
   }
 
   // 8) 결과 조립
