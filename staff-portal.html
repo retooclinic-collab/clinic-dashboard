@@ -1904,11 +1904,14 @@ VIP할인혜택(별도 필드)
 제네시스ptt,제네시스+ptt → 제네시스+PTT
 피코토닝,듀얼토닝,피코(단독) → 듀얼피코
 피코슈어,피코웨이,피코포커스 → 피코슈어
-포텐자펌핑,펌핑팁,펌핑쥬베룩 → 포텐자(펌핑)
+포텐자펌핑,펌핑팁 → 포텐자(펌핑)
+포텐자펌핑쥬베룩,펌핑쥬베룩 → 포텐자(펌핑) + 쥬베룩 (2개 분리! 섹션7 참조)
 인텐스,인텐스울트라 → 인텐스울트라
 진정관리,진정팩,커스텀케어 → 피부관리
 폭탄수액,백옥슈팅,비타민수액,리커버리수액,리바이탈수액 → 수액
 백옥(단독) → 백옥 (수액과 별도 항목!)
+멀티스킨,멀티스킨N → 멀티스킨부스터 (Ncc는 메모, qty=1)
+필러지정비용 → 지정비용
 마스크팩,크림N박스 → 제품
 아이리쥬란,리쥬란아이 → 리쥬란아이
 써마지225(눈꺼풀),써마지225샷(눈꺼풀메인) → 아이써마지225
@@ -2009,10 +2012,18 @@ qty = cc수. 1cc→1, 2cc→2
 ★ 미라젯과 쥬베룩이 +로 분리돼 있어도 같은 텍스트에 둘 다 있으면:
   쥬베룩 = 쥬베룩볼륨으로 처리 ("미라젯38.5+쥬베룩2cc" → 미라젯1+쥬베룩볼륨1)
 
+★ 포텐자 콤보:
+포텐자펌핑쥬베룩, 펌핑쥬베룩 → 포텐자(펌핑) + 쥬베룩 (2개로 분리!)
+"포텐자펌핑쥬베룩71.5" → 포텐자(펌핑)1 price=71.5 + 쥬베룩1 price=null (별도)
+"포텐자펌핑쥬베룩110" → 합산가 → 표준비율 분배: 포텐자(펌핑)71.5 + 쥬베룩38.5
+이벤트 묶음 안이면 둘 다 price=null
+
 ━━━━━━━━━━━━━━━━━━━━━━━━
 8. 이벤트 그룹 ("N월e")
 ━━━━━━━━━━━━━━━━━━━━━━━━
 "4월e 티타튠2회+미라젯쥬베룩2회 247.5" → 이벤트 묶음
+★ "5월)" = "5월e)"와 동일! "N월)" 형식도 이벤트 그룹!
+  "5월) 울쎄라400샷+소프300샷+커스텀케어 654.5" → 이벤트 묶음 (5월e와 동일 처리)
 - 개별 시술로 분해: 티타튠qty=2, 미라젯qty=2, 쥬베룩볼륨qty=2
 - 뒤의 숫자(247.5)는 묶음 총가격 → 개별 price=null
 - 이벤트 그룹 밖 시술은 개별 가격 적용
@@ -2172,9 +2183,31 @@ price=만원. 텍스트에 가격 있으면 사용, 없으면 null.
 "카" → 카드 | "현,자진" or "현자진" → 현금(자진) | "이체" or "현영" → 이체(현영)
 "알리" → 알리페이 | "위챗" → 위챗 | "제로" → 제로페이
 "미수N" → misu=N (미수금)
-결제수단이 안 보이면 payMethods=[] 비워두기`;
+결제수단이 안 보이면 payMethods=[] 비워두기
 
-/* few-shot 대화 턴: 모든 파싱 경험을 AI 클론에 이식 — 총 50건 */
+━━━━━━━━━━━━━━━━━━━━━━━━
+19. 다환자(multi-patient) 파싱
+━━━━━━━━━━━━━━━━━━━━━━━━
+<이름님> 또는 [이름님] 블록 = 환자 구분. 모든 환자의 시술을 하나의 treatments 배열에 합산!
+각 환자별 "-예약금" → 예약금제외는 환자 수만큼 추가 (2명이면 예약금제외 qty=2).
+"두분합산", "총합", "합산" 뒤 계산식 = 메모 → 무시!
+"N+N+N=N 적립" = 적립금 메모 → credit 필드에만 반영.
+totalAmount = 헤더의 결제금액 (예: 1500VIP+차액700=2200M → totalAmount=2200)
+★ 회원권혜택 시술(무료) → 해당 시술 price=0 (sv와 동일)
+★ "총NNN-예약금=NNNm" → NNNm이 해당 환자의 소계, 예약금 차이는 예약금제외로 처리
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+20. 추가 함정 패턴 (보충)
+━━━━━━━━━━━━━━━━━━━━━━━━
+[함정17] "5월)" = "5월e)"와 동일! 반드시 이벤트 그룹으로 처리! N월) = N월e)
+[함정18] "포텐자펌핑쥬베룩" = 포텐자(펌핑) + 쥬베룩 (2개 분리!) 미라젯쥬베룩처럼!
+[함정19] "멀티스킨6cc" = 멀티스킨부스터 qty=1 (6cc는 용량메모)
+[함정20] "필러지정비용" = 지정비용 (필러 아님!)
+[함정21] "-N차감"이 VIP할인액과 동일하면 → vipDiscount에 이미 포함, 별도 할인차감 만들지 말것!
+  예: VIP700 + "-49차감" → 49=VIP700혜택이므로 할인차감 아님! (vipDiscount=49에 포함)
+  단, VIP할인액과 다른 차감은 할인차감으로 처리`;
+
+/* few-shot 대화 턴: 모든 파싱 경험을 AI 클론에 이식 — 총 55건 */
 const AI_FEWSHOT_EXAMPLES = [
   // ━━━ 1. b=보톡스(필러아님!), 쥬브아셀8%=쥬브아셀, 커스텀케어=피부관리 ━━━
   { role: 'user', content: '5월e)울쎄라300샷+소프웨이브250샷+미라젯쥬브아셀8%1병+커스텀케어+이마b(국)sv=572m(카)' },
@@ -2326,6 +2359,21 @@ const AI_FEWSHOT_EXAMPLES = [
   // ━━━ 50. 복합: 써마지300+온다200KJ+리쥬란HB3cc+힐로웨이브4cc, VIP500 ━━━
   { role: 'user', content: '500vip+차액42=542m(카)\n써마지300 165+온다200kj286+리쥬란HB3cc+힐로웨이브4cc 253-예약금=742.7m차감 후 남은금액x' },
   { role: 'assistant', content: '<analysis>\n500vip → VIP회원권1 vipDiscount=25\n써마지300 165 → 써마지300 qty=1 price=165 (300=항목명!)\n온다200kj286 → 온다 qty=200÷100=2 price=286\n리쥬란HB3cc → 리쥬란HB qty=3\n힐로웨이브4cc → 힐로웨이브 qty=4÷2=2\n253 → 리쥬란HB+힐로웨이브 묶음가\n-예약금 → 예약금제외1\n=742.7m차감 후 남은금액x → 계산메모, 무시!\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"써마지300","qty":1,"price":165},{"item":"온다","qty":2,"price":286},{"item":"리쥬란HB","qty":3,"price":null},{"item":"힐로웨이브","qty":2,"price":null},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":542,"payMethods":[{"method":"카드","amt":542}],"misu":0,"vipDiscount":25,"credit":0}' },
+  // ━━━ 51. ★포텐자펌핑쥬베룩 콤보 분리 + BBL여드름 ━━━
+  { role: 'user', content: '포텐자펌핑쥬베룩110+BBL여드름49.5=159.5m(카)' },
+  { role: 'assistant', content: '<analysis>\n포텐자펌핑쥬베룩110 → ★콤보분리! 포텐자(펌핑)+쥬베룩\n110=합산가 → 표준비율 분배: 포텐자(펌핑)71.5 + 쥬베룩38.5\nBBL여드름49.5 → BBL(여드름)1 price=49.5\n</analysis>\n{"treatments":[{"item":"포텐자(펌핑)","qty":1,"price":71.5},{"item":"쥬베룩","qty":1,"price":38.5},{"item":"BBL(여드름)","qty":1,"price":49.5}],"totalAmount":159.5,"payMethods":[{"method":"카드","amt":159.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 52. ★VIP700 + "5월)" 이벤트 형식 + 울쎄라400샷 + -49차감=VIP혜택 ━━━
+  { role: 'user', content: 'VIP700+차액200.7=900.7m(위챗)\n700+49\n5월) 울쎄라400샷+소프300샷+쥬브아셀V1병+커스텀케어 654.5+BBL여드름49.5+쥬베룩아이49.5-예약금제외-49차감-0.5할인=900.7m' },
+  { role: 'assistant', content: '<analysis>\nVIP700 → VIP회원권1 vipDiscount=49\n5월) → ★"5월)"="5월e)"와 동일! 이벤트그룹!\n울쎄라400샷 → 울쎄라(100샷) qty=4 (이벤트묶음 → price=null)\n소프300샷 → 소프웨이브(50샷) qty=6\n쥬브아셀V1병 → 쥬브아셀1 (V=무시)\n커스텀케어 → 피부관리1\n654.5 → 이벤트묶음가\nBBL여드름49.5 → BBL(여드름)1 price=49.5\n쥬베룩아이49.5 → 쥬베룩아이1 price=49.5\n-예약금제외 → 예약금제외1\n-49차감 → VIP700혜택(49) → 별도항목X\n-0.5할인 → 할인차감1 price=0.5\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"울쎄라(100샷)","qty":4,"price":null},{"item":"소프웨이브(50샷)","qty":6,"price":null},{"item":"쥬브아셀","qty":1,"price":null},{"item":"피부관리","qty":1,"price":null},{"item":"BBL(여드름)","qty":1,"price":49.5},{"item":"쥬베룩아이","qty":1,"price":49.5},{"item":"예약금제외","qty":1,"price":0},{"item":"할인차감","qty":1,"price":0.5}],"totalAmount":900.7,"payMethods":[{"method":"위챗","amt":900.7}],"misu":0,"vipDiscount":49,"credit":0}' },
+  // ━━━ 53. ★멀티스킨+필러지정비용+하이쿡스(단독5.5) ━━━
+  { role: 'user', content: '(비타민+백옥)수액8.8+입술필러1cc(수입)55+5월e 쥬브아셀2병+멀티스킨6cc+미라젯 264-예약금+필러지정비용5.5=330m(알리)' },
+  { role: 'assistant', content: '<analysis>\n(비타민+백옥)수액8.8 → 수액1 price=8.8\n입술필러1cc(수입)55 → 필러(수입)1 price=55\n5월e → 이벤트그룹\n쥬브아셀2병 → 쥬브아셀 qty=2\n멀티스킨6cc → 멀티스킨부스터1 (6cc=메모)\n미라젯 → 미라젯1\n264 → 이벤트묶음가\n-예약금 → 예약금제외1\n+필러지정비용5.5 → 지정비용1 price=5.5\n</analysis>\n{"treatments":[{"item":"수액","qty":1,"price":8.8},{"item":"필러(수입)","qty":1,"price":55},{"item":"쥬브아셀","qty":2,"price":null},{"item":"멀티스킨부스터","qty":1,"price":null},{"item":"미라젯","qty":1,"price":null},{"item":"예약금제외","qty":1,"price":0},{"item":"지정비용","qty":1,"price":5.5}],"totalAmount":330,"payMethods":[{"method":"알리페이","amt":330}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 54. ★하이쿡스 단독=5.5, 예약금제외 역산 ━━━
+  { role: 'user', content: '울쎄라300샷(옆볼XX/광대턱라인이중턱만)191.4+쥬브아셀V1병88(하이쿡스5.5)-예약금제외=281.6m(위챗)' },
+  { role: 'assistant', content: '<analysis>\n울쎄라300샷191.4 → 울쎄라(100샷) qty=3 price=191.4\n쥬브아셀V1병88 → 쥬브아셀1 price=88\n(하이쿡스5.5) → 하이쿡스1 price=5.5 (단독!)\n-예약금제외 → 예약금제외1\ntotalAmount=281.6\n</analysis>\n{"treatments":[{"item":"울쎄라(100샷)","qty":3,"price":191.4},{"item":"쥬브아셀","qty":1,"price":88},{"item":"하이쿡스","qty":1,"price":5.5},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":281.6,"payMethods":[{"method":"위챗","amt":281.6}],"misu":0,"vipDiscount":0,"credit":0}' },
+  // ━━━ 55. ★다환자 파싱 (2명 합산) ━━━
+  { role: 'user', content: '1500VIP+차액700=2200M(카)\n[상담내용]\n1500+150+700=2350 적립\n<zhangqiumin님>\n-5월e 울쎄라900+소프450+쥬브아셀 1138.5\n-쥬브아셀 88\n-미라젯38.5\n-아이써마지225샷 132\n-티타늄60kj 99\n-리쥬란e 아이리쥬란2cc+미간보톡스(제오민/눈가대체)+미라젯 115.5\n-입술필러1cc 55\n총1666.5-예약금=1663.2m\n회원권혜택 티타늄40kj 사용\n<zhuangshuting님>\n-온다100kj 143\n-티타늄100kj 165\n-튠페이스b 80kj 99\n-울쎄라400샷 251.9\n-힐로웨이브앞볼2cc 66\n총724.9-예약금=721.6m\n두분합산 2384.8m-34.8할인=2350m 차감 후 남은 금액x/길' },
+  { role: 'assistant', content: '<analysis>\n★다환자! 2명 합산\n1500VIP → VIP회원권1 vipDiscount=150\ntotalAmount=2200\n[zhangqiumin] 5월e 이벤트묶음: 울쎄라(100샷)9+소프웨이브(50샷)9+쥬브아셀1 price=null\n쥬브아셀88 → 쥬브아셀1 price=88\n미라젯38.5 → 미라젯1 price=38.5\n아이써마지225 132 → 아이써마지225 qty=1 price=132\n티타늄60kj 99 → 티타늄2 price=99\n리쥬란e묶음: 리쥬란아이2+보톡스(수입)1+미라젯1 price=null\n입술필러1cc 55 → 필러(수입)1 price=55\n예약금제외1\n회원권혜택 티타늄40kj → 티타늄1 price=0\n[zhuangshuting] 온다1 143+티타늄2 165+튠페이스1 99+울쎄라(100샷)4 251.9+힐로웨이브1 66\n예약금제외1\n-34.8할인 → 할인차감1 price=34.8\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"울쎄라(100샷)","qty":9,"price":null},{"item":"소프웨이브(50샷)","qty":9,"price":null},{"item":"쥬브아셀","qty":2,"price":null},{"item":"미라젯","qty":2,"price":null},{"item":"아이써마지225","qty":1,"price":132},{"item":"티타늄","qty":2,"price":99},{"item":"리쥬란아이","qty":2,"price":null},{"item":"보톡스(수입)","qty":1,"price":null},{"item":"필러(수입)","qty":1,"price":55},{"item":"온다","qty":1,"price":143},{"item":"티타늄","qty":2,"price":165},{"item":"튠페이스","qty":1,"price":99},{"item":"울쎄라(100샷)","qty":4,"price":251.9},{"item":"힐로웨이브","qty":1,"price":66},{"item":"예약금제외","qty":2,"price":0},{"item":"할인차감","qty":1,"price":34.8},{"item":"티타늄","qty":1,"price":0}],"totalAmount":2200,"payMethods":[{"method":"카드","amt":2200}],"misu":0,"vipDiscount":150,"credit":0}' },
 ];
 
 async function aiParse(raw) {
@@ -2867,11 +2915,12 @@ function localParse(raw){
   // "4월이벤트 소프웨이브350샷+티타늄40kj 451" → 한글 "이벤트" 형식도 지원
   // "4월이벤트 울쎄라400샷+힐로웨이브2cc=286m" → =가격 형식도 지원
   // "4월이벤" 약칭도 지원
+  // "5월)" = "5월e)" 동일 처리 (e 없이 ) 만 오는 경우)
   const eventGroups = [];
   // 패턴1: 가격이 공백 뒤 숫자로 오는 경우 (기존)
   // - 괄호 블록 \([^)]*\) 을 하나의 단위로 건너뛰어 괄호 안 숫자를 가격으로 오인 방지
   // - 합산 가격 "511.5+99" 지원: [\d.]+(?:\+[\d.]+)* → 610.5
-  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=(]|\([^)]*\))*?)\s*([\d.]+(?:\+[\d.]+)*)\s*(?:[mM万]|(?=[-－,\n (]|$)|(?=\+(?!\d)))/g;
+  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*|\)\s*)((?:[^=(]|\([^)]*\))*?)\s*([\d.]+(?:\+[\d.]+)*)\s*(?:[mM万]|(?=[-－,\n (]|$)|(?=\+(?!\d)))/g;
   let evMatch;
   while((evMatch = eventPattern.exec(raw)) !== null){
     const groupName = evMatch[1].replace(/\+/g,'+').trim();
@@ -2882,7 +2931,7 @@ function localParse(raw){
   }
 
   // 패턴2: 가격이 = 뒤에 오는 경우: "4월이벤트 울쎄라400샷+힐로웨이브2cc=286m"
-  const eventPatternEq = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=\n]|\([^)]*\))+?)[=＝]\s*([\d.]+)\s*[mM万]/g;
+  const eventPatternEq = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*|\)\s*)((?:[^=\n]|\([^)]*\))+?)[=＝]\s*([\d.]+)\s*[mM万]/g;
   let evMatch3;
   while((evMatch3 = eventPatternEq.exec(raw)) !== null){
     const groupName = evMatch3[1].replace(/\+/g,'+').trim();
@@ -2896,7 +2945,7 @@ function localParse(raw){
 
   // 이벤트 그룹 가격이 괄호 안에 있는 경우: "4월e) 소프300샷+티타늄40KJ(374)"
   // "4월e 엠페이스4회+온다80KJ(379.5)" — e 뒤 공백 형식도 지원
-  const eventPatternParen = /(?:\d+월?|[가-힣]+)[eE](?:[가-힣]*\)\s*|\s+)((?:[^=(]|\([^)]*\))*?)\(([\d.]+)\)\s*(?=[,\n+\-=]|$)/g;
+  const eventPatternParen = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|\)\s*)((?:[^=(]|\([^)]*\))*?)\(([\d.]+)\)\s*(?=[,\n+\-=]|$)/g;
   let evMatch2;
   while((evMatch2 = eventPatternParen.exec(raw)) !== null){
     const groupName = evMatch2[1].replace(/\+/g,'+').trim();
@@ -3347,6 +3396,13 @@ function localParse(raw){
     // 콤보 미라젯 있는데 별도 단독 미라젯도 있음 → 추가
     const extraQty = standaloneMjAll.reduce((s,m) => s + (m[1] ? parseInt(m[1]) : 1), 0);
     results.push({item:'미라젯', qty: extraQty, _fixedAmt: 38.5 * extraQty});
+  }
+
+  // ── 포텐자펌핑쥬베룩 → 포텐자(펌핑) + 쥬베룩 분리 ──
+  if(/펌핑쥬베룩|포텐자펌핑쥬베룩/i.test(raw)){
+    const hasPotenzaAlready = results.some(r => r.item === '포텐자(펌핑)');
+    if(!hasPotenzaAlready) results.push({item:'포텐자(펌핑)', qty:1});
+    results.push({item:'쥬베룩', qty:1});
   }
 
   // ── 콜라겐샤워 → 쥬베룩 ──
