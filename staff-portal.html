@@ -1630,7 +1630,7 @@ function distributePrices(treatments, total, rawText){
     // 1) 기존 할인차감 항목이 있으면 VIP할인혜택으로 이름 변경 (본문 명시 할인)
     const discountIdx = priced.findIndex(t=>t.item==='할인차감');
     if(discountIdx >= 0){
-      priced[discountIdx] = {...priced[discountIdx], item:'VIP할인혜택'};
+      priced[discountIdx] = {...priced[discountIdx], item:'VIP할인혜택', price: -Math.abs(priced[discountIdx].price)};
     }
 
     // 2) 적립금에 명시적 _fixedAmt(남음)이 있으면 그 값을 유지하여 시술합 계산에 포함
@@ -2869,6 +2869,8 @@ async function smartParse(raw, onProgress) {
         item: vt.item, qty: vt.qty || 1,
         _fixedAmt: aiOrigPrice ?? vt.price ?? rt?._fixedAmt ?? undefined,
         _unitPrice: rt?._unitPrice, _isSv: rt?._isSv || (vt.price === 0),
+        _balanceDeduct: rt?._balanceDeduct || vt.item === '예약금제외',
+        _deductAmt: rt?._deductAmt,
         _verified: true
       };
     });
