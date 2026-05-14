@@ -6,7 +6,7 @@
 <title>청담리투 · 상담입력</title>
 <style>
 :root{
-  --bg:#0f172a;--panel:#1e293b;--carhd:#243044;--bordehr:#334155;
+  --bg:#0f172a;--panel:#1e293b;--card:#243044;--border:#334155;
   --accent:#38bdf8;--accent2:#0ea5e9;--green:#10b981;--red:#ef4444;
   --yellow:#f59e0b;--text:#f1f5f9;--muted:#64748b;--sub:#94a3b8;
 }
@@ -692,6 +692,11 @@ window.fbSaveDraft = async (draftId, data) => {
 window.fbDeleteDraft = async (draftId) => {
   await deleteDoc(doc(db, 'draft_imports', draftId));
 };
+// Expose Firestore helpers to global scope for draft tab (non-module script)
+window._fb = { getDocs, getDoc, query, collection, doc, db, deleteDoc, updateDoc, setDoc, serverTimestamp, where };
+// Also expose directly for simpler access
+window.getDocs = getDocs; window.getDoc_fb = getDoc; window.query_fb = query;
+window.collection_fb = collection; window.doc_fb = doc; window.db_fb = db; window.deleteDoc_fb = deleteDoc;
 
 window.fbUpdateConsultation = async (id, data) => {
   // 수정 전 스냅샷 감사 로그
@@ -804,7 +809,107 @@ window.startListenHistory = (uid, email) => {
   });
 };
 
-window.getDocs=getDocs;window.getDoc=getDoc;window.query=query;window.collection=collection;window.doc=doc;window.db=db;window.deleteDoc=deleteDoc;window.updateDoc=updateDoc;window.setDoc=setDoc;window.serverTimestamp=serverTimestamp;window.where=where;</script>
+/* ── Module-scope draft functions (has access to getDocs/getDoc) ── */
+window.loadDraftList = async function(){
+  const container = document.getElementById('draft-list');
+  if(!container) return;
+  container.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:20px 0">로딩 중...</div>';
+  try {
+    const snap = await getDocs(query(collection(db, 'draft_imports')));
+    if(snap.empty){
+      container.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:40px 0">📭 초안이 없습니다<br><span style="font-size:11px">Claude Cowork에게 구글시트 파싱을 요청하세요</span></div>';
+      return;
+    }
+    let html = '';
+    const docs2 = [];
+    snap.forEach(d => docs2.push({id:d.id, ...d.data()}));
+    docs2.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+    docs2.forEach(d => {
+      const rowCount = (d.rows||[]).length;
+      const date = d.targetDate || '날짜미정';
+      const created = d.createdAt ? new Date(d.createdAt.seconds*1000).toLocaleString('ko') : '';
+      html += `<div style="display:flex;align-items:stretch;gap:0;margin-bottom:0">`;
+      html += `<div onclick="loadDraft('${d.id}')" style="flex:1;padding:14px 16px;background:var(--card);border:1px solid var(--border);border-radius:12px 0 0 12px;cursor:pointer;transition:border-color .2s" onmouseenter="this.style.borderColor='var(--accent)'" onmouseleave="this.style.borderColor='var(--border)'">`;
+      html += `<div style="display:flex;justify-content:space-between;align-items:center">`;
+      html += `<div><span style="font-weight:700;color:var(--text)">${date}</span> <span style="color:var(--accent);font-size:12px">${rowCount}건</span></div>`;
+      html += `<span style="font-size:11px;color:var(--muted)">${created}</span></div>`;
+      if(d.summary) html += `<div style="font-size:11px;color:var(--sub);margin-top:4px">${d.summary}</div>`;
+      html += `</div>`;
+      html += `<button onclick="event.stopPropagation();deleteDraftById('${d.id}')" style="padding:0 14px;background:var(--red);color:#fff;border:none;border-radius:0 12px 12px 0;font-size:16px;cursor:pointer;opacity:0.7;transition:opacity .2s" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.7'" title="초안 삭제">🗑</button>`;
+      html += `</div>`;
+    });
+    container.innerHTML = html;
+  } catch(e){
+    console.error('draft list error:', e);
+    container.innerHTML = '<div style="text-align:center;color:var(--red);font-size:13px;padding:20px 0">초안 로드 실패: '+e.message+'</div>';
+  }
+};
+window.loadDraft = async function(draftId){
+  window._currentDraftId = draftId;
+  try {
+    const snap = await getDoc(doc(db, 'draft_imports', draftId));
+    if(!snap.exists()){ window.showToast && showToast('초안을 찾을 수 없어요','error'); return; }
+    const data = snap.data();
+    window._draftRows = (data.rows||[]).map(r => ({...r, _parseSource:'claude-draft', _origColAmt:r.amount}));
+    window._draftRows.forEach(r => {
+      if(!r.treatments || r.treatments.length === 0){
+        try {
+          const parsed = window.localParse(r.payText);
+          r.treatments = window.distributePrices(parsed.treatments, r.amount, r.payText);
+          if(!r.doctor && parsed.doctor) r.doctor = parsed.doctor;
+        } catch(e){ r.treatments = []; }
+      }
+    });
+    window.renderDraftPreview && window.renderDraftPreview();
+  } catch(e){
+    console.error('draft load error:', e);
+    window.showToast && showToast('초안 로드 실패: '+e.message,'error');
+  }
+};
+window.deleteDraft = async function(){
+  if(!window._currentDraftId) return;
+  if(!confirm('이 초안을 삭제할까요?')) return;
+  try {
+    await deleteDoc(doc(db, 'draft_imports', window._currentDraftId));
+    window.showToast && showToast('초안 삭제 완료','success');
+    window._currentDraftId = null;
+    window.closeDraftPreview && closeDraftPreview();
+    window.loadDraftList();
+  } catch(e){
+    console.error('draft delete error:', e);
+    window.showToast && showToast('삭제 실패','error');
+  }
+};
+window.deleteDraftById = async function(draftId){
+  if(!confirm('이 초안을 삭제할까요?')) return;
+  try {
+    await deleteDoc(doc(db, 'draft_imports', draftId));
+    window.showToast && showToast('초안 삭제 완료','success');
+    if(window._currentDraftId === draftId){
+      window._currentDraftId = null;
+      window.closeDraftPreview && closeDraftPreview();
+    }
+    window.loadDraftList();
+  } catch(e){
+    console.error('draft delete error:', e);
+    window.showToast && showToast('삭제 실패','error');
+  }
+};
+window.confirmDraftImport = async function(){
+  if(!window._isAdmin){ window.showToast && showToast('관리자만 저장할 수 있어요','error'); return; }
+  if(!window._draftRows || !window._draftRows.length){ window.showToast && showToast('저장할 데이터가 없어요','error'); return; }
+  window._importRows = window._draftRows;
+  await window.confirmImport();
+  if(window._currentDraftId && window._importRows.length === 0){
+    try {
+      await deleteDoc(doc(db, 'draft_imports', window._currentDraftId));
+      window.showToast && showToast('초안이 저장 후 삭제되었습니다','success');
+    } catch(e){ console.error('draft delete error:', e); }
+    window._currentDraftId = null;
+    window.closeDraftPreview && closeDraftPreview();
+  }
+};
+</script>
 
 <!-- ══════════════════════════════════════════════
      APP LOGIC
@@ -5864,7 +5969,7 @@ async function loadDraftList(){
   const container = document.getElementById('draft-list');
   container.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:20px 0">로딩 중...</div>';
   try {
-    const snap = await getDocs(query(collection(db, 'draft_imports')));
+    const snap = await window._fb.getDocs(window._fb.query(window._fb.collection(window._fb.db, 'draft_imports')));
     if(snap.empty){
       container.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:40px 0">📭 초안이 없습니다<br><span style="font-size:11px">Claude Cowork에게 구글시트 파싱을 요청하세요</span></div>';
       return;
@@ -5895,7 +6000,7 @@ async function loadDraftList(){
 async function loadDraft(draftId){
   _currentDraftId = draftId;
   try {
-    const snap = await getDoc(doc(db, 'draft_imports', draftId));
+    const snap = await window._fb.getDoc(window._fb.doc(window._fb.db, 'draft_imports', draftId));
     if(!snap.exists()){ showToast('초안을 찾을 수 없어요','error'); return; }
     const data = snap.data();
     _draftRows = (data.rows||[]).map(r => ({
@@ -5954,7 +6059,7 @@ async function confirmDraftImport(){
   // 성공 후 초안 삭제
   if(_currentDraftId && _importRows.length === 0){
     try {
-      await deleteDoc(doc(db, 'draft_imports', _currentDraftId));
+      await window._fb.deleteDoc(window._fb.doc(window._fb.db, 'draft_imports', _currentDraftId));
       showToast('초안이 저장 후 삭제되었습니다','success');
     } catch(e){ console.error('draft delete error:', e); }
     _currentDraftId = null;
@@ -5966,7 +6071,7 @@ async function deleteDraft(){
   if(!_currentDraftId){ return; }
   if(!confirm('이 초안을 삭제할까요?')) return;
   try {
-    await deleteDoc(doc(db, 'draft_imports', _currentDraftId));
+    await window._fb.deleteDoc(window._fb.doc(window._fb.db, 'draft_imports', _currentDraftId));
     showToast('초안 삭제 완료','success');
     _currentDraftId = null;
     closeDraftPreview();
