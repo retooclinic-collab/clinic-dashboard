@@ -1734,18 +1734,25 @@ function distributePrices(treatments, total, rawText){
 
   // VIP할인혜택 자동 추가: VIP회원권 있으면
   //  - VIP 등급별 고정 할인액 적용 (VIP500→25, VIP700→49, VIP1000→100)
-  //  - 할인차감(본문 명시 "-Nm할인")은 할인차감으로 유지 (별도 추가할인)
+  //  - 텍스트에 "N할인"이 있고 N이 VIP 할인액과 같으면 → 할인차감을 VIP할인혜택로 교체 (중복 방지)
+  //  - "N할인"이 VIP 할인액과 다르면 → 할인차감(추가할인) 유지 + VIP할인혜택 별도 추가
   const vipItem = priced.find(t=>t.item==='VIP회원권');
   const hasVip = !!vipItem;
   if(hasVip){
-    // VIP 등급별 고정 할인 테이블
     const VIP_DISCOUNT_TABLE = {300:15, 500:25, 700:49, 1000:100, 1500:150};
     const vipTier = vipItem._vipTier || 0;
     const tierDiscount = VIP_DISCOUNT_TABLE[vipTier] || 0;
 
-    // VIP할인혜택 = 등급별 고정 할인 (할인차감은 추가할인이므로 별도 유지)
     if(tierDiscount > 0){
-      priced.push({item:'VIP할인혜택', qty:1, price: -tierDiscount, fromText:true, _deductAmt: -tierDiscount});
+      // 텍스트 "N할인"이 VIP 할인액과 같은지 확인 → 같으면 교체, 다르면 별도 추가
+      const discIdx = priced.findIndex(t=>t.item==='할인차감');
+      if(discIdx >= 0 && Math.abs(Math.abs(priced[discIdx].price) - tierDiscount) < 0.1){
+        // "25할인" = VIP할인혜택 → 할인차감을 VIP할인혜택로 교체
+        priced[discIdx] = {item:'VIP할인혜택', qty:1, price: -tierDiscount, fromText:true, _deductAmt: -tierDiscount};
+      } else {
+        // 할인차감 없거나 금액 다름 → VIP할인혜택 별도 추가
+        priced.push({item:'VIP할인혜택', qty:1, price: -tierDiscount, fromText:true, _deductAmt: -tierDiscount});
+      }
     }
   }
 
@@ -1763,6 +1770,17 @@ function distributePrices(treatments, total, rawText){
     const otherSum3 = priced.reduce((s,t,i)=>i===creditRemainIdx?s:s+t.price, 0);
     const creditAmt = Math.round((total - otherSum3)*100)/100;
     priced[creditRemainIdx] = {...priced[creditRemainIdx], price: creditAmt > 0 ? creditAmt : 0};
+  }
+
+  // VIP회원권 잔액 흡수: 모든 시술 가격이 명시되어 있으면 스케일링 대신 VIP회원권에 잔액 배정
+  // 예: 시술합621.5 - VIP할인25 - 예약금3.3 = 593.2, total=622.9 → VIP회원권=29.7
+  const vipIdx = priced.findIndex(t=>t.item==='VIP회원권');
+  if(vipIdx >= 0){
+    const nonVipSum = priced.reduce((s,t,i)=>i===vipIdx?s:s+t.price, 0);
+    const vipAmt = Math.round((total - nonVipSum)*100)/100;
+    if(vipAmt >= 0){
+      priced[vipIdx] = {...priced[vipIdx], price: vipAmt, fromText:true};
+    }
   }
 
   // 합계 맞추기 — 0.01 이하 오차도 보정 후 반환
