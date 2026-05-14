@@ -850,7 +850,20 @@ window.loadDraft = async function(draftId){
     const snap = await getDoc(doc(db, 'draft_imports', draftId));
     if(!snap.exists()){ window.showToast && showToast('초안을 찾을 수 없어요','error'); return; }
     const data = snap.data();
-    window._draftRows = (data.rows||[]).map(r => ({...r, _parseSource:'claude-draft', _origColAmt:r.amount}));
+    window._draftRows = (data.rows||[]).map(r => {
+      // Claude 세션이 다른 필드명으로 저장했을 수 있으므로 정규화
+      const row = {...r, _parseSource:'claude-draft', _origColAmt:r.amount};
+      // consultant → staff 매핑 (Claude가 consultant로 저장한 경우)
+      if(!row.staff && row.consultant) row.staff = row.consultant;
+      // category1/category2 → cat1/cat2 매핑
+      if(!row.cat1 && row.category1) row.cat1 = row.category1;
+      if(!row.cat2 && row.category2) row.cat2 = row.category2;
+      // chartNo → chart 매핑
+      if(!row.chart && row.chartNo) row.chart = row.chartNo;
+      // staff 약칭 → 풀네임 매핑 (mapStaff)
+      if(row.staff) row.staff = (typeof mapStaff==='function' ? mapStaff(row.staff) : row.staff);
+      return row;
+    });
     // 항상 payText에서 localParse + distributePrices로 재파싱
     // (Firebase 저장 treatments는 수동 형식이라 항목명/수량/VIP구조 불일치)
     window._draftRows.forEach(r => {
@@ -5928,11 +5941,11 @@ async function confirmImport(){
       await window.fbSaveConsultation({
         type: r.type||'normal',
         date: r.date,
-        chart: r.chart,
+        chart: r.chart || r.chartNo || '',
         name: r.name,
-        cat1: r.cat1,
-        cat2: r.cat2||'',
-        staff: r.staff,
+        cat1: r.cat1 || r.category1 || '',
+        cat2: r.cat2 || r.category2 || '',
+        staff: mapStaff(r.staff || r.consultant || '') || r.staff || '',
         doctor: r.doctor||'',
         paymentText: r.payText,
         amount: r.amount,
