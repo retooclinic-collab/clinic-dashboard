@@ -690,7 +690,6 @@ window.fbSaveDraft = async (draftId, data) => {
   return draftId;
 };
 window.fbDeleteDraft = async (draftId) => {
-window.getDocs=getDocs;window.getDoc=getDoc;window.query=query;window.collection=collection;window.doc=doc;window.db=db;window.deleteDoc=deleteDoc;window.updateDoc=updateDoc;window.setDoc=setDoc;window.serverTimestamp=serverTimestamp;window.where=where;
   await deleteDoc(doc(db, 'draft_imports', draftId));
 };
 
@@ -804,7 +803,8 @@ window.startListenHistory = (uid, email) => {
     showToast('목록 로딩 오류: '+err.message, 'error');
   });
 };
-</script>
+
+window.getDocs=getDocs;window.getDoc=getDoc;window.query=query;window.collection=collection;window.doc=doc;window.db=db;window.deleteDoc=deleteDoc;window.updateDoc=updateDoc;window.setDoc=setDoc;window.serverTimestamp=serverTimestamp;window.where=where;</script>
 
 <!-- ══════════════════════════════════════════════
      APP LOGIC
