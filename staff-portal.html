@@ -851,24 +851,15 @@ window.loadDraft = async function(draftId){
     if(!snap.exists()){ window.showToast && showToast('초안을 찾을 수 없어요','error'); return; }
     const data = snap.data();
     window._draftRows = (data.rows||[]).map(r => ({...r, _parseSource:'claude-draft', _origColAmt:r.amount}));
-    // 초안 데이터 정규화: name→item, 문자열 qty→숫자
+    // 항상 payText에서 localParse + distributePrices로 재파싱
+    // (Firebase 저장 treatments는 수동 형식이라 항목명/수량/VIP구조 불일치)
     window._draftRows.forEach(r => {
-      if(r.treatments && r.treatments.length > 0){
-        r.treatments = r.treatments.map(t => ({
-          item: t.item || t.name || '?',
-          qty: typeof t.qty === 'number' ? t.qty : (parseInt(String(t.qty)) || 1),
-          price: typeof t.price === 'number' ? t.price : (parseFloat(t.price) || 0),
-          ...(t._fixedAmt !== undefined ? {_fixedAmt: t._fixedAmt} : {})
-        }));
-      }
-    });
-    window._draftRows.forEach(r => {
-      if(!r.treatments || r.treatments.length === 0){
+      if(r.payText){
         try {
           const parsed = window.localParse(r.payText);
           r.treatments = window.distributePrices(parsed.treatments, r.amount, r.payText);
           if(!r.doctor && parsed.doctor) r.doctor = parsed.doctor;
-        } catch(e){ r.treatments = []; }
+        } catch(e){ console.warn('draft reparse error:', r.name, e); r.treatments = r.treatments||[]; }
       }
     });
     window.renderDraftPreview && window.renderDraftPreview();
