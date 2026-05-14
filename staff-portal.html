@@ -7,13 +7,13 @@
 <style>
 :root{
   --bg:#0f172a;--panel:#1e293b;--card:#243044;--border:#334155;
-  --accent:#38bdf8;--accent2:#0ea5e9;--green:#10b981;-h-red:#ef4444;
+  --accent:#38bdf8;--accent2:#0ea5e9;--green:#10b981;--red:#ef4444;
   --yellow:#f59e0b;--text:#f1f5f9;--muted:#64748b;--sub:#94a3b8;
 }
-*{box-sizing:borderf-box;margin:0;padding:0}
+*{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;min-height:100vh}
 /* ── FONTS ── */
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/phretendard/dist/web/static/pretendard.css');
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
 /* ── LOGIN ── */
 #login-screen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center}
@@ -183,6 +183,42 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
       <div class="mode-tab" id="tab-list" onclick="setMode('list')">📋 수납 리스트</div>
       <div class="mode-tab" id="tab-vip" onclick="setMode('vip')">💎 VIP 재료</div>
       <div class="mode-tab" id="tab-import" onclick="setMode('import')" style="font-size:11px">📥 일괄 업로드</div>
+      <div class="mode-tab" id="tab-draft" onclick="setMode('draft')" style="font-size:11px">📋 파싱 초안</div>
+    </div>
+
+    <!-- 파싱 초안 섹션 -->
+    <div id="draft-section" style="display:none">
+      <div class="section" style="background:var(--panel);border-radius:16px;padding:20px;border:1px solid var(--border)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          <div class="section-title" style="margin-bottom:0">📋 Claude 파싱 초안</div>
+          <button onclick="loadDraftList()" style="padding:6px 14px;background:var(--accent);color:#0f172a;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">🔄 새로고침</button>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.8">
+          Claude Cowork가 구글시트에서 읽고 파싱한 초안입니다.<br>
+          <span style="color:var(--accent)">초안 선택 → 내용 확인/수정 → Firebase에 저장</span>
+        </div>
+        <div id="draft-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+          <div style="text-align:center;color:var(--muted);font-size:13px;padding:40px 0">로딩 중...</div>
+        </div>
+        <div id="draft-preview" style="display:none;margin-top:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="font-size:12px;font-weight:700;color:var(--sub)">초안 미리보기 <span id="draft-count" style="color:var(--accent)"></span></div>
+            <button onclick="closeDraftPreview()" style="padding:4px 10px;background:var(--border);color:var(--muted);border:none;border-radius:6px;font-size:11px;cursor:pointer">닫기</button>
+          </div>
+          <div id="draft-preview-body" style="display:flex;flex-direction:column;gap:6px;max-height:55vh;overflow-y:auto;padding-right:4px"></div>
+          <div style="display:flex;gap:10px;margin-top:14px">
+            <button onclick="confirmDraftImport()" id="draft-import-btn"
+              style="flex:1;padding:14px;background:var(--green);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:800;cursor:pointer">
+              ✅ Firebase에 전체 저장
+            </button>
+            <button onclick="deleteDraft()"
+              style="padding:14px 18px;background:var(--red);color:#fff;border:none;border-radius:12px;font-size:13px;cursor:pointer;font-weight:700">
+              🗑 초안 삭제
+            </button>
+          </div>
+          <div id="draft-progress" style="margin-top:10px;font-size:12px;color:var(--accent);display:none"></div>
+        </div>
+      </div>
     </div>
 
     <!-- 일괄 업로드 섹션 -->
@@ -421,7 +457,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <button onclick="setQuickFilter(30)" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">30일</button>
           <button onclick="setThisMonthFilter()" style="font-size:11px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">이번달</button>
           <button id="btn-csv-download" onclick="downloadCurrentCSV()" style="font-size:11px;color:var(--sub);background:none;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer">⬇ CSV</button>
-          <button id="btn-monthly-backup" onclick="backupMonthlyData()" style="display:none;font-size:11px;color:#34d399;background:none;border:1px solid #34d399;border-radius:8px;padding:6px 10px;cursor:pointer">💾 월별 백업</button>
+          <button id="btn-list-delete-all" onclick="bulkDeleteAll()" style="display:none;font-size:11px;color:var(--red);background:none;border:1px solid var(--red);border-radius:8px;padding:6px 10px;cursor:pointer">🗑 전체삭제</button>
         </div>
       </div>
       <!-- 필터 바 -->
@@ -592,7 +628,8 @@ onAuthStateChanged(auth, async user => {
     if(user.email === 'retooclinic@gmail.com'){
       const adminDel = document.getElementById('admin-delete-section');
       if(adminDel) adminDel.style.display='block';
-      
+      const listDel = document.getElementById('btn-list-delete-all');
+      if(listDel) listDel.style.display='inline-block';
     } else {
       // 직원: 전체삭제 제거, CSV 다운로드 숨김, 수납리스트 숨김 (일괄업로드는 허용)
       const adminDel = document.getElementById('admin-delete-section');
@@ -641,6 +678,19 @@ window.fbSaveConsultation = async (data) => {
   };
   await setDoc(doc(db, 'consultations', id), docData);
   return id;
+};
+
+// 초안 저장/로드/삭제 (콘솔에서도 접근 가능)
+window.fbSaveDraft = async (draftId, data) => {
+  await setDoc(doc(db, 'draft_imports', draftId), {
+    ...data,
+    createdAt: serverTimestamp(),
+    createdBy: window._fbUser?.email || 'claude-cowork'
+  });
+  return draftId;
+};
+window.fbDeleteDraft = async (draftId) => {
+  await deleteDoc(doc(db, 'draft_imports', draftId));
 };
 
 window.fbUpdateConsultation = async (id, data) => {
@@ -706,75 +756,12 @@ window.fbArchiveAll = async (items, progressCb) => {
   return backupCol;
 };
 
-window.backupMonthlyData = async function() {
-  if(!window._isAdmin){ showToast('관리자만 사용할 수 있어요','error'); return; }
-  var year = window._calYear || new Date().getFullYear();
-  var month = window._calMonth;
-  if(month === undefined || month === null) month = new Date().getMonth();
-  var mm = String(month + 1).padStart(2, '0');
-  var prefix = year + '-' + mm;
-  var colName = 'archived_' + year + mm;
-  var label = year + '년 ' + (month+1) + '월';
-  var allItems = window._allItems || [];
-  var monthItems = allItems.filter(function(it) {
-    return !it.deleted && it.date && it.date.startsWith(prefix);
-  });
-  if(monthItems.length === 0){
-    showToast(label + ' 데이터가 없습니다','error');
-    return;
-  }
-  try {
-    var existingSnap = await getDocs(query(collection(db, colName)));
-    if(existingSnap.size > 0){
-      var overwrite = confirm(label + ' 백업이 이미 존재합니다 (' + existingSnap.size + '건).\n덮어쓰시겠습니까?');
-      if(!overwrite) return;
-    }
-  } catch(e){ }
-  if(!confirm(label + ' 데이터 ' + monthItems.length + '건을 백업하시겠습니까?\n컬렉션: ' + colName)){
-    return;
-  }
-  var btn = document.getElementById('btn-monthly-backup');
-  var origText = btn ? btn.innerHTML : '';
-  try {
-    for(var i = 0; i < monthItems.length; i++){
-      var item = monthItems[i];
-      if(!item.id) continue;
-      await setDoc(doc(db, colName, item.id), {
-        ...item,
-        backupAt: new Date().toISOString(),
-        backupBy: window._fbUser?.email || '',
-        backupMonth: prefix
-      });
-      if(btn) btn.innerHTML = '💾 백업 중... ' + (i+1) + '/' + monthItems.length;
-      if(i % 20 === 19) await new Promise(function(r){ setTimeout(r, 200); });
-    }
-    await setDoc(doc(db, 'audit_log', Date.now().toString()), {
-      action: 'monthly_backup',
-      collection: colName,
-      count: monthItems.length,
-      month: prefix,
-      by: window._fbUser?.email || '',
-      byUid: window._fbUser?.uid || '',
-      at: new Date().toISOString(),
-      serverTs: serverTimestamp()
-    });
-    showToast(label + ' 데이터 ' + monthItems.length + '건 백업 완료! (' + colName + ')','success');
-  } catch(err) {
-    console.error('백업 실패:', err);
-    showToast('백업 실패: ' + err.message, 'error');
-  } finally {
-    if(btn) btn.innerHTML = origText;
-  }
-};
-
 window.startListenHistory = (uid, email) => {
   const isAdmin = email === 'retooclinic@gmail.com';
   window._isAdmin = isAdmin;
-  // 통계 버튼 + 백업 버튼: 관리자만 노출
+  // 통계 버튼: 관리자만 노출
   var statsBtn = document.getElementById('btn-stats-toggle');
   if(statsBtn) statsBtn.style.display = isAdmin ? '' : 'none';
-  var backupBtn = document.getElementById('btn-monthly-backup');
-  if(backupBtn) backupBtn.style.display = isAdmin ? '' : 'none';
   let q;
   if(isAdmin){
     q = query(collection(db,'consultations'));
@@ -814,7 +801,7 @@ window.startListenHistory = (uid, email) => {
   }, err => {
     console.error('history listener error:', err);
     showToast('목록 로딩 오류: '+err.message, 'error');
-  });f
+  });
 };
 </script>
 
@@ -822,7 +809,6 @@ window.startListenHistory = (uid, email) => {
      APP LOGIC
 ══════════════════════════════════════════════ -->
 <script>
-  /* v271: progress indicators */
 /* ── 최근 3일 간단 목록 ── */
 function renderRecentEntries(items){
   const el = document.getElementById('recent-entries-list');
@@ -950,11 +936,16 @@ function setMode(mode){
   document.getElementById('tab-normal').className='mode-tab'+(mode==='normal'?' active':'');
   document.getElementById('tab-vip').className='mode-tab'+(mode==='vip'?' vip-active':'');
   document.getElementById('tab-import').className='mode-tab'+(mode==='import'?' active':'');
+  const tabDraft = document.getElementById('tab-draft');
+  if(tabDraft) tabDraft.className='mode-tab'+(mode==='draft'?' active':'');
   const tabList = document.getElementById('tab-list');
   if(tabList) tabList.className='mode-tab'+(mode==='list'?' active':'');
 
   document.getElementById('vip-notice').style.display=mode==='vip'?'block':'none';
   document.getElementById('import-section').style.display=mode==='import'?'block':'none';
+  const draftSec = document.getElementById('draft-section');
+  if(draftSec) draftSec.style.display=mode==='draft'?'block':'none';
+  if(mode==='draft') loadDraftList();
 
   // 수납 리스트: list 탭 + import 탭에서 모두 표시
   const showList = mode==='list' || mode==='import';
@@ -963,7 +954,8 @@ function setMode(mode){
 
   // 관리자 전용 버튼 (list/import 모드)
   if(showList && window._isAdmin){
-    
+    const listDel = document.getElementById('btn-list-delete-all');
+    if(listDel) listDel.style.display='inline-block';
     const csvBtn = document.getElementById('btn-csv-download');
     if(csvBtn) csvBtn.style.display='inline-block';
   }
@@ -1272,31 +1264,34 @@ function extractTextPrices(raw, treatments){
 
       // 외부(top-level)에서 먼저 가격 추출 → 확실한 가격
       // 같은 항목이 여러 세그먼트에 나오면 (보톡스 등) 가격 합산
+      // ★ kw가 seg에만 매칭(outer에는 불일치)이면 → 괄호 inner에서만 찾아야 함
+      //    예: "쥬브아셀V1병88(하이쿡스5.5)" → 하이쿡스는 inner에서 5.5를 받아야 함
       const kwInOuter = kw.test(outer);
       if(kwInOuter || kw.test(seg)){
         if(kwInOuter){
           const p = getPrice(outer);
-        if(p!==null){
-          if(found[t.item]!==undefined && t.qty > 1){
-            // 같은 항목 반복 → 합산 (사각턱b 33 + 자갈턱b 22 + 콧볼b 22)
-            found[t.item] = Math.round((found[t.item] + p)*100)/100;
+          if(p!==null){
+            if(found[t.item]!==undefined && t.qty > 1){
+              // 같은 항목 반복 → 합산 (사각턱b 33 + 자갈턱b 22 + 콧볼b 22)
+              found[t.item] = Math.round((found[t.item] + p)*100)/100;
+            } else if(found[t.item]===undefined){
+              found[t.item] = p;
+              if(!_segItemMap[_segIdx]) _segItemMap[_segIdx] = [];
+              _segItemMap[_segIdx].push({item: t.item, price: p});
+            }
           } else if(found[t.item]===undefined){
-            found[t.item] = p;
-            if(!_segItemMap[_segIdx]) _segItemMap[_segIdx] = [];
-            _segItemMap[_segIdx].push({item: t.item, price: p});
-          }
-        } else if(found[t.item]===undefined){
-          // outer에 키워드는 있지만 가격이 없으면, inner에서 순수 숫자 찾기
-          // 예: 소프300샷(이마제외얼전)+티타늄40KJ(390.5) → outer "티타늄40KJ" 가격없음, inner "(390.5)"
-          for(const inn of inner){
-            const pureNum = inn.match(/^\s*([\d]+\.?\d*)\s*$/);
-            if(pureNum){
-              const v = parseFloat(pureNum[1]);
-              if(v>=1 && v<3000){ found[t.item]=v; break; }
+            // outer에 키워드는 있지만 가격이 없으면, inner에서 순수 숫자 찾기
+            // 예: 소프300샷(이마제외얼전)+티타늄40KJ(390.5) → outer "티타늄40KJ" 가격없음, inner "(390.5)"
+            for(const inn of inner){
+              const pureNum = inn.match(/^\s*([\d]+\.?\d*)\s*$/);
+              if(pureNum){
+                const v = parseFloat(pureNum[1]);
+                if(v>=1 && v<3000){ found[t.item]=v; break; }
+              }
             }
           }
         }
-                }
+        // kw가 seg에만 매칭(outer 불일치): inner로 폴스루 → 아래 foundParen 블록에서 처리
       }
 
       // 괄호 안에서 발견 → 잠정 가격 (합계 초과 시 잔액으로 재계산)
@@ -1630,7 +1625,7 @@ function distributePrices(treatments, total, rawText){
     // 1) 기존 할인차감 항목이 있으면 VIP할인혜택으로 이름 변경 (본문 명시 할인)
     const discountIdx = priced.findIndex(t=>t.item==='할인차감');
     if(discountIdx >= 0){
-      priced[discountIdx] = {...priced[discountIdx], item:'VIP할인혜택', price: -Math.abs(priced[discountIdx].price)};
+      priced[discountIdx] = {...priced[discountIdx], item:'VIP할인혜택'};
     }
 
     // 2) 적립금에 명시적 _fixedAmt(남음)이 있으면 그 값을 유지하여 시술합 계산에 포함
@@ -1710,20 +1705,23 @@ function distributePrices(treatments, total, rawText){
         });
       }
     } else if(allFromText){
-      // 모두 명시가인데 합계가 total과 다를 때 → 명시가 보존, 차이를 할인차감으로 흡수
+      // 모두 명시가인데 합계가 total과 다를 때
       const hasBalDeduct = priced.some(t=>t._balanceDeduct);
       if(hasBalDeduct){
         // _balanceDeduct 항목이 있으면 명시가 유지 (잔액계산에서 처리됨)
       } else if(Math.abs(sum - total) > 0.05){
-        // ★ Fix F: 명시가 스케일링 금지 — 차이를 VIP할인혜택/할인차감으로 흡수
-        const discrepancy = Math.round((sum - total)*100)/100; // 양수=시술합>total → 할인 필요
-        const vipDiscIdx = priced.findIndex(t=>t.item==='VIP할인혜택');
-        if(vipDiscIdx >= 0){
-          // 기존 VIP할인혜택에 차이 흡수
-          priced[vipDiscIdx] = {...priced[vipDiscIdx], price: Math.round((priced[vipDiscIdx].price - discrepancy)*100)/100};
-        } else {
-          // VIP할인혜택 없으면 할인차감으로 추가
-          priced.push({item:'할인차감', qty:1, price: -Math.abs(discrepancy), fromText:true, _deductAmt: -Math.abs(discrepancy)});
+        const deductSet2 = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','VIP할인혜택','위약금','지정비용','제품','양도']);
+        const fixedItems2 = priced.filter(t=>deductSet2.has(t.item));
+        const scaleItems2 = priced.filter(t=>!deductSet2.has(t.item));
+        const fixedTotal2 = fixedItems2.reduce((s,t)=>s+t.price, 0);
+        const scaleTotal2 = scaleItems2.reduce((s,t)=>s+t.price, 0);
+        const target2 = total - fixedTotal2;
+        if(scaleTotal2 > 0 && Math.abs(scaleTotal2 - target2) > 0.05){
+          const scale = target2 / scaleTotal2;
+          priced = priced.map(t=>{
+            if(deductSet2.has(t.item)) return t;
+            return {...t, price:Math.round(t.price*scale*100)/100};
+          });
         }
       }
     }
@@ -1762,16 +1760,19 @@ function distributePrices(treatments, total, rawText){
       // 모든 항목이 명시가 → _balanceDeduct 있으면 스킵 (잔액계산에서 처리)
       const hasBalDeduct3 = priced.some(t=>t._balanceDeduct);
       if(!hasBalDeduct3){
-        // ★ Fix F: 명시가 스케일링 금지 — 차이를 VIP할인혜택/할인차감으로 흡수
-        const curSum3 = priced.reduce((s,t)=>s+t.price, 0);
-        const disc3 = Math.round((curSum3 - total)*100)/100;
-        if(Math.abs(disc3) > 0.05){
-          const vipIdx3 = priced.findIndex(t=>t.item==='VIP할인혜택');
-          if(vipIdx3 >= 0){
-            priced[vipIdx3] = {...priced[vipIdx3], price: Math.round((priced[vipIdx3].price - disc3)*100)/100};
-          } else {
-            priced.push({item:'할인차감', qty:1, price: -Math.abs(disc3), fromText:true, _deductAmt: -Math.abs(disc3)});
-          }
+        // 차감/고정 항목은 스케일링 제외 → 나머지만 스케일
+        const deductSet = new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','환불','예약금','예약금제외','VIP회원권','VIP할인혜택','위약금','지정비용','제품','양도']);
+        const fixedItems = priced.filter(t=>deductSet.has(t.item));
+        const scaleItems = priced.filter(t=>!deductSet.has(t.item));
+        const fixedTotal = fixedItems.reduce((s,t)=>s+t.price, 0);
+        const scaleTotal = scaleItems.reduce((s,t)=>s+t.price, 0);
+        const target = total - fixedTotal;
+        if(scaleTotal > 0 && Math.abs(scaleTotal - target) > 0.05){
+          const scale = target / scaleTotal;
+          priced = priced.map(t=>{
+            if(deductSet.has(t.item)) return t;
+            return {...t, price:Math.round(t.price*scale*100)/100};
+          });
         }
       }
     }
@@ -1788,24 +1789,11 @@ function distributePrices(treatments, total, rawText){
   });
 
   // 예약금제외(_balanceDeduct) 잔액 계산: 다른 항목 합 - total = 차감액
-  // 복수 _balanceDeduct 항목 지원 (다환자 각각 예약금제외)
-  const balIndices = priced.map((t,i)=>t._balanceDeduct?i:-1).filter(i=>i>=0);
-  if(balIndices.length > 0){
-    const balSet = new Set(balIndices);
-    const othersSum = priced.reduce((s,t,i)=>balSet.has(i)?s:s+t.price, 0);
-    const totalDeduct = Math.round((total - othersSum)*100)/100;
-    if(totalDeduct < 0 && balIndices.length > 1){
-      const each = Math.round(totalDeduct/balIndices.length*100)/100;
-      balIndices.forEach(idx=>{
-        priced[idx] = {...priced[idx], price: each};
-      });
-    } else if(totalDeduct < 0){
-      priced[balIndices[0]] = {...priced[balIndices[0]], price: totalDeduct};
-    } else {
-      balIndices.forEach(idx=>{
-        priced[idx] = {...priced[idx], price: 0};
-      });
-    }
+  const balIdx = priced.findIndex(t=>t._balanceDeduct);
+  if(balIdx >= 0){
+    const othersSum = priced.reduce((s,t,i)=>i===balIdx?s:s+t.price, 0);
+    const deductAmt = Math.round((total - othersSum)*100)/100;
+    priced[balIdx] = {...priced[balIdx], price: deductAmt < 0 ? deductAmt : 0};
   }
 
   // ── %할인 비율 스케일링 ──
@@ -1908,18 +1896,14 @@ VIP할인혜택(별도 필드)
 쥬볼 → 쥬베룩볼륨
 콜라겐샤워 → 쥬베룩
 튠페,튠페이스 → 튠페이스
-미간접종 → 미라젯 (미간접종=미라젯 시술의 오기/약칭)
 제네시스ptt,제네시스+ptt → 제네시스+PTT
 피코토닝,듀얼토닝,피코(단독) → 듀얼피코
 피코슈어,피코웨이,피코포커스 → 피코슈어
-포텐자펌핑,펌핑팁 → 포텐자(펌핑)
-포텐자펌핑쥬베룩,펌핑쥬베룩 → 포텐자(펌핑) + 쥬베룩 (2개 분리! 섹션7 참조)
+포텐자펌핑,펌핑팁,펌핑쥬베룩 → 포텐자(펌핑)
 인텐스,인텐스울트라 → 인텐스울트라
 진정관리,진정팩,커스텀케어 → 피부관리
 폭탄수액,백옥슈팅,비타민수액,리커버리수액,리바이탈수액 → 수액
 백옥(단독) → 백옥 (수액과 별도 항목!)
-멀티스킨,멀티스킨N → 멀티스킨부스터 (Ncc는 메모, qty=1)
-필러지정비용 → 지정비용
 마스크팩,크림N박스 → 제품
 아이리쥬란,리쥬란아이 → 리쥬란아이
 써마지225(눈꺼풀),써마지225샷(눈꺼풀메인) → 아이써마지225
@@ -2020,28 +2004,12 @@ qty = cc수. 1cc→1, 2cc→2
 ★ 미라젯과 쥬베룩이 +로 분리돼 있어도 같은 텍스트에 둘 다 있으면:
   쥬베룩 = 쥬베룩볼륨으로 처리 ("미라젯38.5+쥬베룩2cc" → 미라젯1+쥬베룩볼륨1)
 
-★ 포텐자 콤보:
-포텐자펌핑쥬베룩, 펌핑쥬베룩 → 포텐자(펌핑) + 쥬베룩 (2개로 분리!)
-"포텐자펌핑쥬베룩71.5" → 포텐자(펌핑)1 price=71.5 + 쥬베룩1 price=null (별도)
-"포텐자펌핑쥬베룩110" → 합산가 → 표준비율 분배: 포텐자(펌핑)71.5 + 쥬베룩38.5
-이벤트 묶음 안이면 둘 다 price=null
-
 ━━━━━━━━━━━━━━━━━━━━━━━━
 8. 이벤트 그룹 ("N월e")
 ━━━━━━━━━━━━━━━━━━━━━━━━
 "4월e 티타튠2회+미라젯쥬베룩2회 247.5" → 이벤트 묶음
-★ "5월)" = "5월e)"와 동일! "N월)" 형식도 이벤트 그룹!
-  "5월) 울쎄라400샷+소프300샷+커스텀케어 654.5" → 이벤트 묶음 (5월e와 동일 처리)
 - 개별 시술로 분해: 티타튠qty=2, 미라젯qty=2, 쥬베룩볼륨qty=2
-- 뒤의 숫자(247.5)는 묶음 총가격 → 개별 price는 묶음총액을 표준가 비율로 분배!
-  ★ price=null로 두지 말고, 묶음총액을 각 시술의 표준가 비율로 나눠서 실제 가격을 채울 것!
-  예) "4월e 티타튠2+미라젯쥬베룩2 247.5"
-    → 티타늄2≈143, 튠페이스2≈154, 미라젯2≈77, 쥬베룩2≈110 표준가합≈484
-    → 티타늄: 247.5×143/484≈73.1, 튠페이스: 247.5×154/484≈78.7, ...
-  예) "5월e 울쎄라900+소프450+쥬브아셀 1138.5"
-    → 울쎄라9×35≈315, 소프9×16≈144, 쥬브아셀≈88 합≈547
-    → 울쎄라: 1138.5×315/547≈655.1, 소프: 1138.5×144/547≈299.5, 쥬브아셀: 1138.5×88/547≈183.9
-- 리쥬란e 같은 번들도 마찬가지: 총가격을 각 항목 표준가 비율로 분배!
+- 뒤의 숫자(247.5)는 묶음 총가격 → 개별 price=null
 - 이벤트 그룹 밖 시술은 개별 가격 적용
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2131,7 +2099,7 @@ price=만원. 텍스트에 가격 있으면 사용, 없으면 null.
 ✗ "VIP할인혜택"을 treatments에 넣지 마세요! VIP할인혜택은 후처리 단계에서 자동 생성됩니다. 당신이 만들면 중복!
 ✗ "차액결제", "튠라이너R", "튠페이스R", "프리미엄써마지" 같은 허용 목록에 없는 항목을 절대 만들지 마세요!
 ✗ 동일 시술을 2개 항목으로 분리하지 마세요! "이마b미간b(제오민)44" → 보톡스(수입) qty=2 (1개 항목!)
-✗ 이벤트 그룹 총가를 개별 시술의 price로 넣지 마세요! 이벤트 묶음가 → 개별 price=null
+✗ price를 null로 반환하지 마세요! 묶음가(여러 시술 합산 가격)일 때는 첫 번째 시술에 전체 묶음가를 넣고, 나머지 시술은 price=0으로 하세요. 예: "아이리쥬란2cc+목피코 115.5" → 리쥬란아이 price=115.5, 피코토닝 price=0
 ✗ "=NNNm차감 후 남은금액" 같은 계산 메모를 시술로 파싱하지 마세요!
 ✗ 결제방식 뒤의 메모(/길, /담당자이름 등)를 시술로 파싱하지 마세요!
 ✗ "적립금N" 패턴을 시술로 파싱하지 마세요! → vipDiscount나 credit 필드에만 반영!
@@ -2156,7 +2124,8 @@ price=만원. 텍스트에 가격 있으면 사용, 없으면 null.
 [함정13] "볼륨튠2회" → 튠페이스 qty=2 + 쥬베룩볼륨 qty=2 (콤보 분해!)
 [함정14] "하이쿡스" → 줄기세포와 함께 나오면 qty=1, price=0 (재료비). 줄기세포 없이 단독이면 qty=1, price=5.5
 [함정15] "스킨b 제오민업그레이드" → 보톡스(수입) qty=1 (스킨보톡스=전얼굴1부위)
-[함정16] "처방전"
+[함정16] "처방전" → qty=1, price=텍스트가격 (보통 1.1). 단독 항목
+[함정17] "멀티스킨6cc" → 멀티스킨부스터 qty=1, price=49.5
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 17. 추가 시술 매핑 상세
@@ -2199,31 +2168,9 @@ price=만원. 텍스트에 가격 있으면 사용, 없으면 null.
 "카" → 카드 | "현,자진" or "현자진" → 현금(자진) | "이체" or "현영" → 이체(현영)
 "알리" → 알리페이 | "위챗" → 위챗 | "제로" → 제로페이
 "미수N" → misu=N (미수금)
-결제수단이 안 보이면 payMethods=[] 비워두기
+결제수단이 안 보이면 payMethods=[] 비워두기`;
 
-━━━━━━━━━━━━━━━━━━━━━━━━
-19. 다환자(multi-patient) 파싱
-━━━━━━━━━━━━━━━━━━━━━━━━
-<이름님> 또는 [이름님] 블록 = 환자 구분. 모든 환자의 시술을 하나의 treatments 배열에 합산!
-각 환자별 "-예약금" → 예약금제외는 환자 수만큼 추가 (2명이면 예약금제외 qty=2).
-"두분합산", "총합", "합산" 뒤 계산식 = 메모 → 무시!
-"N+N+N=N 적립" = 적립금 메모 → credit 필드에만 반영.
-totalAmount = 헤더의 결제금액 (예: 1500VIP+차액700=2200M → totalAmount=2200)
-★ 회원권혜택 시술(무료) → 해당 시술 price=0 (sv와 동일)
-★ "총NNN-예약금=NNNm" → NNNm이 해당 환자의 소계, 예약금 차이는 예약금제외로 처리
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-20. 추가 함정 패턴 (보충)
-━━━━━━━━━━━━━━━━━━━━━━━━
-[함정17] "5월)" = "5월e)"와 동일! 반드시 이벤트 그룹으로 처리! N월) = N월e)
-[함정18] "포텐자펌핑쥬베룩" = 포텐자(펌핑) + 쥬베룩 (2개 분리!) 미라젯쥬베룩처럼!
-[함정19] "멀티스킨6cc" = 멀티스킨부스터 qty=1 (6cc는 용량메모)
-[함정20] "필러지정비용" = 지정비용 (필러 아님!)
-[함정21] "-N차감"이 VIP할인액과 동일하면 → vipDiscount에 이미 포함, 별도 할인차감 만들지 말것!
-  예: VIP700 + "-49차감" → 49=VIP700혜택이므로 할인차감 아님! (vipDiscount=49에 포함)
-  단, VIP할인액과 다른 차감은 할인차감으로 처리`;
-
-/* few-shot 대화 턴: 모든 파싱 경험을 AI 클론에 이식 — 총 55건 */
+/* few-shot 대화 턴: 모든 파싱 경험을 AI 클론에 이식 — 총 50건 */
 const AI_FEWSHOT_EXAMPLES = [
   // ━━━ 1. b=보톡스(필러아님!), 쥬브아셀8%=쥬브아셀, 커스텀케어=피부관리 ━━━
   { role: 'user', content: '5월e)울쎄라300샷+소프웨이브250샷+미라젯쥬브아셀8%1병+커스텀케어+이마b(국)sv=572m(카)' },
@@ -2375,21 +2322,6 @@ const AI_FEWSHOT_EXAMPLES = [
   // ━━━ 50. 복합: 써마지300+온다200KJ+리쥬란HB3cc+힐로웨이브4cc, VIP500 ━━━
   { role: 'user', content: '500vip+차액42=542m(카)\n써마지300 165+온다200kj286+리쥬란HB3cc+힐로웨이브4cc 253-예약금=742.7m차감 후 남은금액x' },
   { role: 'assistant', content: '<analysis>\n500vip → VIP회원권1 vipDiscount=25\n써마지300 165 → 써마지300 qty=1 price=165 (300=항목명!)\n온다200kj286 → 온다 qty=200÷100=2 price=286\n리쥬란HB3cc → 리쥬란HB qty=3\n힐로웨이브4cc → 힐로웨이브 qty=4÷2=2\n253 → 리쥬란HB+힐로웨이브 묶음가\n-예약금 → 예약금제외1\n=742.7m차감 후 남은금액x → 계산메모, 무시!\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"써마지300","qty":1,"price":165},{"item":"온다","qty":2,"price":286},{"item":"리쥬란HB","qty":3,"price":null},{"item":"힐로웨이브","qty":2,"price":null},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":542,"payMethods":[{"method":"카드","amt":542}],"misu":0,"vipDiscount":25,"credit":0}' },
-  // ━━━ 51. ★포텐자펌핑쥬베룩 콤보 분리 + BBL여드름 ━━━
-  { role: 'user', content: '포텐자펌핑쥬베룩110+BBL여드름49.5=159.5m(카)' },
-  { role: 'assistant', content: '<analysis>\n포텐자펌핑쥬베룩110 → ★콤보분리! 포텐자(펌핑)+쥬베룩\n110=합산가 → 표준비율 분배: 포텐자(펌핑)71.5 + 쥬베룩38.5\nBBL여드름49.5 → BBL(여드름)1 price=49.5\n</analysis>\n{"treatments":[{"item":"포텐자(펌핑)","qty":1,"price":71.5},{"item":"쥬베룩","qty":1,"price":38.5},{"item":"BBL(여드름)","qty":1,"price":49.5}],"totalAmount":159.5,"payMethods":[{"method":"카드","amt":159.5}],"misu":0,"vipDiscount":0,"credit":0}' },
-  // ━━━ 52. ★VIP700 + "5월)" 이벤트 형식 + 울쎄라400샷 + -49차감=VIP혜택 ━━━
-  { role: 'user', content: 'VIP700+차액200.7=900.7m(위챗)\n700+49\n5월) 울쎄라400샷+소프300샷+쥬브아셀V1병+커스텀케어 654.5+BBL여드름49.5+쥬베룩아이49.5-예약금제외-49차감-0.5할인=900.7m' },
-  { role: 'assistant', content: '<analysis>\nVIP700 → VIP회원권1 vipDiscount=49\n5월) → ★"5월)"="5월e)"와 동일! 이벤트그룹!\n울쎄라400샷 → 울쎄라(100샷) qty=4 (이벤트묶음 → price=null)\n소프300샷 → 소프웨이브(50샷) qty=6\n쥬브아셀V1병 → 쥬브아셀1 (V=무시)\n커스텀케어 → 피부관리1\n654.5 → 이벤트묶음가\nBBL여드름49.5 → BBL(여드름)1 price=49.5\n쥬베룩아이49.5 → 쥬베룩아이1 price=49.5\n-예약금제외 → 예약금제외1\n-49차감 → VIP700혜택(49) → 별도항목X\n-0.5할인 → 할인차감1 price=0.5\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"울쎄라(100샷)","qty":4,"price":null},{"item":"소프웨이브(50샷)","qty":6,"price":null},{"item":"쥬브아셀","qty":1,"price":null},{"item":"피부관리","qty":1,"price":null},{"item":"BBL(여드름)","qty":1,"price":49.5},{"item":"쥬베룩아이","qty":1,"price":49.5},{"item":"예약금제외","qty":1,"price":0},{"item":"할인차감","qty":1,"price":0.5}],"totalAmount":900.7,"payMethods":[{"method":"위챗","amt":900.7}],"misu":0,"vipDiscount":49,"credit":0}' },
-  // ━━━ 53. ★멀티스킨+필러지정비용+하이쿡스(단독5.5) ━━━
-  { role: 'user', content: '(비타민+백옥)수액8.8+입술필러1cc(수입)55+5월e 쥬브아셀2병+멀티스킨6cc+미라젯 264-예약금+필러지정비용5.5=330m(알리)' },
-  { role: 'assistant', content: '<analysis>\n(비타민+백옥)수액8.8 → 수액1 price=8.8\n입술필러1cc(수입)55 → 필러(수입)1 price=55\n5월e → 이벤트그룹\n쥬브아셀2병 → 쥬브아셀 qty=2\n멀티스킨6cc → 멀티스킨부스터1 (6cc=메모)\n미라젯 → 미라젯1\n264 → 이벤트묶음가\n-예약금 → 예약금제외1\n+필러지정비용5.5 → 지정비용1 price=5.5\n</analysis>\n{"treatments":[{"item":"수액","qty":1,"price":8.8},{"item":"필러(수입)","qty":1,"price":55},{"item":"쥬브아셀","qty":2,"price":null},{"item":"멀티스킨부스터","qty":1,"price":null},{"item":"미라젯","qty":1,"price":null},{"item":"예약금제외","qty":1,"price":0},{"item":"지정비용","qty":1,"price":5.5}],"totalAmount":330,"payMethods":[{"method":"알리페이","amt":330}],"misu":0,"vipDiscount":0,"credit":0}' },
-  // ━━━ 54. ★하이쿡스 단독=5.5, 예약금제외 역산 ━━━
-  { role: 'user', content: '울쎄라300샷(옆볼XX/광대턱라인이중턱만)191.4+쥬브아셀V1병88(하이쿡스5.5)-예약금제외=281.6m(위챗)' },
-  { role: 'assistant', content: '<analysis>\n울쎄라300샷191.4 → 울쎄라(100샷) qty=3 price=191.4\n쥬브아셀V1병88 → 쥬브아셀1 price=88\n(하이쿡스5.5) → 하이쿡스1 price=5.5 (단독!)\n-예약금제외 → 예약금제외1\ntotalAmount=281.6\n</analysis>\n{"treatments":[{"item":"울쎄라(100샷)","qty":3,"price":191.4},{"item":"쥬브아셀","qty":1,"price":88},{"item":"하이쿡스","qty":1,"price":5.5},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":281.6,"payMethods":[{"method":"위챗","amt":281.6}],"misu":0,"vipDiscount":0,"credit":0}' },
-  // ━━━ 55. ★다환자 파싱 (2명 합산) ━━━
-  { role: 'user', content: '1500VIP+차액700=2200M(카)\n[상담내용]\n1500+150+700=2350 적립\n<zhangqiumin님>\n-5월e 울쎄라900+소프450+쥬브아셀 1138.5\n-쥬브아셀 88\n-미라젯38.5\n-아이써마지225샷 132\n-티타늄60kj 99\n-리쥬란e 아이리쥬란2cc+미간보톡스(제오민/눈가대체)+미라젯 115.5\n-입술필러1cc 55\n총1666.5-예약금=1663.2m\n회원권혜택 티타늄40kj 사용\n<zhuangshuting님>\n-온다100kj 143\n-티타늄100kj 165\n-튠페이스b 80kj 99\n-울쎄라400샷 251.9\n-힐로웨이브앞볼2cc 66\n총724.9-예약금=721.6m\n두분합산 2384.8m-34.8할인=2350m 차감 후 남은 금액x/길' },
-  { role: 'assistant', content: '<analysis>\n★다환자! 2명 합산\n1500VIP → VIP회원권1 vipDiscount=150\ntotalAmount=2200\n[zhangqiumin] 5월e 이벤트묶음: 울쎄라(100샷)9+소프웨이브(50샷)9+쥬브아셀1 price=null\n쥬브아셀88 → 쥬브아셀1 price=88\n미라젯38.5 → 미라젯1 price=38.5\n아이써마지225 132 → 아이써마지225 qty=1 price=132\n티타늄60kj 99 → 티타늄2 price=99\n리쥬란e묶음: 리쥬란아이2+보톡스(수입)1+미라젯1 price=null\n입술필러1cc 55 → 필러(수입)1 price=55\n예약금제외1\n회원권혜택 티타늄40kj → 티타늄1 price=0\n[zhuangshuting] 온다1 143+티타늄2 165+튠페이스1 99+울쎄라(100샷)4 251.9+힐로웨이브1 66\n예약금제외1\n-34.8할인 → 할인차감1 price=34.8\n</analysis>\n{"treatments":[{"item":"VIP회원권","qty":1,"price":0},{"item":"울쎄라(100샷)","qty":9,"price":655.6},{"item":"소프웨이브(50샷)","qty":9,"price":299.5},{"item":"쥬브아셀","qty":1,"price":183.4},{"item":"쥬브아셀","qty":1,"price":88},{"item":"미라젯","qty":1,"price":38.5},{"item":"아이써마지225","qty":1,"price":132},{"item":"티타늄","qty":2,"price":99},{"item":"리쥬란아이","qty":2,"price":69.4},{"item":"보톡스(수입)","qty":1,"price":7.9},{"item":"미라젯","qty":1,"price":38.2},{"item":"필러(수입)","qty":1,"price":55},{"item":"온다","qty":1,"price":143},{"item":"티타늄","qty":2,"price":165},{"item":"튠페이스","qty":1,"price":99},{"item":"울쎄라(100샷)","qty":4,"price":251.9},{"item":"힐로웨이브","qty":1,"price":66},{"item":"예약금제외","qty":2,"price":0},{"item":"할인차감","qty":1,"price":34.8},{"item":"티타늄","qty":1,"price":0}],"totalAmount":2200,"payMethods":[{"method":"카드","amt":2200}],"misu":0,"vipDiscount":150,"credit":0}' },
 ];
 
 async function aiParse(raw) {
@@ -2411,7 +2343,7 @@ async function aiParse(raw) {
         model: 'claude-opus-4-6',
         max_tokens: 16000,
         thinking: { type: 'enabled', budget_tokens: 10000 },
-        system: [{type:'text', text:AI_PARSER_SYSTEM_PROMPT, cache_control:{type:'ephemeral'}}],
+        system: AI_PARSER_SYSTEM_PROMPT,
         messages: messages
       })
     });
@@ -2455,25 +2387,20 @@ async function aiParse(raw) {
 
 /* AI 배치 파싱: 여러 건을 한번에 보내서 처리 (일괄업로드용) */
 async function aiBatchParse(rows, onProgress) {
-  const _prog = onProgress || function(){};
   const apiKey = localStorage.getItem('claude_api_key');
   if (!apiKey || rows.length === 0) return;
+  const _prog = onProgress || function(){};
 
   // 최대 30건씩 배치 (토큰 한도 고려)
   const BATCH_SIZE = 30;
   const totalBatches = Math.ceil(rows.length / BATCH_SIZE);
   for (let batchStart = 0; batchStart < rows.length; batchStart += BATCH_SIZE) {
-    const batch = rows.slice(batchStart, batchStart + BATCH_SIZE);
     const batchNum = Math.floor(batchStart / BATCH_SIZE) + 1;
+    const batch = rows.slice(batchStart, batchStart + BATCH_SIZE);
     const numbered = batch.map((r, i) => `[${batchStart + i}] ${r.payText}`).join('\n');
+    _prog({ stage: 'ai', done: batchStart, total: rows.length, batchNum, totalBatches });
 
     try {
-      _prog({ stage: 'ai', done: batchStart, total: rows.length, batchNum, totalBatches });
-      const _timerStart = Date.now();
-      const _timerInterval = setInterval(() => {
-        const elapsed = Math.round((Date.now() - _timerStart) / 1000);
-        _prog({ stage: 'ai-waiting', done: batchStart, total: rows.length, batchNum, totalBatches, elapsed });
-      }, 1000);
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -2486,16 +2413,15 @@ async function aiBatchParse(rows, onProgress) {
           model: 'claude-opus-4-6',
           max_tokens: 16000,
           thinking: { type: 'enabled', budget_tokens: 10000 },
-          system: [{type:'text', text:AI_PARSER_SYSTEM_PROMPT + `\n\n## 배치 모드
+          system: AI_PARSER_SYSTEM_PROMPT + `\n\n## 배치 모드
 여러 건의 수납 텍스트가 [번호] 형식으로 주어집니다.
 각 건을 파싱하여 JSON 배열로 반환하세요.
 [{"index":0, ...파싱결과}, {"index":1, ...파싱결과}, ...]
-index는 입력의 [번호]와 동일하게.`, cache_control:{type:'ephemeral'}}],
+index는 입력의 [번호]와 동일하게.`,
           messages: [...AI_FEWSHOT_EXAMPLES, { role: 'user', content: numbered }]
         })
       });
 
-      clearInterval(_timerInterval);
       if (!resp.ok) {
         console.warn('[AI배치] API 에러:', resp.status);
         continue;
@@ -2592,18 +2518,12 @@ index는 입력의 [번호]와 동일하게.`, cache_control:{type:'ephemeral'}}
         if (result.misu > 0) row._misuAmt = result.misu;
       });
     } catch (e) {
-      clearInterval(_timerInterval);
       console.warn('[AI배치] 오류:', e);
     }
   }
 
-  _prog({ stage: 'verify', done: 0, total: rows.length });
-  const _vTimerStart = Date.now();
-  const _vTimerInterval = setInterval(() => {
-    const elapsed = Math.round((Date.now() - _vTimerStart) / 1000);
-    _prog({ stage: 'verify-waiting', done: 0, total: rows.length, elapsed });
-  }, 1000);
   // ── 배치 2차 AI 검증: 파싱된 결과를 한번에 검증 (1회 API 호출) ──
+  _prog({ stage: 'verify', done: 0, total: rows.length });
   const toVerify = rows.filter(r => _importRows[rows.indexOf(r)] && _importRows[rows.indexOf(r)].treatments);
   if (toVerify.length > 0 && apiKey) {
     try {
@@ -2672,7 +2592,6 @@ ${verifyContent}` }]
       }
     } catch(e) { console.warn('[AI배치] 2차 검증 오류:', e); }
   }
-  clearInterval(_vTimerInterval);
   _prog({ stage: 'done', done: rows.length, total: rows.length });
 }
 
@@ -2764,8 +2683,6 @@ async function verifyParse(raw, treatments) {
    ⑤ 2차 AI 검증: 최종 결과를 AI에게 다시 보여서 틀린 거 잡기 */
 async function smartParse(raw, onProgress) {
   const _sp = onProgress || function(){};
-  // 0) 텍스트 전처리: 약칭/오타 → 정식명칭 치환 (AI·regex 모두에 적용)
-  raw = raw.replace(/미간접종/g, '미라젯');
   // 1) regex 파서 실행
   const regexResult = localParse(raw);
 
@@ -2797,6 +2714,7 @@ async function smartParse(raw, onProgress) {
     if (rt) {
       // 공통 항목: qty만 regex 보정 (수학 변환)
       if (ft.qty !== rt.qty) { ft.qty = rt.qty; ft._qtyFromRegex = true; qtyFixed++; }
+      // AI가 가격을 명시했으면 AI 가격 우선, null이면 regex 가격 사용
       if (ft._fixedAmt === undefined && rt._fixedAmt !== undefined) ft._fixedAmt = rt._fixedAmt;
       if (rt._unitPrice !== undefined) ft._unitPrice = rt._unitPrice;
       if (rt._isSv) ft._isSv = true;
@@ -2860,113 +2778,20 @@ async function smartParse(raw, onProgress) {
   if (verified && Array.isArray(verified) && verified.length > 0) {
     // 2차 검증 결과 반영: AI가 수정한 항목으로 교체
     // 가격 우선순위: 1차AI 원본 가격 > 2차검증 가격 > regex 가격
-    // ★ 인덱스 기반 매칭: 동일 시술명이 여러 환자에게 있을 때 Map dedup 방지
-    const aiPriceArr = aiTreats.map(t => ({ item: t.item, price: t.price, qty: t.qty || 1 }));
-    const aiUsed = new Set();
-    const findAiPrice = (item, qty) => {
-      for (let i = 0; i < aiPriceArr.length; i++) {
-        if (!aiUsed.has(i) && aiPriceArr[i].item === item && aiPriceArr[i].qty === qty && aiPriceArr[i].price != null) {
-          aiUsed.add(i);
-          return aiPriceArr[i].price;
-        }
-      }
-      for (let i = 0; i < aiPriceArr.length; i++) {
-        if (!aiUsed.has(i) && aiPriceArr[i].item === item && aiPriceArr[i].price != null) {
-          aiUsed.add(i);
-          return aiPriceArr[i].price;
-        }
-      }
-      return undefined;
-    };
+    const aiPriceMap = new Map();
+    aiTreats.forEach(t => { if(t.price !== null && t.price !== undefined) aiPriceMap.set(t.item, t.price); });
     const newTreats = verified.map(vt => {
       const rt = regexMap.get(vt.item);
-      const vtQty = vt.qty || 1;
-      const aiOrigPrice = findAiPrice(vt.item, vtQty);
-      const bestPrice = (vt.price != null && vt.price > 0) ? vt.price
-                       : (aiOrigPrice ?? vt.price ?? rt?._fixedAmt ?? undefined);
+      const aiOrigPrice = aiPriceMap.get(vt.item);
       return {
-        item: vt.item, qty: vtQty,
-        _fixedAmt: bestPrice,
-        _unitPrice: rt?._unitPrice, _isSv: rt?._isSv || false,
-        _balanceDeduct: rt?._balanceDeduct || vt.item === '예약금제외',
-        _deductAmt: rt?._deductAmt,
+        item: vt.item, qty: vt.qty || 1,
+        _fixedAmt: aiOrigPrice ?? vt.price ?? rt?._fixedAmt ?? undefined,
+        _unitPrice: rt?._unitPrice, _isSv: rt?._isSv || (vt.price === 0),
         _verified: true
       };
     });
     finalTreats = newTreats;
     console.log('[smartParse] 2차 검증 반영:', newTreats.length + '건');
-  }
-
-  // 7.5) 팬텀 항목 제거: 동일 시술명이 양수 가격+0/undefined 가격으로 중복 존재 시 0가격 제거
-  // 예: "회원권혜택 티타늄40kj 사용" → 티타늄(0) 팬텀 + 진짜 티타늄(165)
-  const itemPriceMap = new Map();
-  finalTreats.forEach(t => {
-    const p = t._fixedAmt || 0;
-    if (!itemPriceMap.has(t.item) || p > itemPriceMap.get(t.item)) {
-      itemPriceMap.set(t.item, p);
-    }
-  });
-  const beforeLen = finalTreats.length;
-  finalTreats = finalTreats.filter(t => {
-    const bestP = itemPriceMap.get(t.item) || 0;
-    const myP = t._fixedAmt || 0;
-    // 양수 가격 항목이 존재하는데 이 항목이 0가격이면 팬텀 → 제거
-    if (bestP > 0 && myP === 0 && !t._balanceDeduct && !t._isSv) return false;
-    return true;
-  });
-  if (finalTreats.length < beforeLen) {
-    console.log('[smartParse] 팬텀 항목 제거:', (beforeLen - finalTreats.length) + '건');
-  }
-
-  // 7.6) 예약금제외 금액 텍스트 파싱: "총X-예약금=Ym" → 예약금 = -(X-Y)
-  // _balanceDeduct 대신 _deductAmt로 고정하여 distributePrices의 잔액계산 방지
-    // 다환자: AI가 예약금제외를 qty=N 단일항목으로 합칠 수 있으므로 텍스트매치 수에 맞게 분할
-  {
-    const ybTextMatches = [...raw.matchAll(/총\s*([\d.]+)\s*[-－]\s*예약금\s*=\s*([\d.]+)/gi)];
-    if(ybTextMatches.length > 0) {
-        // 예약금제외 항목 수 vs 텍스트 매치 수 비교
-        const ybItems = finalTreats.filter(t => t.item === '예약금제외' && t._balanceDeduct);
-        const ybCount = ybItems.length;
-        // 텍스트매치가 예약금제외 항목보다 많으면 → qty>1 항목을 분할
-        if(ybTextMatches.length > ybCount && ybCount > 0) {
-          const expanded = [];
-          finalTreats.forEach(t => {
-            if(t.item === '예약금제외' && t._balanceDeduct && (t.qty||1) > 1) {
-              // qty>1인 예약금제외를 개별 항목으로 분할
-              for(let i = 0; i < (t.qty||1); i++) {
-                expanded.push({...t, qty: 1});
-              }
-            } else {
-              expanded.push(t);
-            }
-          });
-          finalTreats = expanded;
-        }
-      let ybIdx = 0;
-      finalTreats = finalTreats.map(t => {
-        if(t.item === '예약금제외' && t._balanceDeduct && ybIdx < ybTextMatches.length) {
-          const gross = parseFloat(ybTextMatches[ybIdx][1]);
-          const net = parseFloat(ybTextMatches[ybIdx][2]);
-          const deductAmt = -Math.round((gross - net) * 100) / 100;
-          ybIdx++;
-          return {...t, _deductAmt: deductAmt, _balanceDeduct: false, _fixedAmt: deductAmt};
-        }
-        return t;
-      });
-      if(ybIdx > 0) console.log('[smartParse] 예약금 텍스트 파싱:', ybIdx + '건');
-    }
-  }
-
-  // 7.7) VIP회원권 다환자 가격 보정: "차액" 패턴 → VIP는 결제수단 (price=0)
-  // "1500VIP+차액700=2200" → VIP회원권은 카운팅 전용, 시술 아님
-  if(/차액/i.test(raw)) {
-    finalTreats = finalTreats.map(t => {
-      if(t.item === 'VIP회원권' && (t._fixedAmt||0) > 0) {
-        console.log('[smartParse] VIP회원권 차액모드: price', t._fixedAmt, '→ 0');
-        return {...t, _fixedAmt: 0};
-      }
-      return t;
-    });
   }
 
   // 8) 결과 조립
@@ -2991,11 +2816,6 @@ function localParse(raw){
       if(/^\s*vip\s*\d/i.test(t) || /^\s*\d+\s*vip/i.test(t)) return false;
       // 적립 합산줄: "1359.7+100=1459.7m 적립" 등 (숫자+숫자=숫자m 적립)
       if(/^\d[\d.]*\s*\+\s*\d[\d.]*\s*=\s*[\d.]+\s*[mM만]\s*적립/i.test(t)) return false;
-      // 장비사용 메모줄 필터: "티타늄40kj 사용", "온다 100kj 사용", "회원권혜택...사용" 등
-      // 시술 키워드가 포함되어도 "Nkj 사용" 패턴이면 장비사용 기록이므로 제외
-      if(/\d+\s*kj\s*사용/i.test(t) && !/[-=]\s*[\d.]+\s*[mM만]/.test(t)) return false;
-      // "회원권혜택" 또는 "환웬귀" 등 VIP 장비사용 메모 (가격 없는 줄)
-      if(/회원권\s*혜택|환웬귀/i.test(t) && !/[-=]\s*[\d.]+\s*[mM만]/.test(t)) return false;
       // 시술 키워드 포함 줄은 메모 필터 스킵 (시술 라인 끝에 "남음" 등 붙어도 보존)
       if(/\d+월\s*[eE)\s]|이벤트|BBL|소프|울쎄라|울쎼라|미라젯|포텐자|리쥬란|쥬베룩|쥬브아셀|티타늄|온다|오푸스|필러|보톡스|튠페|튠라이너|LDM|아쿠아필/i.test(t)) return true;
       // 메모/주석: "예약금N은..." "남은금액없음" "148.5남음" "지인분" 등
@@ -3031,12 +2851,11 @@ function localParse(raw){
   // "4월이벤트 소프웨이브350샷+티타늄40kj 451" → 한글 "이벤트" 형식도 지원
   // "4월이벤트 울쎄라400샷+힐로웨이브2cc=286m" → =가격 형식도 지원
   // "4월이벤" 약칭도 지원
-  // "5월)" = "5월e)" 동일 처리 (e 없이 ) 만 오는 경우)
   const eventGroups = [];
   // 패턴1: 가격이 공백 뒤 숫자로 오는 경우 (기존)
   // - 괄호 블록 \([^)]*\) 을 하나의 단위로 건너뛰어 괄호 안 숫자를 가격으로 오인 방지
   // - 합산 가격 "511.5+99" 지원: [\d.]+(?:\+[\d.]+)* → 610.5
-  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*|\)\s*)((?:[^=(]|\([^)]*\))*?)\s*([\d.]+(?:\+[\d.]+)*)\s*(?:[mM万]|(?=[-－,\n (]|$)|(?=\+(?!\d)))/g;
+  const eventPattern = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=(]|\([^)]*\))*?)\s*([\d.]+(?:\+[\d.]+)*)\s*(?:[mM万]|(?=[-－,\n (]|$))/g;
   let evMatch;
   while((evMatch = eventPattern.exec(raw)) !== null){
     const groupName = evMatch[1].replace(/\+/g,'+').trim();
@@ -3047,7 +2866,7 @@ function localParse(raw){
   }
 
   // 패턴2: 가격이 = 뒤에 오는 경우: "4월이벤트 울쎄라400샷+힐로웨이브2cc=286m"
-  const eventPatternEq = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*|\)\s*)((?:[^=\n]|\([^)]*\))+?)[=＝]\s*([\d.]+)\s*[mM万]/g;
+  const eventPatternEq = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|이벤트?\s*)((?:[^=\n]|\([^)]*\))+?)[=＝]\s*([\d.]+)\s*[mM万]/g;
   let evMatch3;
   while((evMatch3 = eventPatternEq.exec(raw)) !== null){
     const groupName = evMatch3[1].replace(/\+/g,'+').trim();
@@ -3061,7 +2880,7 @@ function localParse(raw){
 
   // 이벤트 그룹 가격이 괄호 안에 있는 경우: "4월e) 소프300샷+티타늄40KJ(374)"
   // "4월e 엠페이스4회+온다80KJ(379.5)" — e 뒤 공백 형식도 지원
-  const eventPatternParen = /(?:\d+월?|[가-힣]+)(?:[eE](?:[가-힣]*\)\s*|\s+)|\)\s*)((?:[^=(]|\([^)]*\))*?)\(([\d.]+)\)\s*(?=[,\n+\-=]|$)/g;
+  const eventPatternParen = /(?:\d+월?|[가-힣]+)[eE](?:[가-힣]*\)\s*|\s+)((?:[^=(]|\([^)]*\))*?)\(([\d.]+)\)\s*(?=[,\n+\-=]|$)/g;
   let evMatch2;
   while((evMatch2 = eventPatternParen.exec(raw)) !== null){
     const groupName = evMatch2[1].replace(/\+/g,'+').trim();
@@ -3224,14 +3043,16 @@ function localParse(raw){
   }
 
   // ── 울쎄라 (중복 언급 합산, 울쎼라 오타 포함) ──
-  const ulceraAll = [...raw.matchAll(/울쎄라\s*(\d+)\s*샷?/gi), ...raw.matchAll(/울쎼라\s*(\d+)\s*샷?/gi)];
+  // rawForParse 사용: 이벤트 그룹에서 이미 처리된 울쎄라는 제외
+  const ulceraAll = [...rawForParse.matchAll(/울쎄라\s*(\d+)\s*샷?/gi), ...rawForParse.matchAll(/울쎼라\s*(\d+)\s*샷?/gi)];
   if(ulceraAll.length > 0){
     const totalShots = ulceraAll.reduce((s,m) => s + parseInt(m[1]), 0);
     results.push({item:'울쎄라(100샷)', qty: Math.round(totalShots/100)});
   }
 
   // ── 소프웨이브 (중복 언급 합산: 소프150샷+소프50샷 → 4개) ──
-  const sopwAll = [...raw.matchAll(/소프(?:웨이브)?\s*(\d+)\s*샷?/gi)];
+  // rawForParse 사용: 이벤트 그룹에서 이미 처리된 소프는 제외
+  const sopwAll = [...rawForParse.matchAll(/소프(?:웨이브)?\s*(\d+)\s*샷?/gi)];
   if(sopwAll.length > 0){
     const totalShots = sopwAll.reduce((s,m) => s + parseInt(m[1]), 0);
     results.push({item:'소프웨이브(50샷)', qty: Math.round(totalShots/50)});
@@ -3369,7 +3190,8 @@ function localParse(raw){
   // ── 엠페이스 ──
   // "엠페이스2회176" → qty=2, "엠페이스2-1,2-2" → qty=2 (영역번호)
   // "엠페이스(40분)" → qty=2 (20분당 1회), "엠페이스88" → qty=1 (88은 가격)
-    const empeHoe = raw.match(/엠페(?:이스)?\s*(?:\([^)]*\)\s*)?(\d+)\s*회/i);  // N회 직접 매칭 (최우선, 괄호 건너뜀)
+  // "엠페이스(20분)7회" → qty=7 (괄호 건너뛰기)
+  const empeHoe = raw.match(/엠페(?:이스)?\s*(?:\([^)]*\)\s*)?(\d+)\s*회/i);  // N회 직접 매칭 (최우선, 괄호 건너뜀)
   const empeQtyArea = raw.match(/엠페(?:이스)?\s*([1-9])\s*-\s*\d/i);  // "엠페이스2-1" (영역번호, 1자리만)
   const empeMin = raw.match(/엠페(?:이스)?[^+\-]*?\(?(\d+)\s*분\)?/i);
   const empeS = /엠페(?:이스)?/i.test(raw) && !empeHoe && !empeQtyArea && !empeMin;
@@ -3512,13 +3334,6 @@ function localParse(raw){
     // 콤보 미라젯 있는데 별도 단독 미라젯도 있음 → 추가
     const extraQty = standaloneMjAll.reduce((s,m) => s + (m[1] ? parseInt(m[1]) : 1), 0);
     results.push({item:'미라젯', qty: extraQty, _fixedAmt: 38.5 * extraQty});
-  }
-
-  // ── 포텐자펌핑쥬베룩 → 포텐자(펌핑) + 쥬베룩 분리 ──
-  if(/펌핑쥬베룩|포텐자펌핑쥬베룩/i.test(raw)){
-    const hasPotenzaAlready = results.some(r => r.item === '포텐자(펌핑)');
-    if(!hasPotenzaAlready) results.push({item:'포텐자(펌핑)', qty:1});
-    results.push({item:'쥬베룩', qty:1});
   }
 
   // ── 콜라겐샤워 → 쥬베룩 ──
@@ -3799,18 +3614,18 @@ function localParse(raw){
   else if(/줄기세포\s*120/i.test(raw)) results.push({item:'줄기세포120cc', qty:1});
   else if(/줄기세포\s*60/i.test(raw)) results.push({item:'줄기세포60cc', qty:1});
   else if(/줄기세포\s*30/i.test(raw)) results.push({item:'줄기세포30cc', qty:1});
-    // 줄기세포+PPP/하이쿡스 세트: 줄기세포와 함께면 재료(price=0), 단독이면 CHARGE_PRICE 적용
+  // 줄기세포+PPP/하이쿡스 세트: 줄기세포와 함께면 재료(price=0), 단독이면 CHARGE_PRICE 적용
   if(/하이쿡스/i.test(raw) || /ppp/i.test(raw)){
-          const withStemCell = /줄기세포/i.test(raw);
-      results.push({item:'하이쿡스', qty:1, _fixedAmt: withStemCell ? 0 : undefined});
+    const withStemCell = /줄기세포/i.test(raw);
+    results.push({item:'하이쿡스', qty:1, _fixedAmt: withStemCell ? 0 : undefined});
   }
 
+  // ── 처방전 ──
+  if(/처방전/i.test(raw)) results.push({item:'처방전', qty:1});
 
-      // ── 처방전 ──
-          if(/처방전/i.test(raw)) results.push({item:'처방전', qty:1});
+  // ── 멀티스킨부스터 ──
+  if(/멀티스킨/i.test(raw)) results.push({item:'멀티스킨부스터', qty:1});
 
-              // ── 멀티스킨부스터 ──
-                  if(/멀티스킨/i.test(raw)) results.push({item:'멀티스킨부스터', qty:1});
   // ── 기타 ──
   if(/자가엑소좀/i.test(raw)) results.push({item:'자가엑소좀', qty:1});
   if(/moxi/i.test(raw)) results.push({item:'moxi', qty:1});
@@ -4273,12 +4088,13 @@ function localParse(raw){
           ? Math.round(eg.price * (unitPrices[i]/sum) * 10) / 10
           : Math.round(eg.price / parsed.length * 10) / 10;
       });
+      // 반올림 오차 보정: 합계를 eg.price에 맞춤 (마지막 항목에서 조정)
       const shareSum = shares.reduce((a,b)=>a+b, 0);
       const diff = Math.round((eg.price - shareSum) * 10) / 10;
       if(diff !== 0) shares[shares.length - 1] += diff;
 
-      // standalone 줄에서 같은 항목의 단가 추출
-      const standaloneLines = raw.split('\n').filter(l => !/(?:\d+월?|[가-힣]+)(?:[eE](?:\s|\))|이벤트)/.test(l));
+      // standalone 줄에서 같은 항목의 단가 추출 (이벤트 외 줄에서 별도 시술 가격)
+      const standaloneLines = raw.split('\n').filter(l => !/(?:\d+월?|[가-힣]+)[eE](?:\s|\))/.test(l));
       const standalonePrices = {};
       parsed.forEach(p => {
         const itemKw = _ITEM_KEYWORDS[p.item];
@@ -4294,9 +4110,11 @@ function localParse(raw){
       parsed.forEach((p, i) => {
         const share = shares[i];
         const standaloneAmt = standalonePrices[p.item] || 0;
+        // 기존 results에 같은 item 있으면 _fixedAmt 합산 (이벤트 share + standalone 가격)
         const existing = results.find(r => r.item === p.item);
         if(existing){
           existing._fixedAmt = (existing._fixedAmt || 0) + share + standaloneAmt;
+          // qty도 이벤트 그룹 기준으로 갱신 (엠페이스4회 등)
           if(p.qty > existing.qty) existing.qty = p.qty;
         } else {
           results.push({item: p.item, qty: p.qty, _fixedAmt: share + standaloneAmt});
@@ -5398,38 +5216,24 @@ function _updateBatchProgress(info) {
   if (!stageEl) return;
   var pct = info.total > 0 ? Math.round(info.done / info.total * 100) : 0;
   if (info.stage === 'ai') {
+    // 1차 AI 분석: 전체의 0~70% 할당
     var aiPct = Math.round(info.done / info.total * 70);
     barEl.style.width = aiPct + '%';
     iconEl.textContent = '🧠';
     if (info.done < info.total) {
       var batchTxt = info.totalBatches > 1 ? ' (배치 ' + info.batchNum + '/' + info.totalBatches + ')' : '';
-      stageEl.textContent = '1차 AI 분석 준비 중...' + batchTxt;
+      stageEl.textContent = '1차 AI 분석 중...' + batchTxt;
     } else {
       stageEl.textContent = '1차 AI 분석 완료!';
     }
     detailEl.textContent = info.done + ' / ' + info.total + '건 완료';
     if (importBtn) importBtn.innerHTML = '⏳ 1차 분석 ' + info.done + '/' + info.total + '건';
-  } else if (info.stage === 'ai-waiting') {
-    var waitPct = Math.min(5 + info.elapsed, 65);
-    barEl.style.width = waitPct + '%';
-    iconEl.textContent = '🧠';
-    var batchTxt = info.totalBatches > 1 ? ' (배치 ' + info.batchNum + '/' + info.totalBatches + ')' : '';
-    stageEl.textContent = '1차 AI 분석 중... ' + info.elapsed + '초' + batchTxt;
-    detailEl.textContent = info.total + '건 처리 중 — AI 응답 대기';
-    if (importBtn) importBtn.innerHTML = '⏳ AI 분석 ' + info.elapsed + '초...';
   } else if (info.stage === 'verify') {
-    barEl.style.width = '72%';
+    barEl.style.width = '75%';
     iconEl.textContent = '🔍';
-    stageEl.textContent = '2차 AI 검증 준비 중...';
+    stageEl.textContent = '2차 AI 검증 중...';
     detailEl.textContent = '파싱 결과 교차 검증';
     if (importBtn) importBtn.innerHTML = '⏳ 2차 검증 중...';
-  } else if (info.stage === 'verify-waiting') {
-    var vPct = Math.min(72 + info.elapsed * 0.5, 95);
-    barEl.style.width = vPct + '%';
-    iconEl.textContent = '🔍';
-    stageEl.textContent = '2차 AI 검증 중... ' + info.elapsed + '초';
-    detailEl.textContent = info.total + '건 결과 교차 검증 중';
-    if (importBtn) importBtn.innerHTML = '⏳ 2차 검증 ' + info.elapsed + '초...';
   } else if (info.stage === 'done') {
     barEl.style.width = '100%';
     iconEl.textContent = '✅';
@@ -6050,6 +5854,128 @@ function clearImport(){
   document.getElementById('import-preview').style.display='none';
   _importRows=[];
 }
+
+/* ── 파싱 초안 탭 기능 ── */
+let _draftRows = [];
+let _currentDraftId = null;
+
+async function loadDraftList(){
+  const container = document.getElementById('draft-list');
+  container.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:20px 0">로딩 중...</div>';
+  try {
+    const snap = await getDocs(query(collection(db, 'draft_imports')));
+    if(snap.empty){
+      container.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:40px 0">📭 초안이 없습니다<br><span style="font-size:11px">Claude Cowork에게 구글시트 파싱을 요청하세요</span></div>';
+      return;
+    }
+    let html = '';
+    const docs = [];
+    snap.forEach(d => docs.push({id:d.id, ...d.data()}));
+    docs.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+    docs.forEach(d => {
+      const rowCount = (d.rows||[]).length;
+      const date = d.targetDate || '날짜미정';
+      const created = d.createdAt ? new Date(d.createdAt.seconds*1000).toLocaleString('ko') : '';
+      html += `<div onclick="loadDraft('${d.id}')" style="padding:14px 16px;background:var(--card);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:border-color .2s" onmouseenter="this.style.borderColor='var(--accent)'" onmouseleave="this.style.borderColor='var(--border)'">`;
+      html += `<div style="display:flex;justify-content:space-between;align-items:center">`;
+      html += `<div><span style="font-weight:700;color:var(--text)">${date}</span> <span style="color:var(--accent);font-size:12px">${rowCount}건</span></div>`;
+      html += `<span style="font-size:11px;color:var(--muted)">${created}</span>`;
+      html += `</div>`;
+      if(d.summary) html += `<div style="font-size:11px;color:var(--sub);margin-top:4px">${d.summary}</div>`;
+      html += `</div>`;
+    });
+    container.innerHTML = html;
+  } catch(e){
+    console.error('draft list error:', e);
+    container.innerHTML = '<div style="text-align:center;color:var(--red);font-size:13px;padding:20px 0">초안 로드 실패: '+e.message+'</div>';
+  }
+}
+
+async function loadDraft(draftId){
+  _currentDraftId = draftId;
+  try {
+    const snap = await getDoc(doc(db, 'draft_imports', draftId));
+    if(!snap.exists()){ showToast('초안을 찾을 수 없어요','error'); return; }
+    const data = snap.data();
+    _draftRows = (data.rows||[]).map(r => ({
+      ...r,
+      _parseSource: 'claude-draft',
+      _origColAmt: r.amount
+    }));
+    // 각 행에 대해 localParse 기반 재파싱 (treatments가 이미 있으면 스킵)
+    _draftRows.forEach(r => {
+      if(!r.treatments || r.treatments.length === 0){
+        try {
+          const parsed = localParse(r.payText);
+          r.treatments = distributePrices(parsed.treatments, r.amount, r.payText);
+          if(!r.doctor && parsed.doctor) r.doctor = parsed.doctor;
+        } catch(e){ r.treatments = []; }
+      }
+      if(!r.doctor){
+        try { const p2 = localParse(r.payText); if(p2.doctor) r.doctor = p2.doctor; } catch(e){}
+      }
+    });
+    renderDraftPreview();
+  } catch(e){
+    console.error('draft load error:', e);
+    showToast('초안 로드 실패','error');
+  }
+}
+
+function renderDraftPreview(){
+  // _importRows에 넣고 기존 렌더 함수 재사용
+  _importRows = _draftRows;
+  const container = document.getElementById('draft-preview-body');
+  // 기존 import-preview-body에 렌더할 내용을 draft-preview-body에 복사
+  const origContainer = document.getElementById('import-preview-body');
+  // 임시로 _applyRegexFallbackAndRenderTable 호출 후 결과 복사
+  _applyRegexFallbackAndRenderTable();
+  container.innerHTML = origContainer.innerHTML;
+  // import-preview는 숨기고 draft-preview만 표시
+  document.getElementById('import-preview').style.display = 'none';
+  document.getElementById('draft-preview').style.display = 'block';
+  document.getElementById('draft-count').textContent = _draftRows.length + '건';
+}
+
+function closeDraftPreview(){
+  document.getElementById('draft-preview').style.display = 'none';
+  _draftRows = [];
+  _currentDraftId = null;
+  _importRows = [];
+}
+
+async function confirmDraftImport(){
+  if(!window._isAdmin){ showToast('관리자만 저장할 수 있어요','error'); return; }
+  if(!_draftRows.length){ showToast('저장할 데이터가 없어요','error'); return; }
+  // _importRows를 _draftRows로 설정 후 기존 confirmImport 재사용
+  _importRows = _draftRows;
+  await confirmImport();
+  // 성공 후 초안 삭제
+  if(_currentDraftId && _importRows.length === 0){
+    try {
+      await deleteDoc(doc(db, 'draft_imports', _currentDraftId));
+      showToast('초안이 저장 후 삭제되었습니다','success');
+    } catch(e){ console.error('draft delete error:', e); }
+    _currentDraftId = null;
+    closeDraftPreview();
+  }
+}
+
+async function deleteDraft(){
+  if(!_currentDraftId){ return; }
+  if(!confirm('이 초안을 삭제할까요?')) return;
+  try {
+    await deleteDoc(doc(db, 'draft_imports', _currentDraftId));
+    showToast('초안 삭제 완료','success');
+    _currentDraftId = null;
+    closeDraftPreview();
+    loadDraftList();
+  } catch(e){
+    console.error('draft delete error:', e);
+    showToast('삭제 실패','error');
+  }
+}
+
 function clearParseResult(){
   window._parsedTreatments = [];
   document.getElementById('parse-result').style.display = 'none';
