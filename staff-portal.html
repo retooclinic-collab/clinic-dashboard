@@ -1193,7 +1193,7 @@ const _ITEM_KEYWORDS = {
   '필러(수입)':/(?:수입.*?필러|필러.*?수입|턱끝[fF]|목필러)/i,
   '필러(국산)':/(?:국산.*?필러|필러.*?국)/i,
   '보톡스(국산)':/(?:보톡스.*?국|국산.*?b(?:톡스)?|b.*?국|국.*?보톡스)/i,
-  '보톡스(수입)':/(?:제오민|\(제\)|보톡스.*?수입)/i,
+  '보톡스(수입)':/(?:제오민|\(제\)|[/／]제\)|보톡스.*?수입)/i,
   '듀얼피코':/듀얼피코|듀얼토닝|피코토닝|피코(?!슈어|웨이|포커스|토닝)/i, '피코슈어':/피코슈어|피코웨이/i,
   'moxi':/moxi/i, 'LDM':/ldm/i, '플라즈마':/플라즈마(?!엑소)/i,
   '라라필':/라라필/i, '수면비':/수면/i, '아이리프팅':/아이리프팅/i,
@@ -1228,7 +1228,7 @@ const _ITEM_KEYWORDS = {
 function extractTextPrices(raw, treatments){
   // 최종 결제금액 + 이벤트 접두어 + 예약금제외 제거
   const text = raw
-    .replace(/^\s*(?:\d+\s*)?vip\s*\d*\s*[+=＝].*$/gim, '') // VIP 헤더줄 제거 (VIP700=, 1000vip+=)
+    .replace(/^\s*(?:\d+\s*)?vip\s*\d*\s*[+=＝][\d.+=＝\s]*[mM万]\s*(?:\([^)]*\))?\s*/gim, '') // VIP 헤더 제거 (같은줄 시술 데이터 보존)
     .replace(/^.*?(?:지인분).*$/gim, '')               // 지인분 메모줄 제거
     .replace(/[-－]\s*남은\s*금액\s*[\d.]+/gi, '')       // -남은금액66 인라인 제거
     .replace(/^.*모두\s*사용.*$/gim, '')                 // 모두사용 메모줄 제거
@@ -1399,7 +1399,16 @@ function extractTextPrices(raw, treatments){
             }
           }
         }
-        // kw가 seg에만 매칭(outer 불일치): inner로 폴스루 → 아래 foundParen 블록에서 처리
+        // kw가 seg에만 매칭(outer 불일치): seg 전체에서 가격 추출 시도
+        // 예: "보톡스(이마미간눈가/제)33" → seg 매칭, outer "보톡스 33"에서 가격 33 추출
+        if(!kwInOuter && found[t.item]===undefined){
+          const p = getPrice(outer);
+          if(p!==null){
+            found[t.item] = p;
+            if(!_segItemMap[_segIdx]) _segItemMap[_segIdx] = [];
+            _segItemMap[_segIdx].push({item: t.item, price: p});
+          }
+        }
       }
 
       // 괄호 안에서 발견 → 잠정 가격 (합계 초과 시 잔액으로 재계산)
@@ -3422,15 +3431,18 @@ function localParse(raw){
   else if(csB) results.push({item:'쥬베룩', qty: parseInt(csB[1])});
   else if(/콜라겐\s*샤워/i.test(raw)) results.push({item:'쥬베룩', qty:1});
 
+  // ── 펌핑쥬베룩 combo 사전 감지 (쥬베룩 중복 push 방지용) ──
+  const _hasPumpJbv = /펌핑\s*쥬베룩|포텐자.*?펌핑.*?쥬베룩/i.test(raw);
+
   // ── 쥬베룩볼륨 (띄어쓰기 허용: "쥬베룩 볼륨", 약칭: "쥬볼") ──
   // "변경/대체/교체/전환" 맥락이면 메모로 간주 → 쥬베룩 감지 스킵
   const jbvChangeContext = /\([^)]*쥬베룩[^)]*(?:변경|대체|교체|전환)[^)]*\)/i.test(raw)
                         || /\([^)]*(?:변경|대체|교체|전환)[^)]*쥬베룩[^)]*\)/i.test(raw);
   const jbvM = raw.match(/(?:쥬베룩\s*볼륨|쥬볼).*?(\d+)\s*회/i);
   const jbvB = raw.match(/(?:쥬베룩\s*볼륨|쥬볼).*?(\d+)\s*병/i);
-  if(!jbvChangeContext && !_egHasJbv && jbvM) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvM[1])});
-  else if(!jbvChangeContext && !_egHasJbv && jbvB) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvB[1])});
-  else if(!jbvChangeContext && !_egHasJbv && /쥬베룩\s*볼륨|쥬볼/i.test(raw)) results.push({item:'쥬베룩볼륨', qty:1});
+  if(!jbvChangeContext && !_egHasJbv && !_hasPumpJbv && jbvM) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvM[1])});
+  else if(!jbvChangeContext && !_egHasJbv && !_hasPumpJbv && jbvB) results.push({item:'쥬베룩볼륨', qty: parseInt(jbvB[1])});
+  else if(!jbvChangeContext && !_egHasJbv && !_hasPumpJbv && /쥬베룩\s*볼륨|쥬볼/i.test(raw)) results.push({item:'쥬베룩볼륨', qty:1});
 
   // ── 쥬베룩아이 (띄어쓰기 허용: "쥬베룩 아이") ──
   const jbeyeM = raw.match(/쥬베룩\s*아이.*?(\d+)\s*회/i);
@@ -3440,7 +3452,7 @@ function localParse(raw){
   // ── 쥬베룩 (단독, 볼륨/아이가 아닌 일반 쥬베룩) ──
   // 미라젯이 같이 있으면 쥬베룩 = 쥬베룩볼륨으로 처리 (미라젯쥬베룩 콤보)
   const _hasMjAnywhere = /미라젯/i.test(raw);
-  if(!jbvChangeContext && !_egHasJbv && !(/쥬베룩\s*볼륨/i.test(raw)) && !(/쥬베룩\s*아이/i.test(raw)) && !hasMjJbv){
+  if(!jbvChangeContext && !_egHasJbv && !_hasPumpJbv && !(/쥬베룩\s*볼륨/i.test(raw)) && !(/쥬베룩\s*아이/i.test(raw)) && !hasMjJbv){
     const jbCc = raw.match(/쥬베룩\s*(\d+)\s*cc/i);
     const jbBottle = raw.match(/쥬베룩\s*(\d+)\s*병/i);
     const jbQtyM = raw.match(/쥬베룩\s*(\d+)\s*회/i);
@@ -3532,7 +3544,12 @@ function localParse(raw){
   if(/클라리티/i.test(raw)) results.push({item:'클라리티', qty:1});
 
   // ── 포텐자 ──
-  if(/포텐자.*?펌핑|펌핑팁|펌핑쥬베룩/i.test(raw)) results.push({item:'포텐자(펌핑)', qty:1});
+  // 펌핑쥬베룩 combo: 포텐자(펌핑)25 + 쥬베룩볼륨46.5 = 71.5 고정분리
+  // (_hasPumpJbv는 쥬베룩 detection 앞에서 이미 선언됨)
+  if(_hasPumpJbv){
+    results.push({item:'포텐자(펌핑)', qty:1, _fixedAmt:25});
+    results.push({item:'쥬베룩볼륨', qty:1, _fixedAmt:46.5});
+  } else if(/포텐자.*?펌핑|펌핑팁/i.test(raw)) results.push({item:'포텐자(펌핑)', qty:1});
   if(/포텐자.*?모공/i.test(raw)) results.push({item:'포텐자(모공)', qty:1});
   if(/포텐자.*?기미/i.test(raw)) results.push({item:'포텐자(기미)', qty:1});
 
@@ -3679,15 +3696,19 @@ function localParse(raw){
   const btxImpMultiQty = btxImpMultiM ? (btxImpMultiM[1].match(new RegExp('(?:' + _btxBodyParts + ')', 'gi'))||[]).length : 0;
   // "이마,눈가보톡스(제오민)" — 콤마+보톡스 명시형 다부위
   const btxImpCombo2 = btxSubstContext ? [] : (raw.match(/(?:이마|미간|눈가|턱|입꼬리)\s*[,]\s*(?:이마|미간|눈가|턱|입꼬리)\s*보톡스\s*(?:\(제(?:오민)?\)|제오민)/gi)||[]);
+  // "보톡스(이마미간눈가/제)" — 보톡스 먼저, 괄호 안에 부위+/제 형식
+  const btxImpRevM = btxSubstContext ? null : raw.match(/보톡스\s*\(([^)]*[/／]제(?:오민)?)\)/i);
+  const btxImpRevQty = btxImpRevM ? (btxImpRevM[1].match(/(?:이마|미간|눈가|턱|사각턱|입꼬리|승모근|침샘|콧볼|스킨|얼전)/gi)||[]).length || 1 : 0;
   // MAX 방식: "이마,눈가보톡스(제오민)" → btxImpParts=1(눈가만), btxImpCombo2=2(이마+눈가) → MAX=2
   const btxImpQty = Math.max(
     btxImpParts.length,
     btxImpMultiQty,
+    btxImpRevQty,
     btxImpCombo.length > 0 ? (btxImpCombo[0].match(/(?:이마|미간|눈가|턱|입꼬리)/gi)||[]).length : 0,
     btxImpCombo2.length > 0 ? (btxImpCombo2[0].match(/(?:이마|미간|눈가|턱|입꼬리)/gi)||[]).length : 0
   );
   if(btxImpQty>0) results.push({item:'보톡스(수입)', qty: btxImpQty});
-  else if(!btxSubstContext && /\(제(?:오민)?\)|제오민|보톡스.*?수입/i.test(raw)) results.push({item:'보톡스(수입)', qty:1});
+  else if(!btxSubstContext && /\(제(?:오민)?\)|[/／]제(?:오민)?\)|제오민|보톡스.*?수입/i.test(raw)) results.push({item:'보톡스(수입)', qty:1});
 
   // ── 줄기세포 ──
   if(/줄기세포\s*240/i.test(raw)) results.push({item:'줄기세포240cc', qty:1});
