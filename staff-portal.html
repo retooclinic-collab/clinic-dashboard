@@ -6029,6 +6029,8 @@ async function loadDraft(draftId){
 }
 
 function renderDraftPreview(){
+  // window._draftRows (모듈 스코프에서 설정)를 로컬 변수에 동기화
+  if(window._draftRows && window._draftRows.length) _draftRows = window._draftRows;
   // _importRows에 넣고 기존 렌더 함수 재사용
   _importRows = _draftRows;
   const container = document.getElementById('draft-preview-body');
