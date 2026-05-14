@@ -6,7 +6,7 @@
 <title>청담리투 · 상담입력</title>
 <style>
 :root{
-  --bg:#0f172a;--panel:#1e293b;--card:#243044;--border:#334155;
+  --bg:#0f172a;--panel:#1e293b;--carhd:#243044;--bordehr:#334155;
   --accent:#38bdf8;--accent2:#0ea5e9;--green:#10b981;--red:#ef4444;
   --yellow:#f59e0b;--text:#f1f5f9;--muted:#64748b;--sub:#94a3b8;
 }
@@ -690,6 +690,7 @@ window.fbSaveDraft = async (draftId, data) => {
   return draftId;
 };
 window.fbDeleteDraft = async (draftId) => {
+window.getDocs=getDocs;window.getDoc=getDoc;window.query=query;window.collection=collection;window.doc=doc;window.db=db;window.deleteDoc=deleteDoc;window.updateDoc=updateDoc;window.setDoc=setDoc;window.serverTimestamp=serverTimestamp;window.where=where;
   await deleteDoc(doc(db, 'draft_imports', draftId));
 };
 
@@ -962,12 +963,12 @@ function setMode(mode){
 
   // 입력폼 섹션 토글 (list/import 모드에서 숨김)
   document.querySelectorAll('.form-section').forEach(s=>{
-    s.style.display = (mode==='import'||mode==='list') ? 'none' : 'block';
+    s.style.display = (mode==='import'||mode==='list'||mode==='draft') ? 'none' : 'block';
   });
 
   // 저장 버튼은 import/list 모드에서 숨김
   const sw = document.getElementById('submit-wrap');
-  if(sw) sw.style.display = (mode==='import'||mode==='list') ? 'none' : 'block';
+  if(sw) sw.style.display = (mode==='import'||mode==='list'||mode==='draft') ? 'none' : 'block';
 
   if(mode !== 'import'){
     document.getElementById('amount-wrap').style.display = mode==='vip' ? 'none' : 'flex';
