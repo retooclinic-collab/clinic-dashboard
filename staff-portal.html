@@ -1399,12 +1399,17 @@ function extractTextPrices(raw, treatments){
             }
           }
         }
-        // kw가 seg에만 매칭(outer 불일치): 항목 base name이 outer에 있을 때만 가격 추출
-        // 예: "보톡스(이마미간눈가/제)33" → base "보톡스"가 outer에 있음 → 가격 33 추출
-        // 반례: "리투오1병88(+미라젯38.5)" → base "미라젯"이 outer에 없음 → skip (foundParen에서 처리)
+        // kw가 seg에만 매칭(outer 불일치): 2가지 방법으로 가격 추출 시도
         if(!kwInOuter && found[t.item]===undefined){
+          // 방법1: base name이 outer에 있음 → 가격 추출
+          // 예: "보톡스(이마미간눈가/제)33" → base "보톡스"가 outer에 있음 → 33
           const _baseName = t.item.replace(/\([^)]*\)/g, '').trim();
-          if(_baseName && new RegExp(_baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(outer)){
+          const _baseInOuter = _baseName && new RegExp(_baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(outer);
+          // 방법2: 항목에 타입(국산/수입)이 있고, 해당 타입이 inner에 존재 → outer에서 가격 추출
+          // 예: "미간b(국산)11" → "국산"이 inner에 있음 → outer "미간b 11"에서 11
+          const _typeMatch = t.item.match(/\(([^)]+)\)/);
+          const _typeInInner = _typeMatch && inner.some(inn => inn.includes(_typeMatch[1]));
+          if(_baseInOuter || _typeInInner){
             const p = getPrice(outer);
             if(p!==null){
               found[t.item] = p;
