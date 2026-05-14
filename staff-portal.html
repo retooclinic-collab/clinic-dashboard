@@ -3374,12 +3374,14 @@ function localParse(raw){
   const _egHasMj = _eventGroupRawTokens.some(t => /미라젯/.test(t));
   const _egHasRj = _eventGroupRawTokens.some(t => /리쥬란/.test(t));
   const _egHasJbv = _eventGroupRawTokens.some(t => /쥬베룩/.test(t));
+  const _egHasJba = _eventGroupRawTokens.some(t => /쥬브아셀/.test(t));
+  const _egHasLto = _eventGroupRawTokens.some(t => /리투오/.test(t));
   const hasMjRjHB = !(_egHasMj && _egHasRj) && (/미라젯\s*리쥬란\s*hb/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*hb/i.test(raw));
   const hasMjRjEye = !(_egHasMj && _egHasRj) && (/미라젯\s*리쥬란\s*아이/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*아이/i.test(raw));
   const hasMjRj = !(_egHasMj && _egHasRj) && (/미라젯\s*리쥬란(?!\s*(?:hb|아이))/i.test(raw) || /미라젯\s*\([^)]*리쥬란(?!\s*(?:hb|아이))/i.test(raw) || /리쥬란\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw)) && !hasMjRjHB && !hasMjRjEye;
   const hasMjJbv = !(_egHasMj && _egHasJbv) && (/미라젯\s*쥬베룩/i.test(raw) || /미라젯\s*\([^)]*쥬베룩/i.test(raw) || /쥬베룩\s*\d*\s*cc\s*\(\s*미라젯\s*\)/i.test(raw));
-  const hasMjJba = /미라젯\s*쥬브아셀/i.test(raw) || /미라젯\s*\([^)]*쥬브아셀/i.test(raw);
-  const hasMjLto = /미라젯\s*리투오/i.test(raw) || /미라젯\s*\([^)]*리투오/i.test(raw);
+  const hasMjJba = !(_egHasMj && _egHasJba) && (/미라젯\s*쥬브아셀/i.test(raw) || /미라젯\s*\([^)]*쥬브아셀/i.test(raw));
+  const hasMjLto = !(_egHasMj && _egHasLto) && (/미라젯\s*리투오/i.test(raw) || /미라젯\s*\([^)]*리투오/i.test(raw));
 
   if(hasMjRjHB){
     results.push({item:'미라젯', qty:1});
@@ -3700,13 +3702,14 @@ function localParse(raw){
   const btxSubstContext = /\([^)]*(?:제오민|보톡스)[^)]*(?:대체|교체|대신)[^)]*\)/i.test(raw)
                        || /\([^)]*(?:대체|교체|대신)[^)]*(?:제오민|보톡스)[^)]*\)/i.test(raw);
   // body+보톡스(제오민) 또는 body+b(제오민) 또는 body+b 제오민업그레이드 등
-  const btxImpParts = btxSubstContext ? [] : (raw.match(new RegExp('(?:' + _btxBodyParts + ')\\s*(?:보톡스|b(?:tx)?)\\s*[^+,\\n]*?\\(?제(?:오민)?\\)?', 'gi'))||[]);
-  const btxImpCombo = btxSubstContext ? [] : (raw.match(/(?:이마|미간|눈가|턱|입꼬리)[,+·\s]+(?:이마|미간|눈가|턱|입꼬리)[^)]*\(?제(?:오민)?\)?/gi)||[]);
+  // ★ 제오민 패턴: \(제\) \(제오민\) 제오민만 인식 — 예약금'제'외 같은 오탐 방지
+  const btxImpParts = btxSubstContext ? [] : (raw.match(new RegExp('(?:' + _btxBodyParts + ')\\s*(?:보톡스|b(?:tx)?)\\s*[^+,\\n]*?(?:\\(제(?:오민)?\\)|제오민)', 'gi'))||[]);
+  const btxImpCombo = btxSubstContext ? [] : (raw.match(/(?:이마|미간|눈가|턱|입꼬리)[,+·\s]+(?:이마|미간|눈가|턱|입꼬리)[^)]*(?:\(제(?:오민)?\)|제오민)/gi)||[]);
   // "이마b미간b(all제오민)", "눈가b이마b(제)" — 다부위+b 나열 후 공유 브랜드
-  const btxImpMultiM = btxSubstContext ? null : raw.match(new RegExp('((?:(?:' + _btxBodyParts + ')\\s*(?:보톡스\\s*)?b(?:tx)?\\s*,?\\s*)+)\\s*\\(?(?:all\\s*)?제(?:오민)?\\)?', 'i'));
+  const btxImpMultiM = btxSubstContext ? null : raw.match(new RegExp('((?:(?:' + _btxBodyParts + ')\\s*(?:보톡스\\s*)?b(?:tx)?\\s*,?\\s*)+)\\s*(?:\\((?:all\\s*)?제(?:오민)?\\)|제오민)', 'i'));
   const btxImpMultiQty = btxImpMultiM ? (btxImpMultiM[1].match(new RegExp('(?:' + _btxBodyParts + ')', 'gi'))||[]).length : 0;
   // "이마,눈가보톡스(제오민)" — 콤마+보톡스 명시형 다부위
-  const btxImpCombo2 = btxSubstContext ? [] : (raw.match(/(?:이마|미간|눈가|턱|입꼬리)\s*[,]\s*(?:이마|미간|눈가|턱|입꼬리)\s*보톡스\s*\(?제(?:오민)?\)?/gi)||[]);
+  const btxImpCombo2 = btxSubstContext ? [] : (raw.match(/(?:이마|미간|눈가|턱|입꼬리)\s*[,]\s*(?:이마|미간|눈가|턱|입꼬리)\s*보톡스\s*(?:\(제(?:오민)?\)|제오민)/gi)||[]);
   // MAX 방식: "이마,눈가보톡스(제오민)" → btxImpParts=1(눈가만), btxImpCombo2=2(이마+눈가) → MAX=2
   const btxImpQty = Math.max(
     btxImpParts.length,
