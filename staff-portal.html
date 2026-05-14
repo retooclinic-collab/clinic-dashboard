@@ -6029,17 +6029,15 @@ async function loadDraft(draftId){
 }
 
 function renderDraftPreview(){
-  // window._draftRows (모듈 스코프에서 설정)를 로컬 변수에 동기화
+  // 모듈 스코프에서 window._draftRows로 설정하므로 항상 동기화
   if(window._draftRows && window._draftRows.length) _draftRows = window._draftRows;
+  if(window._currentDraftId) _currentDraftId = window._currentDraftId;
   // _importRows에 넣고 기존 렌더 함수 재사용
   _importRows = _draftRows;
   const container = document.getElementById('draft-preview-body');
-  // 기존 import-preview-body에 렌더할 내용을 draft-preview-body에 복사
   const origContainer = document.getElementById('import-preview-body');
-  // 임시로 _applyRegexFallbackAndRenderTable 호출 후 결과 복사
   _applyRegexFallbackAndRenderTable();
   container.innerHTML = origContainer.innerHTML;
-  // import-preview는 숨기고 draft-preview만 표시
   document.getElementById('import-preview').style.display = 'none';
   document.getElementById('draft-preview').style.display = 'block';
   document.getElementById('draft-count').textContent = _draftRows.length + '건';
