@@ -1785,15 +1785,10 @@ function distributePrices(treatments, total, rawText){
     priced[creditRemainIdx] = {...priced[creditRemainIdx], price: creditAmt > 0 ? creditAmt : 0};
   }
 
-  // VIP회원권 잔액 흡수: 모든 시술 가격이 명시되어 있으면 스케일링 대신 VIP회원권에 잔액 배정
-  // 예: 시술합621.5 - VIP할인25 - 예약금3.3 = 593.2, total=622.9 → VIP회원권=29.7
+  // VIP회원권은 항상 0원 — 잔액은 다른 시술 항목에서 조정
   const vipIdx = priced.findIndex(t=>t.item==='VIP회원권');
   if(vipIdx >= 0){
-    const nonVipSum = priced.reduce((s,t,i)=>i===vipIdx?s:s+t.price, 0);
-    const vipAmt = Math.round((total - nonVipSum)*100)/100;
-    if(vipAmt >= 0){
-      priced[vipIdx] = {...priced[vipIdx], price: vipAmt, fromText:true};
-    }
+    priced[vipIdx] = {...priced[vipIdx], price: 0, fromText:true};
   }
 
   // 합계 맞추기 — 0.01 이하 오차도 보정 후 반환
