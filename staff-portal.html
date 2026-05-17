@@ -5468,7 +5468,7 @@ function _applyRegexFallbackAndRenderTable(){
     var isRefund = /환불/i.test(r.payText||'');
     var compareAmt = isRefund ? -Math.abs(origAmt) : origAmt;
     // 미수 있으면: 시술합-미수 == 결제텍스트금액-미수 비교 (미수 제외 실결제 기준)
-    var sumOk = hasMisu ? true : Math.abs(treatSumR - compareAmt) < 0.5;
+    var sumOk = hasMisu ? true : (!r.payText ? true : Math.abs(treatSumR - compareAmt) < 0.5);
     var badgeColor = sumOk ? '#4ade80' : '#facc15';
     var treatCount = (r.treatments||[]).length;
 
@@ -5490,7 +5490,7 @@ function _applyRegexFallbackAndRenderTable(){
     html += '<td style="padding:6px;color:#64748b;font-size:11px;overflow:hidden;text-overflow:ellipsis">' + (r.date||'<span style="color:#ef4444">없음</span>') + warnBadge + '</td>';
     html += '<td style="padding:6px;overflow:hidden;text-overflow:ellipsis"><div style="color:#64748b;font-size:10px;overflow:hidden;text-overflow:ellipsis">' + r.chart + '</div><div style="color:#f1f5f9;font-weight:700;overflow:hidden;text-overflow:ellipsis">' + (r.name||'<span style="color:#ef4444">없음</span>') + '</div></td>';
     html += '<td style="padding:6px;color:#94a3b8;font-size:11px;overflow:hidden;text-overflow:ellipsis">' + (r.cat1||'<span style="color:#ef4444">없음</span>') + (r.cat2?'<br>'+r.cat2:'') + '</td>';
-    html += '<td style="padding:6px;color:#94a3b8;font-size:11px;word-break:break-all;line-height:1.4">' + r.payText + '</td>';
+    html += '<td style="padding:6px;color:#94a3b8;font-size:11px;word-break:break-all;line-height:1.4">' + (r.payText||'<span style="color:#475569;font-style:italic">Claude 직접파싱</span>') + '</td>';
     var amtColor = r.amount < 0 ? '#ef4444' : '#38bdf8';
     html += '<td style="padding:6px;text-align:right;color:'+amtColor+';font-weight:700;font-size:11px">' + r.amount + '만</td>';
     html += '<td style="padding:6px;color:#94a3b8;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (r.staff||'') + '</td>';
