@@ -864,15 +864,18 @@ window.loadDraft = async function(draftId){
       if(row.staff) row.staff = (typeof mapStaff==='function' ? mapStaff(row.staff) : row.staff);
       return row;
     });
-    // 항상 payText에서 localParse + distributePrices로 재파싱
-    // (Firebase 저장 treatments는 수동 형식이라 항목명/수량/VIP구조 불일치)
+    // treatments가 이미 있으면 보존 (Claude 직접 파싱 결과 우선)
+    // treatments가 없거나 빈 배열인 경우에만 localParse로 폴백
     window._draftRows.forEach(r => {
-      if(r.payText){
+      if(r.payText && (!r.treatments || r.treatments.length === 0)){
         try {
           const parsed = window.localParse(r.payText);
           r.treatments = window.distributePrices(parsed.treatments, r.amount, r.payText);
           if(!r.doctor && parsed.doctor) r.doctor = parsed.doctor;
         } catch(e){ console.warn('draft reparse error:', r.name, e); r.treatments = r.treatments||[]; }
+      }
+      if(!r.doctor && r.payText){
+        try { const p2 = window.localParse(r.payText); if(p2.doctor) r.doctor = p2.doctor; } catch(e){}
       }
     });
     window.renderDraftPreview && window.renderDraftPreview();
