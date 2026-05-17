@@ -5878,7 +5878,27 @@ function saveImportRow(idx){
   };
   document.getElementById('import-edit-modal')?.remove();
   renderImportPreview();
-  showToast(`#${idx+1} ${r.name} 수정됨`,'success');
+
+  // 초안 모드면 Firestore draft에도 반영
+  var draftId = _currentDraftId || window._currentDraftId;
+  if(draftId && window._fb){
+    try {
+      var fb = window._fb;
+      fb.updateDoc(fb.doc(fb.db, 'draft_imports', draftId), {
+        rows: _importRows,
+        updatedAt: fb.serverTimestamp()
+      }).then(function(){
+        showToast('#'+(idx+1)+' '+r.name+' 초안 저장 완료','success');
+      }).catch(function(e){
+        console.error('draft save error:', e);
+        showToast('초안 저장 실패: '+e.message,'error');
+      });
+    } catch(e){
+      console.error('draft save error:', e);
+    }
+  } else {
+    showToast('#'+(idx+1)+' '+r.name+' 수정됨','success');
+  }
 }
 
 function toggleImportTreat(idx){
