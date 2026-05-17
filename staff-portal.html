@@ -5389,14 +5389,16 @@ function _applyRegexFallbackAndRenderTable(){
   _importRows.forEach(function(r){
     if(!r.treatments){
       try {
-        var parsed = localParse(r.payText);
-        r.treatments = distributePrices(parsed.treatments, r.amount, r.payText);
-        r._parseSource = 'regex';
-        if(!r.doctor && parsed.doctor) r.doctor = parsed.doctor;
+        if(r.payText) {
+          var parsed = localParse(r.payText);
+          r.treatments = distributePrices(parsed.treatments, r.amount, r.payText);
+          r._parseSource = 'regex';
+          if(!r.doctor && parsed.doctor) r.doctor = parsed.doctor;
+        } else { r.treatments = []; }
       } catch(e){ r.treatments = []; }
     }
     // 기존 treatments 있어도 doctor 없으면 재파싱해서 채움
-    if(!r.doctor){
+    if(!r.doctor && r.payText){
       try {
         var p2 = localParse(r.payText);
         if(p2.doctor) r.doctor = p2.doctor;
@@ -5431,7 +5433,7 @@ function _applyRegexFallbackAndRenderTable(){
     // 미수 금액 확인 (결제방식에서)
     var misuAmt = 0;
     try {
-      var pm = r.paymentMethods || extractPayment(r.payText) || {};
+      var pm = r.paymentMethods || (r.payText ? extractPayment(r.payText) : null) || {};
       var pmItems = pm.items || pm.splitDetails || [];
       pmItems.forEach(function(p){ if(p.method==='미수') misuAmt += (p.amt||0); });
     } catch(e){}
@@ -5458,7 +5460,7 @@ function _applyRegexFallbackAndRenderTable(){
     } else if(treatSumR > 0){
       r.amount = paidAmt > 0 ? paidAmt : treatSumR;
     }
-    var origAmt = extractAmount(r.payText)||0;
+    var origAmt = r.payText ? (extractAmount(r.payText)||0) : 0;
     // 환불인 경우 origAmt를 음수로 변환하여 비교
     var isRefund = /환불/i.test(r.payText||'');
     var compareAmt = isRefund ? -Math.abs(origAmt) : origAmt;
