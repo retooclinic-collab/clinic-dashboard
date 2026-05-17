@@ -1953,6 +1953,19 @@ function distributePrices(treatments, total, rawText){
     priced[lastIdx]={...priced[lastIdx], price:Math.round((priced[lastIdx].price+diff)*100)/100};
   }
 
+  // ── 최종 검증: 항목명 유효성 ──
+  priced.forEach(function(t){
+    if(t.item && !TREATMENT_ITEMS.includes(t.item)){
+      console.error('[distributePrices] 유효하지 않은 항목명:', t.item);
+    }
+  });
+  // ── 최종 검증: 피부관리 가격 ──
+  priced.forEach(function(t){
+    if(t.item === '피부관리' && t.price > 0 && t.price !== 11){
+      console.warn('[distributePrices] 피부관리 가격 비정상:', t.price, '(11이어야 함)');
+    }
+  });
+
   return priced;
 }
 
@@ -5881,6 +5894,26 @@ function saveImportRow(idx){
   r.staff   = document.getElementById('ie-staff').value;
   r.payText = document.getElementById('ie-paytext').value.trim();
   r.treatments = window._ieTreats||[];
+
+  // ── 검증: 항목명이 TREATMENT_ITEMS에 있는지 확인 ──
+  var invalidItems = [];
+  r.treatments.forEach(function(t){
+    if(t.item && !TREATMENT_ITEMS.includes(t.item)){
+      invalidItems.push(t.item);
+    }
+  });
+  if(invalidItems.length > 0){
+    showToast('⚠️ 유효하지 않은 항목명: ' + invalidItems.join(', ') + '\nTREATMENT_ITEMS에 등록된 항목만 사용 가능합니다.','error');
+    return; // 저장 중단
+  }
+
+  // ── 검증: 이벤트 배분 시 피부관리 가격 확인 ──
+  r.treatments.forEach(function(t){
+    if(t.item === '피부관리' && t.price > 0 && t.price !== 11){
+      showToast('⚠️ 피부관리 가격은 항상 11만원이어야 합니다. (현재: ' + t.price + ')','error');
+    }
+  });
+
   // 시술합계로 금액 동기화 (시술이 있으면 시술합이 기준)
   var saveTreatSum = r.treatments.reduce(function(s,t){return s+(t.price||0);},0);
   r.amount = saveTreatSum > 0 ? Math.round(saveTreatSum*100)/100 : (parseFloat(document.getElementById('ie-amount').value)||0);
@@ -5936,6 +5969,10 @@ function removeImportTreat(rowIdx, treatIdx){
 }
 function addImportTreat(rowIdx){
   const name = prompt('시술 항목명:'); if(!name) return;
+  if(!TREATMENT_ITEMS.includes(name.trim())){
+    alert('⚠️ "'+name.trim()+'"은(는) 유효하지 않은 항목명입니다.\nTREATMENT_ITEMS에 등록된 항목만 사용 가능합니다.');
+    return;
+  }
   const qty = parseFloat(prompt('수량:','1')||'1');
   const price = parseFloat(prompt('가격(만원):','0')||'0');
   if(!_importRows[rowIdx].treatments) _importRows[rowIdx].treatments=[];
@@ -5955,6 +5992,26 @@ async function confirmImport(){
   const progress = document.getElementById('import-progress');
   btn.disabled=true;
   progress.style.display='block';
+
+  // ── 최종 저장 전 전체 검증 ──
+  var allInvalid = [];
+  for(let vi=0; vi<_importRows.length; vi++){
+    var vr = _importRows[vi];
+    if(vr.treatments && vr.treatments.length > 0){
+      vr.treatments.forEach(function(t){
+        if(t.item && !TREATMENT_ITEMS.includes(t.item)){
+          allInvalid.push('#'+(vi+1)+' '+vr.name+': '+t.item);
+        }
+      });
+    }
+  }
+  if(allInvalid.length > 0){
+    btn.disabled=false;
+    progress.style.display='none';
+    showToast('⚠️ 유효하지 않은 항목명 발견!\n' + allInvalid.slice(0,5).join('\n') + (allInvalid.length>5 ? '\n... 외 '+(allInvalid.length-5)+'건':''), 'error');
+    alert('저장 중단: 유효하지 않은 항목명\n\n' + allInvalid.join('\n') + '\n\nTREATMENT_ITEMS에 등록된 항목만 사용 가능합니다.');
+    return;
+  }
 
   let saved=0, failed=0;
   for(let i=0; i<_importRows.length; i++){
