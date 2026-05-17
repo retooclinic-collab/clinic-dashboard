@@ -2928,6 +2928,7 @@ async function smartParse(raw, onProgress) {
 
 
 function localParse(raw){
+  if(!raw) return {treatments:[],doctor:'',payMethods:null};
   const _eventGroupRawTokens = []; // 이벤트 그룹에서 처리된 원본 토큰 (중복감지 방지용)
   // ── VIP 멀티라인 처리: VIP 헤더줄 제거, 주석줄 제거 후 내역만 파싱 ──
   const _origRaw = raw; // VIP 체크용 원본 보존
@@ -4501,6 +4502,7 @@ function removeTreatment(idx){
 
 /* ── 결제금액 추출 (m/M/만원/만 모두 처리) ── */
 function extractAmount(text){
+  if(!text) return 0;
   // ── VIP 결제금액 우선: "vip700 = 700 (알리)", "VIP1500 = 1500(카)", "VIP700+차액150=850m(카)" ──
   if(/vip\s*\d/i.test(text)){
     const vipM = text.match(/vip\s*\d+\s*(?:\+[^=]*?)?[=＝]\s*([\d,.]+)\s*[mM만]?\s*\(/i);
@@ -4548,6 +4550,7 @@ function extractAmount(text){
 
 /* ── 결제방식 추출 ── */
 function extractPayment(text){
+  if(!text) return {method:'',items:[]};
   // 환불: 결제방식 자동 설정 (환불후재결제+위약금은 제외)
   if(/환불/i.test(text) && !/환불\s*후\s*재결제/i.test(text) && !/위약금/i.test(text)){
     // 제로환불 → 제로페이, 그 외 → 이체(현영)
