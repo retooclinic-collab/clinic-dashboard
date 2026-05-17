@@ -1145,6 +1145,29 @@ let TREATMENT_ITEMS = [
   '예약금','예약금제외','환불','위약금','제품','지정비용','점,편사제거','차액결제','양도'
 ];
 
+/* ── 유사 항목명 검색 (Levenshtein 기반) ── */
+function _findSimilarItem(input){
+  if(!input) return null;
+  var best = null, bestScore = 0;
+  var inp = input.replace(/[\s()（）]/g,'').toLowerCase();
+  for(var i=0; i<TREATMENT_ITEMS.length; i++){
+    var cand = TREATMENT_ITEMS[i].replace(/[\s()（）]/g,'').toLowerCase();
+    // 포함 관계 체크
+    if(cand.includes(inp) || inp.includes(cand)){
+      var score = Math.min(inp.length, cand.length) / Math.max(inp.length, cand.length);
+      if(score > bestScore){ bestScore = score; best = TREATMENT_ITEMS[i]; }
+    }
+    // 공통 문자 비율
+    var common = 0;
+    for(var j=0; j<inp.length; j++){
+      if(cand.includes(inp[j])) common++;
+    }
+    var ratio = common / Math.max(inp.length, cand.length);
+    if(ratio > bestScore){ bestScore = ratio; best = TREATMENT_ITEMS[i]; }
+  }
+  return bestScore > 0.4 ? best : null;
+}
+
 /* ══════════════════════════════════════════════
    시술별 표준 청구가 (만원, per unit)
 ══════════════════════════════════════════════ */
@@ -5895,22 +5918,29 @@ function saveImportRow(idx){
   r.payText = document.getElementById('ie-paytext').value.trim();
   r.treatments = window._ieTreats||[];
 
-  // ── 검증: 항목명이 TREATMENT_ITEMS에 있는지 확인 ──
+  // ── 검증: 항목명 유효성 + 유사 항목 제안 ──
   var invalidItems = [];
   r.treatments.forEach(function(t){
     if(t.item && !TREATMENT_ITEMS.includes(t.item)){
-      invalidItems.push(t.item);
+      var suggestion = _findSimilarItem(t.item);
+      invalidItems.push({name: t.item, suggest: suggestion});
     }
   });
   if(invalidItems.length > 0){
-    showToast('⚠️ 유효하지 않은 항목명: ' + invalidItems.join(', ') + '\nTREATMENT_ITEMS에 등록된 항목만 사용 가능합니다.','error');
-    return; // 저장 중단
+    var msg = '⚠️ 유효하지 않은 항목명 발견 (저장은 진행됨):\n';
+    invalidItems.forEach(function(inv){
+      msg += '  • "' + inv.name + '"';
+      if(inv.suggest) msg += ' → 혹시 "' + inv.suggest + '"?';
+      msg += '\n';
+    });
+    showToast(msg, 'error');
+    console.warn('[saveImportRow] 유효하지 않은 항목:', invalidItems);
   }
 
-  // ── 검증: 이벤트 배분 시 피부관리 가격 확인 ──
+  // ── 검증: 피부관리 가격 확인 ──
   r.treatments.forEach(function(t){
     if(t.item === '피부관리' && t.price > 0 && t.price !== 11){
-      showToast('⚠️ 피부관리 가격은 항상 11만원이어야 합니다. (현재: ' + t.price + ')','error');
+      showToast('⚠️ 피부관리 가격 ' + t.price + '만원 (정상: 11만원) — 확인 필요','error');
     }
   });
 
@@ -5970,13 +6000,29 @@ function removeImportTreat(rowIdx, treatIdx){
 function addImportTreat(rowIdx){
   const name = prompt('시술 항목명:'); if(!name) return;
   if(!TREATMENT_ITEMS.includes(name.trim())){
-    alert('⚠️ "'+name.trim()+'"은(는) 유효하지 않은 항목명입니다.\nTREATMENT_ITEMS에 등록된 항목만 사용 가능합니다.');
-    return;
+    var sug = _findSimilarItem(name.trim());
+    var msg = '⚠️ "'+name.trim()+'"은(는) 등록되지 않은 항목명입니다.';
+    if(sug) msg += '\n\n혹시 "'+sug+'" 이(가) 맞습니까?\n(확인→"'+sug+'"으로 추가 / 취소→입력 취소)';
+    else msg += '\n\n유사 항목을 찾지 못했습니다. 그래도 추가하시겠습니까?';
+    if(!confirm(msg)) return;
+    if(sug && confirm('"'+sug+'"(으)로 변경하여 추가할까요?')){
+      // 유사 항목으로 교체
+      _doAddImportTreat(rowIdx, sug); return;
+    }
   }
   const qty = parseFloat(prompt('수량:','1')||'1');
   const price = parseFloat(prompt('가격(만원):','0')||'0');
   if(!_importRows[rowIdx].treatments) _importRows[rowIdx].treatments=[];
   _importRows[rowIdx].treatments.push({item:name.trim(), qty, price});
+  renderImportPreview();
+  const el = document.getElementById(`import-treat-${rowIdx}`);
+  if(el) el.style.display='block';
+}
+function _doAddImportTreat(rowIdx, itemName){
+  const qty = parseFloat(prompt('수량:','1')||'1');
+  const price = parseFloat(prompt('가격(만원):','0')||'0');
+  if(!_importRows[rowIdx].treatments) _importRows[rowIdx].treatments=[];
+  _importRows[rowIdx].treatments.push({item:itemName, qty, price});
   renderImportPreview();
   const el = document.getElementById(`import-treat-${rowIdx}`);
   if(el) el.style.display='block';
@@ -5993,24 +6039,26 @@ async function confirmImport(){
   btn.disabled=true;
   progress.style.display='block';
 
-  // ── 최종 저장 전 전체 검증 ──
+  // ── 최종 저장 전 전체 검증 (경고 후 진행) ──
   var allInvalid = [];
   for(let vi=0; vi<_importRows.length; vi++){
     var vr = _importRows[vi];
     if(vr.treatments && vr.treatments.length > 0){
       vr.treatments.forEach(function(t){
         if(t.item && !TREATMENT_ITEMS.includes(t.item)){
-          allInvalid.push('#'+(vi+1)+' '+vr.name+': '+t.item);
+          var sug = _findSimilarItem(t.item);
+          allInvalid.push('#'+(vi+1)+' '+vr.name+': "'+t.item+'"' + (sug ? ' → "'+sug+'"?' : ''));
         }
       });
     }
   }
   if(allInvalid.length > 0){
-    btn.disabled=false;
-    progress.style.display='none';
-    showToast('⚠️ 유효하지 않은 항목명 발견!\n' + allInvalid.slice(0,5).join('\n') + (allInvalid.length>5 ? '\n... 외 '+(allInvalid.length-5)+'건':''), 'error');
-    alert('저장 중단: 유효하지 않은 항목명\n\n' + allInvalid.join('\n') + '\n\nTREATMENT_ITEMS에 등록된 항목만 사용 가능합니다.');
-    return;
+    var confirmMsg = '⚠️ 유효하지 않은 항목명 ' + allInvalid.length + '건 발견:\n\n' + allInvalid.join('\n') + '\n\n그래도 저장하시겠습니까?\n(취소하고 수정하려면 "취소" 클릭)';
+    if(!confirm(confirmMsg)){
+      btn.disabled=false;
+      progress.style.display='none';
+      return;
+    }
   }
 
   let saved=0, failed=0;
