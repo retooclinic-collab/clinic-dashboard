@@ -2327,6 +2327,140 @@ function renderDailyTotals(){
     }
   })();
 
+  // ── 의사별 객단가 비교 (실장+내원경로 통제) ──
+  (function(){
+    var docData = {}; // staff → cat1 → doctor → {count, total}
+    var allDoctors = {}, allStaffs = {}, allCat1s = {};
+    _dailyFiltered.forEach(function(it){
+      var s = it.staff || '(미지정)';
+      var c = it.cat1 || '(미지정)';
+      var d = it.doctor || '(미지정)';
+      var amt = (parseFloat(it.amount)||0) * 10000;
+      if(!docData[s]) docData[s] = {};
+      if(!docData[s][c]) docData[s][c] = {};
+      if(!docData[s][c][d]) docData[s][c][d] = {count:0, total:0};
+      docData[s][c][d].count++;
+      docData[s][c][d].total += amt;
+      allDoctors[d]=true; allStaffs[s]=true; allCat1s[c]=true;
+    });
+    var doctorList = Object.keys(allDoctors).sort();
+    var staffList  = Object.keys(allStaffs).sort();
+    var cat1List   = Object.keys(allCat1s).sort();
+    if(doctorList.length < 2) return;
+
+    if(!window._docAvgFilter) window._docAvgFilter = {staff:'', cat1:''};
+    var sf = window._docAvgFilter.staff;
+    var cf = window._docAvgFilter.cat1;
+
+    if(sf && !allStaffs[sf]) sf = window._docAvgFilter.staff = '';
+    if(cf && !allCat1s[cf])  cf = window._docAvgFilter.cat1  = '';
+
+    var filteredStaffs = sf ? [sf] : staffList;
+    var filteredCat1s  = cf ? [cf] : cat1List;
+
+    var tableData = {};
+    filteredStaffs.forEach(function(s){
+      filteredCat1s.forEach(function(c){
+        if(!docData[s] || !docData[s][c]) return;
+        var rowKey = (sf && cf) ? (s+' / '+c) : (sf ? c : (cf ? s : s+' / '+c));
+        if(!tableData[rowKey]) tableData[rowKey] = {};
+        Object.keys(docData[s][c]).forEach(function(d){
+          if(!tableData[rowKey][d]) tableData[rowKey][d] = {count:0, total:0};
+          tableData[rowKey][d].count += docData[s][c][d].count;
+          tableData[rowKey][d].total += docData[s][c][d].total;
+        });
+      });
+    });
+
+    var rowKeys = Object.keys(tableData).sort(function(a,b){
+      var ta=0, tb=0;
+      Object.keys(tableData[a]).forEach(function(d){ ta+=tableData[a][d].total; });
+      Object.keys(tableData[b]).forEach(function(d){ tb+=tableData[b][d].total; });
+      return tb-ta;
+    });
+    if(rowKeys.length === 0) return;
+
+    var selSt = 'font-size:11px;background:#f8fafc;border:1px solid #e2e8f0;color:#374151;border-radius:6px;padding:4px 8px;cursor:pointer;';
+    h += '<details style="margin-bottom:8px;" open><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">🩺 의사별 객단가 비교 <span style="font-size:10px;font-weight:400;color:#94a3b8;">(실장·내원경로 통제)</span></summary>';
+
+    h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
+    h += '<span style="font-size:11px;color:#64748b;">통제변수:</span>';
+    h += '<select style="'+selSt+'" onchange="window._docAvgFilter.staff=this.value;renderDailyTotals();">';
+    h += '<option value="">실장 전체</option>';
+    staffList.forEach(function(s){ h+='<option value="'+esc(s)+'"'+(sf===s?' selected':'')+'>'+esc(s)+'</option>'; });
+    h += '</select>';
+    h += '<select style="'+selSt+'" onchange="window._docAvgFilter.cat1=this.value;renderDailyTotals();">';
+    h += '<option value="">내원경로 전체</option>';
+    cat1List.forEach(function(c){ h+='<option value="'+esc(c)+'"'+(cf===c?' selected':'')+'>'+esc(c)+'</option>'; });
+    h += '</select>';
+    if(sf||cf) h += '<button onclick="window._docAvgFilter={staff:\'\',cat1:\'\'};renderDailyTotals();" style="font-size:10px;color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;padding:3px 8px;cursor:pointer;">초기화</button>';
+    h += '</div>';
+
+    var rowLabel = (sf&&cf)?'조건':(sf?'내원경로':(cf?'실장':'실장 / 내원경로'));
+    h += '<div style="overflow-x:auto;margin-bottom:12px;"><table style="width:100%;border-collapse:collapse;font-size:11px;">';
+    h += '<thead><tr style="background:#f1f5f9;"><th style="padding:5px 8px;text-align:left;color:#64748b;">'+rowLabel+'</th>';
+    doctorList.forEach(function(d){ h+='<th style="padding:5px 8px;text-align:center;color:#64748b;white-space:nowrap;">'+esc(d)+'</th>'; });
+    h += '<th style="padding:5px 8px;text-align:center;color:#2563eb;font-weight:700;">전체 평균</th></tr></thead><tbody>';
+
+    rowKeys.forEach(function(rk){
+      h += '<tr style="border-bottom:1px solid #e2e8f0;">';
+      h += '<td style="padding:5px 8px;font-weight:600;color:#1e293b;white-space:nowrap;">'+esc(rk)+'</td>';
+      var rTotal=0, rCount=0;
+      doctorList.forEach(function(d){
+        var v=tableData[rk][d];
+        if(v&&v.count>0){
+          var avg=v.total/v.count; rTotal+=v.total; rCount+=v.count;
+          h+='<td style="padding:5px 8px;text-align:center;"><span style="color:#059669;font-weight:700;">'+formatW(avg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+v.count+')</span></td>';
+        } else {
+          h+='<td style="padding:5px 8px;text-align:center;color:#cbd5e1;">-</td>';
+        }
+      });
+      var rAvg=rCount>0?rTotal/rCount:0;
+      h+='<td style="padding:5px 8px;text-align:center;font-weight:700;"><span style="color:#2563eb;">'+formatW(rAvg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+rCount+')</span></td>';
+      h+='</tr>';
+    });
+
+    h += '<tr style="border-top:2px solid #cbd5e1;background:#f8fafc;"><td style="padding:5px 8px;font-weight:700;color:#2563eb;">전체</td>';
+    var gTotal=0, gCount=0;
+    var doctorGrand={};
+    doctorList.forEach(function(d){
+      var dT=0, dC=0;
+      rowKeys.forEach(function(rk){ var v=tableData[rk][d]; if(v){dT+=v.total;dC+=v.count;} });
+      doctorGrand[d]={total:dT,count:dC};
+      gTotal+=dT; gCount+=dC;
+      var dAvg=dC>0?dT/dC:0;
+      h+='<td style="padding:5px 8px;text-align:center;font-weight:700;"><span style="color:#475569;">'+formatW(dAvg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+dC+')</span></td>';
+    });
+    var gAvg=gCount>0?gTotal/gCount:0;
+    h+='<td style="padding:5px 8px;text-align:center;font-weight:700;"><span style="color:#2563eb;">'+formatW(gAvg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+gCount+')</span></td>';
+    h+='</tr></tbody></table></div>';
+
+    var maxAvg=0;
+    doctorList.forEach(function(d){ var v=doctorGrand[d]; if(v&&v.count>0){ var a=v.total/v.count; if(a>maxAvg) maxAvg=a; } });
+    if(maxAvg>0){
+      var barColors=['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4'];
+      h+='<div style="margin-top:2px;"><div style="font-size:11px;color:#64748b;margin-bottom:8px;font-weight:600;">📊 의사별 평균 객단가</div>';
+      doctorList.forEach(function(d,i){
+        var v=doctorGrand[d]; if(!v||v.count===0) return;
+        var avg=v.total/v.count;
+        var pct=(avg/maxAvg*100).toFixed(1);
+        var color=barColors[i%barColors.length];
+        h+='<div style="margin-bottom:8px;">';
+        h+='<div style="display:flex;justify-content:space-between;margin-bottom:3px;">';
+        h+='<span style="font-size:11px;color:#1e293b;font-weight:600;">'+esc(d)+'</span>';
+        h+='<span style="font-size:11px;color:'+color+';font-weight:700;">'+formatW(avg)+' <span style="color:#94a3b8;font-weight:400;">('+v.count+'건)</span></span>';
+        h+='</div>';
+        h+='<div style="background:#e2e8f0;border-radius:4px;height:22px;overflow:hidden;">';
+        h+='<div style="background:'+color+';height:100%;width:'+pct+'%;border-radius:4px;display:flex;align-items:center;padding-left:8px;min-width:28px;">';
+        h+='<span style="font-size:10px;color:white;font-weight:700;white-space:nowrap;">'+formatW(avg)+'</span>';
+        h+='</div></div></div>';
+      });
+      h+='</div>';
+    }
+    h+='</details>';
+  })();
+
+  
   // ── 시술항목 TOP 15 (사용 개수순) ──
   h+=buildTreatmentTop15(cfg2);
 
