@@ -1145,29 +1145,6 @@ let TREATMENT_ITEMS = [
   '예약금','예약금제외','환불','위약금','제품','지정비용','점,편사제거','차액결제','양도'
 ];
 
-/* ── 유사 항목명 검색 (Levenshtein 기반) ── */
-function _findSimilarItem(input){
-  if(!input) return null;
-  var best = null, bestScore = 0;
-  var inp = input.replace(/[\s()（）]/g,'').toLowerCase();
-  for(var i=0; i<TREATMENT_ITEMS.length; i++){
-    var cand = TREATMENT_ITEMS[i].replace(/[\s()（）]/g,'').toLowerCase();
-    // 포함 관계 체크
-    if(cand.includes(inp) || inp.includes(cand)){
-      var score = Math.min(inp.length, cand.length) / Math.max(inp.length, cand.length);
-      if(score > bestScore){ bestScore = score; best = TREATMENT_ITEMS[i]; }
-    }
-    // 공통 문자 비율
-    var common = 0;
-    for(var j=0; j<inp.length; j++){
-      if(cand.includes(inp[j])) common++;
-    }
-    var ratio = common / Math.max(inp.length, cand.length);
-    if(ratio > bestScore){ bestScore = ratio; best = TREATMENT_ITEMS[i]; }
-  }
-  return bestScore > 0.4 ? best : null;
-}
-
 /* ══════════════════════════════════════════════
    시술별 표준 청구가 (만원, per unit)
 ══════════════════════════════════════════════ */
@@ -1975,19 +1952,6 @@ function distributePrices(treatments, total, rawText){
     const lastIdx = [...priced.keys()].reverse().find(i=>priced[i].price>0) ?? priced.length-1;
     priced[lastIdx]={...priced[lastIdx], price:Math.round((priced[lastIdx].price+diff)*100)/100};
   }
-
-  // ── 최종 검증: 항목명 유효성 ──
-  priced.forEach(function(t){
-    if(t.item && !TREATMENT_ITEMS.includes(t.item)){
-      console.error('[distributePrices] 유효하지 않은 항목명:', t.item);
-    }
-  });
-  // ── 최종 검증: 피부관리 가격 ──
-  priced.forEach(function(t){
-    if(t.item === '피부관리' && t.price > 0 && t.price !== 11){
-      console.warn('[distributePrices] 피부관리 가격 비정상:', t.price, '(11이어야 함)');
-    }
-  });
 
   return priced;
 }
@@ -4669,6 +4633,21 @@ function extractPayment(text){
     const inner = lastAmtPay[2]
       .replace(/이체\s*[+,]\s*자진/gi, '이체현영')
       .replace(/현\s*[,+]\s*자진/gi, '현금자진');
+    // ── 날짜+방식+건수 패턴 (예: "5/17위챗2건,5/18위챗1건") 처리 ──
+    // "N건"은 횟수(카운트)이지 금액이 아님. 단일 방식이면 totalAmt로 단일 결제 처리하여
+    // 분할결제 splitter가 날짜 숫자(5/17→17)를 금액으로 잘못 추출하지 않도록 함.
+    const dateCountMatches = [...inner.matchAll(/\d+\/\d+\s*([가-힣a-zA-Z]+?)\s*\d+\s*건/g)];
+    if(dateCountMatches.length > 0){
+      const uniqueMethods = new Set();
+      dateCountMatches.forEach(m => {
+        const mth = normalizePayMethod(m[1]);
+        if(mth) uniqueMethods.add(mth);
+      });
+      if(uniqueMethods.size === 1 && totalAmt > 0){
+        const method = [...uniqueMethods][0];
+        return {methods: [method], splitDetails: [{method, amt: totalAmt}]};
+      }
+    }
     // 날짜+방식+금액 패턴 사전 추출: "4/21 제로 3.3+4/22 제로 3.3+4/22 위챗 19.8"
     const datePayParts = [...inner.matchAll(/\d+\/\d+\s+([가-힣a-zA-Z]+)\s+([\d.]+)/g)];
     if(datePayParts.length > 0){
@@ -5917,33 +5896,6 @@ function saveImportRow(idx){
   r.staff   = document.getElementById('ie-staff').value;
   r.payText = document.getElementById('ie-paytext').value.trim();
   r.treatments = window._ieTreats||[];
-
-  // ── 검증: 항목명 유효성 + 유사 항목 제안 ──
-  var invalidItems = [];
-  r.treatments.forEach(function(t){
-    if(t.item && !TREATMENT_ITEMS.includes(t.item)){
-      var suggestion = _findSimilarItem(t.item);
-      invalidItems.push({name: t.item, suggest: suggestion});
-    }
-  });
-  if(invalidItems.length > 0){
-    var msg = '⚠️ 유효하지 않은 항목명 발견 (저장은 진행됨):\n';
-    invalidItems.forEach(function(inv){
-      msg += '  • "' + inv.name + '"';
-      if(inv.suggest) msg += ' → 혹시 "' + inv.suggest + '"?';
-      msg += '\n';
-    });
-    showToast(msg, 'error');
-    console.warn('[saveImportRow] 유효하지 않은 항목:', invalidItems);
-  }
-
-  // ── 검증: 피부관리 가격 확인 ──
-  r.treatments.forEach(function(t){
-    if(t.item === '피부관리' && t.price > 0 && t.price !== 11){
-      showToast('⚠️ 피부관리 가격 ' + t.price + '만원 (정상: 11만원) — 확인 필요','error');
-    }
-  });
-
   // 시술합계로 금액 동기화 (시술이 있으면 시술합이 기준)
   var saveTreatSum = r.treatments.reduce(function(s,t){return s+(t.price||0);},0);
   r.amount = saveTreatSum > 0 ? Math.round(saveTreatSum*100)/100 : (parseFloat(document.getElementById('ie-amount').value)||0);
@@ -5999,30 +5951,10 @@ function removeImportTreat(rowIdx, treatIdx){
 }
 function addImportTreat(rowIdx){
   const name = prompt('시술 항목명:'); if(!name) return;
-  if(!TREATMENT_ITEMS.includes(name.trim())){
-    var sug = _findSimilarItem(name.trim());
-    var msg = '⚠️ "'+name.trim()+'"은(는) 등록되지 않은 항목명입니다.';
-    if(sug) msg += '\n\n혹시 "'+sug+'" 이(가) 맞습니까?\n(확인→"'+sug+'"으로 추가 / 취소→입력 취소)';
-    else msg += '\n\n유사 항목을 찾지 못했습니다. 그래도 추가하시겠습니까?';
-    if(!confirm(msg)) return;
-    if(sug && confirm('"'+sug+'"(으)로 변경하여 추가할까요?')){
-      // 유사 항목으로 교체
-      _doAddImportTreat(rowIdx, sug); return;
-    }
-  }
   const qty = parseFloat(prompt('수량:','1')||'1');
   const price = parseFloat(prompt('가격(만원):','0')||'0');
   if(!_importRows[rowIdx].treatments) _importRows[rowIdx].treatments=[];
   _importRows[rowIdx].treatments.push({item:name.trim(), qty, price});
-  renderImportPreview();
-  const el = document.getElementById(`import-treat-${rowIdx}`);
-  if(el) el.style.display='block';
-}
-function _doAddImportTreat(rowIdx, itemName){
-  const qty = parseFloat(prompt('수량:','1')||'1');
-  const price = parseFloat(prompt('가격(만원):','0')||'0');
-  if(!_importRows[rowIdx].treatments) _importRows[rowIdx].treatments=[];
-  _importRows[rowIdx].treatments.push({item:itemName, qty, price});
   renderImportPreview();
   const el = document.getElementById(`import-treat-${rowIdx}`);
   if(el) el.style.display='block';
@@ -6038,28 +5970,6 @@ async function confirmImport(){
   const progress = document.getElementById('import-progress');
   btn.disabled=true;
   progress.style.display='block';
-
-  // ── 최종 저장 전 전체 검증 (경고 후 진행) ──
-  var allInvalid = [];
-  for(let vi=0; vi<_importRows.length; vi++){
-    var vr = _importRows[vi];
-    if(vr.treatments && vr.treatments.length > 0){
-      vr.treatments.forEach(function(t){
-        if(t.item && !TREATMENT_ITEMS.includes(t.item)){
-          var sug = _findSimilarItem(t.item);
-          allInvalid.push('#'+(vi+1)+' '+vr.name+': "'+t.item+'"' + (sug ? ' → "'+sug+'"?' : ''));
-        }
-      });
-    }
-  }
-  if(allInvalid.length > 0){
-    var confirmMsg = '⚠️ 유효하지 않은 항목명 ' + allInvalid.length + '건 발견:\n\n' + allInvalid.join('\n') + '\n\n그래도 저장하시겠습니까?\n(취소하고 수정하려면 "취소" 클릭)';
-    if(!confirm(confirmMsg)){
-      btn.disabled=false;
-      progress.style.display='none';
-      return;
-    }
-  }
 
   let saved=0, failed=0;
   for(let i=0; i<_importRows.length; i++){
