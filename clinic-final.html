@@ -2311,6 +2311,31 @@ function renderDailyTotals(){
         h+='<td style="padding:5px 8px;text-align:center;font-weight:700;"><span style="color:#2563eb;">'+formatW(catAvg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+catCount+')</span></td>';
         h+='</tr>';
       });
+      // 중국(묶어서) 합산 행: 중국(마)/중국(기타)/중국기타/중국(강)/중국(따) 합산
+      var chinaCats = ['중국(마)','중국(기타)','중국기타','중국(강)','중국(따)'];
+      var hasAnyChina = chinaCats.some(function(c){ return crossTab[c]; });
+      if(hasAnyChina){
+        h+='<tr style="border-bottom:1px solid #e2e8f0;background:#eff6ff;">';
+        h+='<td style="padding:5px 8px;font-weight:700;color:#2563eb;white-space:nowrap;">중국(묶어서)</td>';
+        var chTotalAll=0, chCountAll=0;
+        staffList.forEach(function(s){
+          var sumTotal=0, sumCount=0;
+          chinaCats.forEach(function(c){
+            var d = crossTab[c] && crossTab[c][s];
+            if(d){ sumTotal+=d.total; sumCount+=d.count; }
+          });
+          if(sumCount > 0){
+            var avg = sumTotal / sumCount;
+            chTotalAll+=sumTotal; chCountAll+=sumCount;
+            h+='<td style="padding:5px 8px;text-align:center;"><span style="color:#059669;font-weight:700;">'+formatW(avg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+sumCount+')</span></td>';
+          } else {
+            h+='<td style="padding:5px 8px;text-align:center;color:#cbd5e1;">-</td>';
+          }
+        });
+        var chAvgAll = chCountAll > 0 ? chTotalAll / chCountAll : 0;
+        h+='<td style="padding:5px 8px;text-align:center;font-weight:700;"><span style="color:#2563eb;">'+formatW(chAvgAll)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+chCountAll+')</span></td>';
+        h+='</tr>';
+      }
       // 전체 합계 행
       h+='<tr style="border-top:2px solid #cbd5e1;background:#f8fafc;"><td style="padding:5px 8px;font-weight:700;color:#2563eb;">전체</td>';
       var grandTotal=0, grandCount=0;
