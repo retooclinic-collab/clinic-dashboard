@@ -6879,8 +6879,8 @@ function renderStatsPanel(){
     crossHtml += '</tr>';
   });
 
-  // ── 중국(묶어서) 합산 행: 중국(마), 중국(기타), 중국(강), 중국(따) 합산 ──
-  var chinaCats = ['중국(마)', '중국(기타)', '중국(강)', '중국(따)'];
+  // ── 중국(묶어서) 합산 행: 중국(마), 중국(기타), 중국기타, 중국(강), 중국(따) 합산 ──
+  var chinaCats = ['중국(마)', '중국(기타)', '중국기타', '중국(강)', '중국(따)'];
   var hasAnyChina = chinaCats.some(function(c){ return crossTab[c]; });
   if(hasAnyChina){
     crossHtml += '<tr style="border-bottom:1px solid #1a2236;background:#0d1626">';
@@ -7595,4 +7595,4 @@ function openEditModal(id){
 
       <div style="display:flex;gap:10px">
         <button onclick="saveEditModal('${id}')"
-          style="flex:1;padding:13px;background:var(--green);col
+          style="flex:1;padding:13
