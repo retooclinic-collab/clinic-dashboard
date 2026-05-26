@@ -2311,31 +2311,6 @@ function renderDailyTotals(){
         h+='<td style="padding:5px 8px;text-align:center;font-weight:700;"><span style="color:#2563eb;">'+formatW(catAvg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+catCount+')</span></td>';
         h+='</tr>';
       });
-      // ── 중국(묶어서) 합산 행: 중국(마)/중국(기타)/중국기타/중국(강)/중국(따) 합산 ──
-      var chinaCats = ['중국(마)','중국(기타)','중국기타','중국(강)','중국(따)'];
-      var hasAnyChina = chinaCats.some(function(c){ return crossTab[c]; });
-      if(hasAnyChina){
-        h+='<tr style="border-bottom:1px solid #e2e8f0;background:#eff6ff;">';
-        h+='<td style="padding:5px 8px;font-weight:700;color:#2563eb;white-space:nowrap;">중국(묶어서)</td>';
-        var chTotalAll=0, chCountAll=0;
-        staffList.forEach(function(s){
-          var sumTotal=0, sumCount=0;
-          chinaCats.forEach(function(c){
-            var d = crossTab[c] && crossTab[c][s];
-            if(d){ sumTotal+=d.total; sumCount+=d.count; }
-          });
-          if(sumCount > 0){
-            var avg = sumTotal / sumCount;
-            chTotalAll+=sumTotal; chCountAll+=sumCount;
-            h+='<td style="padding:5px 8px;text-align:center;"><span style="color:#059669;font-weight:700;">'+formatW(avg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+sumCount+')</span></td>';
-          } else {
-            h+='<td style="padding:5px 8px;text-align:center;color:#cbd5e1;">-</td>';
-          }
-        });
-        var chAvgAll = chCountAll > 0 ? chTotalAll / chCountAll : 0;
-        h+='<td style="padding:5px 8px;text-align:center;font-weight:700;"><span style="color:#2563eb;">'+formatW(chAvgAll)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+chCountAll+')</span></td>';
-        h+='</tr>';
-      }
       // 전체 합계 행
       h+='<tr style="border-top:2px solid #cbd5e1;background:#f8fafc;"><td style="padding:5px 8px;font-weight:700;color:#2563eb;">전체</td>';
       var grandTotal=0, grandCount=0;
@@ -2377,15 +2352,13 @@ function renderDailyTotals(){
     var sf = window._docAvgFilter.staff;
     var cf = window._docAvgFilter.cat1;
 
-    // sf/cf가 현재 데이터에 없으면 초기화
     if(sf && !allStaffs[sf]) sf = window._docAvgFilter.staff = '';
     if(cf && !allCat1s[cf])  cf = window._docAvgFilter.cat1  = '';
 
     var filteredStaffs = sf ? [sf] : staffList;
     var filteredCat1s  = cf ? [cf] : cat1List;
 
-    // 집계
-    var tableData = {}; // rowKey → doctor → {count, total}
+    var tableData = {};
     filteredStaffs.forEach(function(s){
       filteredCat1s.forEach(function(c){
         if(!docData[s] || !docData[s][c]) return;
@@ -2410,7 +2383,6 @@ function renderDailyTotals(){
     var selSt = 'font-size:11px;background:#f8fafc;border:1px solid #e2e8f0;color:#374151;border-radius:6px;padding:4px 8px;cursor:pointer;';
     h += '<details style="margin-bottom:8px;" open><summary style="font-size:12px;font-weight:700;cursor:pointer;color:#475569;margin-bottom:6px;">🩺 의사별 객단가 비교 <span style="font-size:10px;font-weight:400;color:#94a3b8;">(실장·내원경로 통제)</span></summary>';
 
-    // 필터 드롭다운
     h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
     h += '<span style="font-size:11px;color:#64748b;">통제변수:</span>';
     h += '<select style="'+selSt+'" onchange="window._docAvgFilter.staff=this.value;renderDailyTotals();">';
@@ -2424,7 +2396,6 @@ function renderDailyTotals(){
     if(sf||cf) h += '<button onclick="window._docAvgFilter={staff:\'\',cat1:\'\'};renderDailyTotals();" style="font-size:10px;color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;padding:3px 8px;cursor:pointer;">초기화</button>';
     h += '</div>';
 
-    // 크로스탭 테이블
     var rowLabel = (sf&&cf)?'조건':(sf?'내원경로':(cf?'실장':'실장 / 내원경로'));
     h += '<div style="overflow-x:auto;margin-bottom:12px;"><table style="width:100%;border-collapse:collapse;font-size:11px;">';
     h += '<thead><tr style="background:#f1f5f9;"><th style="padding:5px 8px;text-align:left;color:#64748b;">'+rowLabel+'</th>';
@@ -2449,7 +2420,6 @@ function renderDailyTotals(){
       h+='</tr>';
     });
 
-    // 합계 행
     h += '<tr style="border-top:2px solid #cbd5e1;background:#f8fafc;"><td style="padding:5px 8px;font-weight:700;color:#2563eb;">전체</td>';
     var gTotal=0, gCount=0;
     var doctorGrand={};
@@ -2465,7 +2435,6 @@ function renderDailyTotals(){
     h+='<td style="padding:5px 8px;text-align:center;font-weight:700;"><span style="color:#2563eb;">'+formatW(gAvg)+'</span><span style="color:#94a3b8;font-size:10px;margin-left:2px;">('+gCount+')</span></td>';
     h+='</tr></tbody></table></div>';
 
-    // 바 차트
     var maxAvg=0;
     doctorList.forEach(function(d){ var v=doctorGrand[d]; if(v&&v.count>0){ var a=v.total/v.count; if(a>maxAvg) maxAvg=a; } });
     if(maxAvg>0){
@@ -2491,6 +2460,7 @@ function renderDailyTotals(){
     h+='</details>';
   })();
 
+  
   // ── 시술항목 TOP 15 (사용 개수순) ──
   h+=buildTreatmentTop15(cfg2);
 
@@ -4299,4 +4269,202 @@ async function runAdminAggregation(){
     var byTreat = {};
     var byPayMethod = {};
 
-    ite
+    items.forEach(function(it){
+      var amt = parseFloat(it.amount)||0;
+      if(it.type==='vip') return; // VIP 재료는 매출 제외
+
+      totalAmt += amt;
+
+      // 상담직원별
+      var s = it.staff||'미입력';
+      byStaff[s] = (byStaff[s]||0)+amt;
+
+      // 진료의사별
+      var d = it.doctor||'미입력';
+      byDoctor[d] = (byDoctor[d]||0)+amt;
+
+      // 분류1별
+      var c1 = it.cat1||'미입력';
+      byCat1[c1] = (byCat1[c1]||0)+amt;
+
+      // 시술의사 × 내원경로 중첩 집계
+      if(!byDoctorCat[d]) byDoctorCat[d] = {_total:0, _cats:{}};
+      byDoctorCat[d]._total += amt;
+      byDoctorCat[d]._cats[c1] = (byDoctorCat[d]._cats[c1]||0) + amt;
+
+      // 시술별
+      (it.treatments||[]).forEach(function(t){
+        if(!t.item) return;
+        if(!byTreat[t.item]) byTreat[t.item]={qty:0,amt:0};
+        byTreat[t.item].qty += (t.qty||1);
+        byTreat[t.item].amt += (t.price||0);
+      });
+
+      // 결제방식별
+      var pm = it.paymentMethods;
+      if(pm && pm.items && pm.items.length){
+        pm.items.forEach(function(pi){
+          var mth = pi.method||'기타';
+          byPayMethod[mth] = (byPayMethod[mth]||0)+(parseFloat(pi.amt)||0);
+        });
+      } else if(pm && pm.methods && pm.methods.length){
+        pm.methods.forEach(function(mth){
+          byPayMethod[mth] = (byPayMethod[mth]||0)+amt;
+        });
+      }
+    });
+
+    // 렌더링
+    var cnt = items.length;
+    var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:16px;">';
+
+    // KPI 카드
+    html += kpiCard('총 수납건수', cnt+'건', '#38bdf8');
+    html += kpiCard('총 매출', totalAmt.toLocaleString()+'만원', '#4ade80');
+    html += kpiCard('건당 평균', Math.round(totalAmt/cnt*10)/10+'만원', '#a78bfa');
+    html += '</div>';
+
+    // 분류별 테이블들
+    html += aggTable('👤 상담직원별', byStaff, totalAmt);
+    html += aggTable('📍 내원경로별', byCat1, totalAmt);
+    html += nestedDoctorCatTable('👩‍⚕️ 시술의사별 (내원경로 세부)', byDoctorCat, totalAmt);
+    html += aggTable('💳 결제방식별', byPayMethod, totalAmt);
+    html += treatTable(byTreat);
+
+    resultEl.innerHTML = html;
+
+  } catch(e){
+    resultEl.innerHTML='<div style="color:#ef4444;font-size:12px;padding:16px">오류: '+e.message+'</div>';
+    console.error(e);
+  }
+}
+
+function kpiCard(label, value, color){
+  return '<div style="background:#f8fafc;border-radius:10px;padding:14px;border-left:3px solid '+color+';border:1px solid #e2e8f0;">'+
+    '<div style="font-size:11px;color:#64748b;margin-bottom:4px;">'+label+'</div>'+
+    '<div style="font-size:18px;font-weight:800;color:'+color+'">'+value+'</div>'+
+    '</div>';
+}
+
+function aggTable(title, data, total){
+  var sorted = Object.entries(data).sort(function(a,b){return b[1]-a[1];});
+  if(!sorted.length) return '';
+  var html = '<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">'+title+'</div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  html += '<thead><tr style="background:#f1f5f9;color:#475569;"><th style="padding:7px 8px;text-align:left;">항목</th><th style="padding:7px 8px;text-align:right;">금액</th><th style="padding:7px 8px;text-align:right;">비중</th></tr></thead><tbody>';
+  sorted.forEach(function(e){
+    var pct = total>0 ? Math.round(e[1]/total*1000)/10 : 0;
+    html += '<tr style="border-bottom:1px solid #e2e8f0;">';
+    html += '<td style="padding:7px 8px;color:#1e293b;">'+e[0]+'</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#2563eb;font-weight:700;">'+Math.round(e[1]*10)/10+'만</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#64748b;">'+pct+'%</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function nestedDoctorCatTable(title, data, total){
+  // data: {의사명: {_total: N, _cats: {경로: N}}}
+  var sorted = Object.entries(data).sort(function(a,b){return b[1]._total - a[1]._total;});
+  if(!sorted.length) return '';
+  var html = '<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">'+title+'</div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  html += '<thead><tr style="background:#f1f5f9;color:#475569;">'
+       +  '<th style="padding:7px 8px;text-align:left;">의사 / 내원경로</th>'
+       +  '<th style="padding:7px 8px;text-align:right;">금액</th>'
+       +  '<th style="padding:7px 8px;text-align:right;">비중</th>'
+       +  '</tr></thead><tbody>';
+  sorted.forEach(function(e, idx){
+    var doctor = e[0];
+    var docTotal = e[1]._total;
+    var docPct = total>0 ? Math.round(docTotal/total*1000)/10 : 0;
+    var rowId = 'doccat-'+idx+'-'+Date.now();
+    // 의사 요약 행 (클릭하면 세부 펼침)
+    html += '<tr style="border-bottom:1px solid #e2e8f0;background:#fafafa;cursor:pointer" onclick="toggleDocCat(\''+rowId+'\', this)">';
+    html += '<td style="padding:7px 8px;color:#1e293b;font-weight:700;"><span style="display:inline-block;width:12px;color:#64748b">▶</span> '+doctor+'</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#2563eb;font-weight:700;">'+Math.round(docTotal*10)/10+'만</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#64748b;">'+docPct+'%</td>';
+    html += '</tr>';
+    // 내원경로별 세부 (기본 숨김)
+    var cats = Object.entries(e[1]._cats).sort(function(a,b){return b[1]-a[1];});
+    cats.forEach(function(ce){
+      var catPct = docTotal>0 ? Math.round(ce[1]/docTotal*1000)/10 : 0;
+      html += '<tr class="'+rowId+'" style="border-bottom:1px solid #f1f5f9;background:#fcfcfc;display:none">';
+      html += '<td style="padding:6px 8px 6px 28px;color:#475569;font-size:11px;">└ '+ce[0]+'</td>';
+      html += '<td style="padding:6px 8px;text-align:right;color:#475569;font-size:11px;">'+Math.round(ce[1]*10)/10+'만</td>';
+      html += '<td style="padding:6px 8px;text-align:right;color:#94a3b8;font-size:11px;">'+catPct+'% (의사내)</td>';
+      html += '</tr>';
+    });
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function toggleDocCat(cls, headerRow){
+  var rows = document.getElementsByClassName(cls);
+  if(!rows.length) return;
+  var isHidden = rows[0].style.display === 'none';
+  for(var i=0; i<rows.length; i++){
+    rows[i].style.display = isHidden ? 'table-row' : 'none';
+  }
+  // 화살표 아이콘 업데이트
+  var arrow = headerRow.querySelector('span');
+  if(arrow) arrow.textContent = isHidden ? '▼' : '▶';
+}
+
+function treatTable(data){
+  var sorted = Object.entries(data).sort(function(a,b){return b[1].qty-a[1].qty;});
+  if(!sorted.length) return '';
+  var html = '<div style="margin-bottom:14px;"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">🧪 시술별 집계</div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+  html += '<thead><tr style="background:#f1f5f9;color:#475569;"><th style="padding:7px 8px;text-align:left;">시술</th><th style="padding:7px 8px;text-align:right;">건수</th><th style="padding:7px 8px;text-align:right;">매출(만)</th></tr></thead><tbody>';
+  sorted.forEach(function(e){
+    html += '<tr style="border-bottom:1px solid #e2e8f0;">';
+    html += '<td style="padding:7px 8px;color:#1e293b;">'+e[0]+'</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#7c3aed;">'+e[1].qty+'</td>';
+    html += '<td style="padding:7px 8px;text-align:right;color:#2563eb;">'+Math.round(e[1].amt*10)/10+'</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+/* ── 감사로그 ── */
+async function loadAuditLog(){
+  var listEl = document.getElementById('audit-log-list');
+  if(!listEl) return;
+  listEl.innerHTML='<div style="color:#64748b;font-size:12px;padding:16px;text-align:center">로딩 중...</div>';
+
+  try {
+    var logs = await window.fbGetAuditLog(50);
+    if(!logs || !logs.length){
+      listEl.innerHTML='<div style="color:#64748b;font-size:12px;padding:16px;text-align:center">감사로그 없음</div>';
+      return;
+    }
+
+    var html = '';
+    logs.forEach(function(log){
+      var actionColor = log.action==='delete' ? '#ef4444' : log.action==='update' ? '#f59e0b' : '#38bdf8';
+      var actionLabel = log.action==='delete' ? '🗑 삭제' : log.action==='update' ? '✏ 수정' : '➕ 추가';
+      var name = (log.before && log.before.name) || (log.after && log.after.name) || log.targetId || '';
+      var date = (log.before && log.before.date) || (log.after && log.after.date) || '';
+      var timeStr = log.at ? log.at.slice(0,16).replace('T',' ') : '';
+
+      html += '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #e2e8f0;">';
+      html += '<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:'+actionColor+'22;color:'+actionColor+';white-space:nowrap;margin-top:2px;">'+actionLabel+'</span>';
+      html += '<div style="flex:1;">';
+      html += '<div style="font-size:12px;color:#1e293b;font-weight:600;">'+name+' <span style="color:#64748b;font-weight:400;">'+date+'</span></div>';
+      html += '<div style="font-size:11px;color:#64748b;">'+log.by+' · '+timeStr+'</div>';
+      html += '</div></div>';
+    });
+
+    listEl.innerHTML = html;
+  } catch(e){
+    listEl.innerHTML='<div style="color:#ef4444;font-size:12px;padding:16px">오류: '+e.message+'</div>';
+    console.error(e);
+  }
+}
+</script>
+</body>
+</html>
