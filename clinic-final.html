@@ -1220,14 +1220,19 @@ function render(){
 
     var hasMargin=cd.byStaff.some(function(s){return typeof s.netPer==='number'});
     h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">직원별 분석</div>';
-    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">① 상담리스트 기준 · 상담 건수 · 총 결제액 · 객단가'+(hasMargin?' · 객마진':'')+'</div>';
+    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">① 상담리스트 기준 · 상담 건수 · 총 결제액 · 객단가'+(hasMargin?' · 객마진 · 마진율':'')+'</div>';
     h+='<canvas id="ch-staff" style="max-height:200px;margin-bottom:16px;"></canvas>';
-    h+='<table><thead><tr><th>직원명</th><th class="r">건수</th><th class="r">총 결제액</th><th class="r">객단가</th>'+(hasMargin?'<th class="r">객마진</th>':'')+'<th class="r">매출 비중</th></tr></thead><tbody>';
+    h+='<table><thead><tr><th>직원명</th><th class="r">건수</th><th class="r">총 결제액</th><th class="r">객단가</th>'+(hasMargin?'<th class="r">객마진</th><th class="r">마진율</th>':'')+'<th class="r">매출 비중</th></tr></thead><tbody>';
     cd.byStaff.forEach(function(s,i){
       h+='<tr><td><span class="dot" style="background:'+COLS[i%COLS.length]+'"></span><b>'+esc(s.name)+'</b></td>';
       h+='<td class="r muted">'+nf(s.count)+'건</td><td class="r bold">'+won(s.total)+'</td>';
       h+='<td class="r green">'+won(s.avg)+'</td>';
-      if(hasMargin) h+='<td class="r" style="color:'+(s.netPer>=0?'#15803d':'#ef4444')+';font-weight:600;">'+(typeof s.netPer==='number'?won(s.netPer):'-')+'</td>';
+      if(hasMargin){
+        h+='<td class="r" style="color:'+(s.netPer>=0?'#15803d':'#ef4444')+';font-weight:600;">'+(typeof s.netPer==='number'?won(s.netPer):'-')+'</td>';
+        var mRate=s.avg>0?Math.round(s.netPer/s.avg*1000)/10:0;
+        var mColor=mRate>=50?'#15803d':mRate>=30?'#d97706':'#ef4444';
+        h+='<td class="r" style="color:'+mColor+';font-weight:600;">'+(s.avg>0?mRate.toFixed(1)+'%':'-')+'</td>';
+      }
       h+='<td class="r muted">'+(cd.total?(s.total/cd.total*100).toFixed(2):0)+'%</td></tr>';
     });
     h+='</tbody></table></div>';
