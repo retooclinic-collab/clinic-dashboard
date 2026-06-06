@@ -1009,7 +1009,7 @@ async function loadFromConsultations(){
       items.forEach(function(it){
         var sk=(it.staff||'미지정').trim()||'미지정';
         if(!smMap[sk]) smMap[sk]={comm:0,mat:0};
-        var cat1=normRoute(it.cat1);
+        var cat1=(it.cat1||'').trim();
         var amt=(parseFloat(it.amount)||0)*10000;
         smMap[sk].comm+=calcCommission(cat1,amt,cfgM,true);
         smMap[sk].mat+=calcMaterialCost(it.treatments,cfgM);
