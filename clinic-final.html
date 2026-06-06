@@ -1002,6 +1002,28 @@ async function loadFromConsultations(){
       markDone('b',G.bFile);
     }
 
+    // 직원별 객마진(순이익/건) 계산 — treatments+cat1 기반
+    if(G.cData && G.cData.byStaff){
+      var cfgM=loadCfg();
+      var smMap={};
+      items.forEach(function(it){
+        var sk=(it.staff||'미지정').trim()||'미지정';
+        if(!smMap[sk]) smMap[sk]={comm:0,mat:0};
+        var cat1=normRoute(it.cat1);
+        var amt=(parseFloat(it.amount)||0)*10000;
+        smMap[sk].comm+=calcCommission(cat1,amt,cfgM,true);
+        smMap[sk].mat+=calcMaterialCost(it.treatments,cfgM);
+      });
+      G.cData.byStaff.forEach(function(s){
+        var m=smMap[s.name];
+        if(m){
+          s.comm=m.comm; s.mat=m.mat;
+          s.net=s.total-m.comm-m.mat;
+          s.netPer=s.count>0?s.net/s.count:0;
+        }
+      });
+    }
+
     render();
     renderCardSection();
     renderSummary();
@@ -1196,14 +1218,17 @@ function render(){
     h+=K('상담 직원 수',cd.byStaff.length+'명','#8b5cf6');
     h+='</div>';
 
+    var hasMargin=cd.byStaff.some(function(s){return typeof s.netPer==='number'});
     h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">직원별 분석</div>';
-    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">① 상담리스트 기준 · 상담 건수 · 총 결제액 · 객단가</div>';
+    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">① 상담리스트 기준 · 상담 건수 · 총 결제액 · 객단가'+(hasMargin?' · 객마진':'')+'</div>';
     h+='<canvas id="ch-staff" style="max-height:200px;margin-bottom:16px;"></canvas>';
-    h+='<table><thead><tr><th>직원명</th><th class="r">건수</th><th class="r">총 결제액</th><th class="r">객단가</th><th class="r">매출 비중</th></tr></thead><tbody>';
+    h+='<table><thead><tr><th>직원명</th><th class="r">건수</th><th class="r">총 결제액</th><th class="r">객단가</th>'+(hasMargin?'<th class="r">객마진</th>':'')+'<th class="r">매출 비중</th></tr></thead><tbody>';
     cd.byStaff.forEach(function(s,i){
       h+='<tr><td><span class="dot" style="background:'+COLS[i%COLS.length]+'"></span><b>'+esc(s.name)+'</b></td>';
       h+='<td class="r muted">'+nf(s.count)+'건</td><td class="r bold">'+won(s.total)+'</td>';
-      h+='<td class="r green">'+won(s.avg)+'</td><td class="r muted">'+(cd.total?(s.total/cd.total*100).toFixed(2):0)+'%</td></tr>';
+      h+='<td class="r green">'+won(s.avg)+'</td>';
+      if(hasMargin) h+='<td class="r" style="color:'+(s.netPer>=0?'#15803d':'#ef4444')+';font-weight:600;">'+(typeof s.netPer==='number'?won(s.netPer):'-')+'</td>';
+      h+='<td class="r muted">'+(cd.total?(s.total/cd.total*100).toFixed(2):0)+'%</td></tr>';
     });
     h+='</tbody></table></div>';
 
