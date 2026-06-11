@@ -978,7 +978,7 @@ async function loadFromConsultations(){
     // 상담데이터 cat1 → bData(수수료) 자동 계산
     var routeMap={};
     items.forEach(function(it){
-      var route=(it.cat1||'').trim();
+      var route=normRoute(it.cat1);
       if(!route || /합계|총계/.test(route)) return;
       var amt=(parseFloat(it.amount)||0)*10000; // manwon→원
       if(!routeMap[route]) routeMap[route]=0;
@@ -1117,7 +1117,7 @@ function computeC(){
     if(isNaN(n)){skip++;return}
     var amt=n*mult;
     var sv=String(r[cols.staff]||'미지정').trim()||'미지정';
-    var cv=String(r[cols.channel]||'미지정').trim()||'미지정';
+    var cv=normRoute(r[cols.channel]||'미지정')||'미지정';
     tot+=amt;cnt++;
     if(!sMap[sv])sMap[sv]={tot:0,cnt:0};sMap[sv].tot+=amt;sMap[sv].cnt++;
     if(!cMap[cv])cMap[cv]={tot:0,cnt:0};cMap[cv].tot+=amt;cMap[cv].cnt++;
@@ -1338,7 +1338,7 @@ function renderCrossTable(){
     if(isNaN(n))return;
     var amt=n*mult;
     var s=String(r[cols.staff]||'미지정').trim()||'미지정';
-    var c=String(r[cols.channel]||'미지정').trim()||'미지정';
+    var c=normRoute(r[cols.channel]||'미지정')||'미지정';
     staffSet[s]=1; chanSet[c]=1;
     if(!map[s])map[s]={};
     if(!map[s][c])map[s][c]={tot:0,cnt:0};
@@ -1497,7 +1497,7 @@ async function refreshTrendFromDB(){
       // bData 재계산 (수수료)
       var routeMap={};
       items.forEach(function(it){
-        var route=(it.cat1||'').trim();
+        var route=normRoute(it.cat1);
         if(!route||/합계|총계/.test(route)) return;
         var amt2=(parseFloat(it.amount)||0)*10000;
         if(!routeMap[route]) routeMap[route]=0;
@@ -2059,11 +2059,19 @@ async function loadAllDaily(){
   }
 }
 
+/* 내원경로 정규화: 공백/전각괄호/제로폭 문자 차이로 갈라진 변형을 하나로 합침 */
+function normRoute(s){
+  if(s==null) return '';
+  return String(s)
+    .replace(/[​-‍﻿]/g,'')
+    .replace(/（/g,'(').replace(/）/g,')')
+    .replace(/[\s 　]+/g,'');
+}
 function populateDailyFilters(){
   var staffs={}, cats={}, doctors={};
   _dailyAllItems.forEach(function(it){
     if(it.staff) staffs[it.staff]=1;
-    if(it.cat1) cats[it.cat1]=1;
+    if(it.cat1){var _nc=normRoute(it.cat1); if(_nc) cats[_nc]=1;}
     if(it.doctor) doctors[it.doctor]=1;
   });
   var staffSel=document.getElementById('df-staff');
@@ -2090,7 +2098,7 @@ function applyDailyFilter(){
     if(from && (it.date||'')<from) return false;
     if(to && (it.date||'')>to) return false;
     if(staff && (it.staff||'')!==staff) return false;
-    if(cat1 && (it.cat1||'')!==cat1) return false;
+    if(cat1 && normRoute(it.cat1)!==cat1) return false;
     if(doctor && (it.doctor||'')!==doctor) return false;
     return true;
   });
@@ -2156,7 +2164,7 @@ function renderDailyTotals(){
   // 1차: percent 수수료만 건별 계산
   _dailyFiltered.forEach(function(it){
     var amt=(parseFloat(it.amount)||0)*10000;
-    var cat1=it.cat1||'';
+    var cat1=normRoute(it.cat1);
     var comm=calcCommission(cat1,amt,cfg2,true); // percent만
     var mat=calcMaterialCost(it.treatments,cfg2);
     tAmt+=amt; tComm+=comm; tMat+=mat;
@@ -2301,7 +2309,7 @@ function renderDailyTotals(){
     var crossTab = {};
     var allStaffs = {};
     _dailyFiltered.forEach(function(it){
-      var c = it.cat1 || '(미지정)';
+      var c = normRoute(it.cat1) || '(미지정)';
       var s = it.staff || '(미지정)';
       var amt = (parseFloat(it.amount)||0) * 10000;
       if(!crossTab[c]) crossTab[c] = {};
@@ -2388,7 +2396,7 @@ function renderDailyTotals(){
     var allDoctors = {}, allStaffs = {}, allCat1s = {};
     _dailyFiltered.forEach(function(it){
       var s = it.staff || '(미지정)';
-      var c = it.cat1 || '(미지정)';
+      var c = normRoute(it.cat1) || '(미지정)';
       var d = it.doctor || '(미지정)';
       var amt = (parseFloat(it.amount)||0) * 10000;
       if(!docData[s]) docData[s] = {};
@@ -2717,7 +2725,7 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     var staff=it.staff||'미지정';
     if(!mix[staff]) mix[staff]={};
     var amt=(parseFloat(it.amount)||0)*10000;
-    var cat1=it.cat1||'';
+    var cat1=normRoute(it.cat1);
     // percent 수수료만 (고정값 경로 제외 — 일본(통) 등)
     var comm=calcCommission(cat1,amt,cfg2,true);
     var txs=(it.treatments||[]).filter(function(t){return t && t.item;});
@@ -2995,7 +3003,7 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
       var s=(staff===A)?sA:(staff===B)?sB:null;
       if(!s) return;
       var amt=(parseFloat(it.amount)||0)*10000;
-      var cat1=it.cat1||'';
+      var cat1=normRoute(it.cat1);
       var comm=calcCommission(cat1,amt,cfg2,true);
       var txs=(it.treatments||[]).filter(function(t){return t && t.item;});
       var mat=calcMaterialCost(txs,cfg2);
@@ -3117,7 +3125,7 @@ function downloadDailyCSV(){
   var rows=[heads.join(',')];
   _dailyFiltered.forEach(function(it){
     var amt=(parseFloat(it.amount)||0)*10000;
-    var cat1=it.cat1||'';
+    var cat1=normRoute(it.cat1);
     var comm=calcCommission(cat1,amt,cfg2,true);
     var mat=calcMaterialCost(it.treatments,cfg2);
     var net=amt-comm-mat;
@@ -4339,7 +4347,7 @@ async function runAdminAggregation(){
       byDoctor[d] = (byDoctor[d]||0)+amt;
 
       // 분류1별
-      var c1 = it.cat1||'미입력';
+      var c1 = normRoute(it.cat1)||'미입력';
       byCat1[c1] = (byCat1[c1]||0)+amt;
 
       // 시술의사 × 내원경로 중첩 집계
