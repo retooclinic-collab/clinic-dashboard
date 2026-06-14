@@ -5951,6 +5951,8 @@ function saveImportRow(idx){
   // 시술합계로 금액 동기화 (시술이 있으면 시술합이 기준)
   var saveTreatSum = r.treatments.reduce(function(s,t){return s+(t.price||0);},0);
   r.amount = saveTreatSum > 0 ? Math.round(saveTreatSum*100)/100 : (parseFloat(document.getElementById('ie-amount').value)||0);
+  // ★ 편집한 금액이 renderImportPreview에서 _origColAmt로 되돌려지지 않도록 동기화 (2026-06-14 버그수정)
+  r._origColAmt = r.amount;
   r.paymentMethods = {
     items: window._iePays||[],
     splitDetails: (window._iePays||[]).filter(p=>p.amt>0),
