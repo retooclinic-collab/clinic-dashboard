@@ -516,7 +516,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">분류1</th>
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">분류2</th>
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border)">결제내역</th>
-              <th style="padding:10px 8px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap">금액(만)</th>
+              <th style="padding:10px 8px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap">청구금액(만)</th>
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">결제</th>
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">의사</th>
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">상담자</th>
@@ -673,7 +673,7 @@ window.fbSaveConsultation = async (data) => {
     ...data, id,
     staffUid: window._fbUser?.uid || 'unknown',
     staffEmail: window._fbUser?.email || '',
-    createdAt: new Date().toISOString(),
+    createdAt: data.createdAt || new Date().toISOString(),
     serverTs: serverTimestamp()
   };
   await setDoc(doc(db, 'consultations', id), docData);
@@ -4113,7 +4113,8 @@ function localParse(raw){
       const ccM = t.match(/(\d+)cc/);
       if(ccM){
         const ccVal = parseInt(ccM[1]);
-        if(/리쥬란|힐로웨이브/.test(t)) qty = Math.max(1, Math.round(ccVal/2));
+        if(/리쥬란\s*hb|리쥬란\s*아이|아이리쥬란/.test(t)) qty = Math.max(1, ccVal);        // 리쥬란HB·리쥬란아이: 1cc=1단위 (cc=개수)
+        else if(/리쥬란|힐로웨이브/.test(t)) qty = Math.max(1, Math.round(ccVal/2));        // 리쥬란(일반)·힐로웨이브: 2cc=1단위
         else qty = Math.max(1, ccVal);
       }
       const hoeM = t.match(/(\d+)\s*회/); if(hoeM) qty = parseInt(hoeM[1]);
@@ -4766,8 +4767,9 @@ function extractPayment(text){
     }
   }
 
-  // 미수 패턴: "+49.5미수", "49.5미수" (괄호 밖, 결제 뒤에 붙는 미수금)
-  const misuM = text.match(/([\d,.]+)\s*미수/i);
+  // 미수 패턴: "49.5미수"(숫자 앞) + "미수1167.5","미수금400"(숫자 뒤) 모두 인식
+  let misuM = text.match(/([\d,.]+)\s*미수/i);
+  if(!misuM) misuM = text.match(/미수금?\s*([\d,.]+)/i);
   if(misuM){
     const misuAmt = parseFloat(misuM[1].replace(/,/g,''));
     if(misuAmt > 0){
@@ -5382,6 +5384,34 @@ function isHeaderRow(row){
   return str.includes('날짜') || str.includes('차트') || str.includes('date');
 }
 
+/* ── 결제/청구/미수 공통 계산 ──
+   billed(청구) = 시술합계, misu = 결제방식 '미수' 합,
+   paid(결제,실수납) = 미수 제외 결제방식 합 (없으면 _origColAmt/amount 폴백).
+   ★ 미수는 결제(paid)에서 빼지 않음. 셋은 독립 값. */
+function calcRowAmounts(r){
+  var billed = Math.round(((r.treatments||[]).reduce(function(s,t){return s+(t.price||0);},0))*100)/100;
+  var pm = {};
+  try { pm = r.paymentMethods || (r.payText ? extractPayment(r.payText) : null) || {}; } catch(e){ pm = {}; }
+  var items = pm.items || pm.splitDetails || [];
+  var misu = 0, paidPm = 0, nonMisuCount = 0;
+  items.forEach(function(p){
+    if(p.method==='미수') misu += (p.amt||0);
+    else { paidPm += (p.amt||0); nonMisuCount++; }
+  });
+  misu = Math.round(misu*100)/100;
+  var paid;
+  if(nonMisuCount > 0 && paidPm > 0){
+    paid = Math.round(paidPm*100)/100;            // 결제방식에 실수납액 명시됨
+  } else if(('_origColAmt' in r) && r._origColAmt !== '' && r._origColAmt !== null && !isNaN(r._origColAmt)){
+    paid = r._origColAmt;                          // 엑셀 결제금액 컬럼
+  } else if(typeof r.amount === 'number'){
+    paid = r.amount;
+  } else {
+    paid = billed;
+  }
+  return { billed: billed, paid: Math.round(paid*100)/100, misu: misu };
+}
+
 function renderImportPreview(){
   if(!_importRows.length){ showToast('파싱된 데이터가 없어요','error'); return; }
 
@@ -5502,7 +5532,7 @@ function _applyRegexFallbackAndRenderTable(){
   html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155">차트/이름</th>';
   html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155">분류</th>';
   html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155">결제내역</th>';
-  html += '<th style="padding:6px;text-align:right;border-bottom:1px solid #334155">금액</th>';
+  html += '<th style="padding:6px;text-align:right;border-bottom:1px solid #334155">청구/결제</th>';
   html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155;white-space:nowrap">상담자</th>';
   html += '<th style="padding:6px;text-align:left;border-bottom:1px solid #334155;white-space:nowrap">시술의사</th>';
   html += '<th style="padding:6px;text-align:center;border-bottom:1px solid #334155">시술</th>';
@@ -5511,38 +5541,13 @@ function _applyRegexFallbackAndRenderTable(){
 
   for(var i=0; i<_importRows.length; i++){
     var r = _importRows[i];
-    var treatSum = (r.treatments||[]).reduce(function(s,t){return s+(t.price||0);},0);
-    var treatSumR = Math.round(treatSum*100)/100;
-    // 미수 금액 확인 (결제방식에서)
-    var misuAmt = 0;
-    try {
-      var pm = r.paymentMethods || (r.payText ? extractPayment(r.payText) : null) || {};
-      var pmItems = pm.items || pm.splitDetails || [];
-      pmItems.forEach(function(p){ if(p.method==='미수') misuAmt += (p.amt||0); });
-    } catch(e){}
+    var amt3 = calcRowAmounts(r);
+    var treatSumR = amt3.billed;   // 청구금액(시술합계)
+    var misuAmt = amt3.misu;
+    var paidAmt = amt3.paid;       // 결제금액(실수납, 미수 제외)
     var hasMisu = misuAmt > 0;
-    // 실제 결제금액 = 시술합계 - 미수 (파란색으로 표시할 금액)
-    var paidAmt = Math.round((treatSumR - misuAmt)*100)/100;
-    // 원본 컬럼 금액 우선 사용 (엑셀 결제금액 컬럼 값 100% 보존)
-    if('_origColAmt' in r){
-      // 엑셀 컬럼 값 우선 — 0(빈칸), 양수, 음수(환불) 모두 보존
-      if(r._origColAmt < 0){
-        r.amount = r._origColAmt;
-      } else if(r._origColAmt > 0){
-        r.amount = r._origColAmt;  // 미수 별도 표기, amount에서 차감 안 함
-      } else {
-        // 컬럼 비어있으면 시술합계 사용 (예약금5건=16.5m 등 텍스트에 금액 있는 경우)
-      if(treatSumR > 0){
-        r.amount = paidAmt > 0 ? paidAmt : treatSumR;
-      } else {
-        r.amount = 0;
-      }
-      }
-    } else if(treatSumR < -0.01){
-      r.amount = treatSumR;  // 환불
-    } else if(treatSumR > 0){
-      r.amount = paidAmt > 0 ? paidAmt : treatSumR;
-    }
+    // ★ 결제금액 = 실수납액. 미수/시술합계로 덮지 않음.
+    r.amount = paidAmt;
     var origAmt = r.payText ? (extractAmount(r.payText)||0) : 0;
     // 환불인 경우 origAmt를 음수로 변환하여 비교
     var isRefund = /환불/i.test(r.payText||'');
@@ -5571,8 +5576,13 @@ function _applyRegexFallbackAndRenderTable(){
     html += '<td style="padding:6px;overflow:hidden;text-overflow:ellipsis"><div style="color:#64748b;font-size:10px;overflow:hidden;text-overflow:ellipsis">' + r.chart + '</div><div style="color:#f1f5f9;font-weight:700;overflow:hidden;text-overflow:ellipsis">' + (r.name||'<span style="color:#ef4444">없음</span>') + '</div></td>';
     html += '<td style="padding:6px;color:#94a3b8;font-size:11px;overflow:hidden;text-overflow:ellipsis">' + (r.cat1||'<span style="color:#ef4444">없음</span>') + (r.cat2?'<br>'+r.cat2:'') + '</td>';
     html += '<td style="padding:6px;color:#94a3b8;font-size:11px;word-break:break-all;line-height:1.4">' + (r.payText||'<span style="color:#475569;font-style:italic">Claude 직접파싱</span>') + '</td>';
-    var amtColor = r.amount < 0 ? '#ef4444' : '#38bdf8';
-    html += '<td style="padding:6px;text-align:right;color:'+amtColor+';font-weight:700;font-size:11px">' + r.amount + '만</td>';
+    var amtColor = treatSumR < 0 ? '#ef4444' : '#38bdf8';
+    var showPaid = Math.abs(paidAmt - treatSumR) > 0.01 || hasMisu;
+    html += '<td style="padding:6px;text-align:right;font-weight:700;font-size:11px">'
+      + '<div style="color:'+amtColor+'">' + treatSumR + '만</div>'
+      + (showPaid ? '<div style="font-size:9px;color:#94a3b8;font-weight:400">결제 ' + paidAmt + '</div>' : '')
+      + (hasMisu ? '<div style="font-size:9px;color:#ef4444;font-weight:400">미수 ' + misuAmt + '</div>' : '')
+      + '</td>';
     html += '<td style="padding:6px;color:#94a3b8;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (r.staff||'') + '</td>';
     html += '<td style="padding:6px;color:#a5f3fc;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (r.doctor||'-') + '</td>';
     var srcTag = r._parseSource === 'ai' ? '<span style="font-size:8px;color:#10b981;margin-left:2px">AI</span>' : '';
@@ -5591,30 +5601,25 @@ function _applyRegexFallbackAndRenderTable(){
       html += '</span>';
     });
     html += '</div>';
-    html += '<div style="font-size:11px;color:'+badgeColor+'">합계 '+treatSumR+'만'+(hasMisu?' <span style="color:#ef4444">(미수 '+misuAmt+'만 → 실결제 '+paidAmt+'만)</span>':'')+' / 결제텍스트 '+origAmt+'만 '+(sumOk?'✓':'← 확인 필요')+'</div>';
+    html += '<div style="font-size:11px;color:'+badgeColor+'">청구 '+treatSumR+'만 / 결제 '+paidAmt+'만'+(hasMisu?' <span style="color:#ef4444">미수 '+misuAmt+'만</span>':'')+' / 결제텍스트 '+origAmt+'만 '+(sumOk?'✓':'← 확인 필요')+'</div>';
     html += '</td></tr>';
   }
 
   // 전체 합계 요약 바
   var totalPaid = 0, totalMisu = 0, totalTreat = 0, warnCount = 0;
   for(var j=0; j<_importRows.length; j++){
-    var rj = _importRows[j];
-    var ts = (rj.treatments||[]).reduce(function(s,t){return s+(t.price||0);},0);
-    totalTreat += ts;
-    totalPaid += (rj.amount||0);
-    try {
-      var pmj = rj.paymentMethods || extractPayment(rj.payText) || {};
-      var pmjItems = pmj.items || pmj.splitDetails || [];
-      pmjItems.forEach(function(p){ if(p.method==='미수') totalMisu += (p.amt||0); });
-    } catch(e){}
+    var a3 = calcRowAmounts(_importRows[j]);
+    totalTreat += a3.billed;
+    totalPaid  += a3.paid;
+    totalMisu  += a3.misu;
   }
   totalTreat = Math.round(totalTreat*100)/100;
   totalPaid = Math.round(totalPaid*100)/100;
   totalMisu = Math.round(totalMisu*100)/100;
   html += '<div style="padding:10px 12px;background:#1e293b;border-radius:0 0 12px 12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">';
   html += '<span style="font-size:12px;color:#94a3b8;font-weight:700">합계</span>';
-  html += '<span style="font-size:13px;color:#38bdf8;font-weight:700">실결제 '+totalPaid+'만</span>';
-  html += '<span style="font-size:11px;color:#64748b">시술총합 '+totalTreat+'만</span>';
+  html += '<span style="font-size:13px;color:#4ade80;font-weight:700">결제금액 '+totalPaid+'만</span>';
+  html += '<span style="font-size:12px;color:#38bdf8;font-weight:700">청구금액 '+totalTreat+'만</span>';
   if(totalMisu > 0) html += '<span style="font-size:11px;color:#ef4444;font-weight:700">미수 '+totalMisu+'만</span>';
   html += '<span style="font-size:11px;color:#64748b">'+_importRows.length+'건</span>';
   html += '</div>';
@@ -6026,6 +6031,8 @@ async function confirmImport(){
   progress.style.display='block';
 
   let saved=0, failed=0;
+  // 초안 순서 유지: 첫 행이 가장 큰 createdAt → 내림차순 정렬 시 맨 위 (역순 방지)
+  const _baseMs = Date.now();
   for(let i=0; i<_importRows.length; i++){
     const r = _importRows[i];
     progress.textContent = `저장 중... ${i+1}/${_importRows.length}`;
@@ -6057,6 +6064,7 @@ async function confirmImport(){
         treatments,
         paymentMethods,
         importedAt: new Date().toISOString(),
+        createdAt: new Date(_baseMs - i * 1000).toISOString(),
         isImported: true,
       });
       saved++;
@@ -6822,24 +6830,25 @@ function renderHistory(items){
   let totalCount = 0;
 
   Object.keys(grouped).sort((a,b)=>b.localeCompare(a)).forEach(date=>{
-    // 날짜별 합산 (환불: amount=0이면 treatments에서 환불 금액 폴백)
-    let dateMisu = 0;
-    const dateTotal = grouped[date].filter(it=>it.type!=='vip').reduce((s,it)=>{
-      let a = parseFloat(it.amount)||0;
-      if(a===0 && it.treatments?.length){ const r=it.treatments.find(t=>t.item==='환불'); if(r) a=r.price||0; }
-      // 날짜별 미수 합산
-      const dpm = it.paymentMethods;
-      if(dpm)(dpm.items||dpm.splitDetails||[]).forEach(p=>{ if(p.method==='미수') dateMisu+=(p.amt||0); });
-      return s+a;
-    }, 0);
+    // 날짜별 합산: 결제(실수납, 미수 제외) / 청구(시술합계) / 미수
+    let dateMisu = 0, datePaid = 0, dateBilled = 0;
+    grouped[date].filter(it=>it.type!=='vip').forEach(it=>{
+      const a3 = calcRowAmounts(it);
+      let paid = a3.paid;
+      if(paid===0 && it.treatments?.length){ const r=it.treatments.find(t=>t.item==='환불'); if(r) paid=r.price||0; }
+      datePaid += paid; dateBilled += a3.billed; dateMisu += a3.misu;
+    });
+    const dateTotal = datePaid;
     const dateCount = grouped[date].length;
+    const dateBilledStr = `<span style="color:#38bdf8;font-weight:700;margin-left:8px">청구 ${(Math.round(dateBilled*100)/100).toLocaleString()}만</span>`;
     const dateMisuStr = dateMisu > 0 ? `<span style="color:#ef4444;font-weight:700;margin-left:8px">미수 ${Math.round(dateMisu*10)/10}만</span>` : '';
     const delBtn = window._isAdmin ? `<button onclick="deleteDateItems('${date}')" style="float:right;font-size:10px;padding:2px 8px;background:none;border:1px solid var(--red);border-radius:6px;color:var(--red);cursor:pointer;opacity:.6;transition:opacity .15s" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='.6'">🗑 이 날짜 삭제</button>` : '';
     html += `<tr>
       <td colspan="11" style="padding:8px 10px;background:#0a0f1a;color:var(--accent);font-size:11px;font-weight:700;letter-spacing:1px;border-bottom:1px solid var(--border)">
         📅 ${date}
         <span style="color:var(--muted);font-weight:400"> ${dateCount}건</span>
-        <span style="color:var(--green);font-weight:700;margin-left:10px">${(Math.round(dateTotal*100)/100).toLocaleString()}만원</span>
+        <span style="color:var(--green);font-weight:700;margin-left:10px">결제 ${(Math.round(datePaid*100)/100).toLocaleString()}만</span>
+        ${dateBilledStr}
         ${dateMisuStr}
         ${delBtn}
       </td>
@@ -6847,8 +6856,8 @@ function renderHistory(items){
 
     grouped[date].forEach(it=>{
       totalCount++;
-      let amt = parseFloat(it.amount)||0;
-      // 환불: amount=0이면 treatments에서 환불 금액 폴백
+      let amt = calcRowAmounts(it).paid;   // 결제금액(실수납, 미수 제외)
+      // 환불: 결제 0이면 treatments에서 환불 금액 폴백
       if(amt===0 && it.treatments?.length){ const r=it.treatments.find(t=>t.item==='환불'); if(r) amt=r.price||0; }
       const isVip = it.type==='vip';
       if(!isVip) totalAmt += amt;
@@ -6876,6 +6885,12 @@ function renderHistory(items){
       }
       const misuBadge = rowMisu > 0 ? `<span style="font-size:9px;background:#2a0a0a;color:#ef4444;border-radius:10px;padding:1px 5px;margin-left:4px;font-weight:700">미수 ${rowMisu}</span>` : '';
 
+      // 결제/청구/미수 (공통 계산). 청구=시술합계, 결제=실수납(미수 제외), 미수 별도.
+      const a3 = calcRowAmounts(it);
+      const billed = a3.billed;
+      const paid = (a3.paid===0 && amt) ? amt : a3.paid;
+      const showPaid = !isVip && (rowMisu > 0 || Math.abs(billed - paid) > 0.5);
+
       html += `<tr style="border-bottom:1px solid #1a2236;${isVip?'opacity:.75':''}">
         <td style="padding:9px 8px;color:var(--muted);white-space:nowrap">${it.date||''}</td>
         <td style="padding:9px 8px;white-space:nowrap">${it.chart||''}</td>
@@ -6891,7 +6906,11 @@ function renderHistory(items){
             onclick="this.style.webkitLineClamp=this.style.webkitLineClamp?'':'2';this.style.display=this.style.webkitLineClamp?'-webkit-box':'block'"
             title="클릭하면 펼치기">${it.paymentText||''}</div>
         </td>
-        <td style="padding:9px 8px;text-align:right;color:${isVip?'var(--muted)':'var(--accent)'};font-weight:700;white-space:nowrap">${isVip?'-':amt.toLocaleString()}${rowMisu>0?'<div style="font-size:9px;color:#ef4444;font-weight:400">미수 '+rowMisu+'</div>':''}</td>
+        <td style="padding:9px 8px;text-align:right;font-weight:700;white-space:nowrap">${isVip
+            ? '<span style="color:var(--muted)">-</span>'
+            : ('<div style="color:var(--accent)">'+billed.toLocaleString()+'</div>'
+               + (showPaid ? '<div style="font-size:10px;color:#94a3b8;font-weight:600">결제 '+paid.toLocaleString()+'</div>' : '')
+               + (rowMisu>0 ? '<div style="font-size:9px;color:#ef4444;font-weight:400">미수 '+rowMisu+'</div>' : ''))}</td>
         <td style="padding:9px 8px;color:var(--sub);font-size:11px;white-space:nowrap">${payStr}</td>
         <td style="padding:9px 8px;color:var(--muted);font-size:11px;white-space:nowrap">${it.doctor||''}</td>
         <td style="padding:9px 8px;color:var(--muted);white-space:nowrap">${it.staff||''}</td>
@@ -6927,7 +6946,7 @@ function renderHistory(items){
     let filterSubtotal = '';
     if(sf || df || cf){
       const vipExcluded = visibleItems.filter(it => it.type !== 'vip');
-      const filteredTotal = vipExcluded.reduce((s,it) => s + (parseFloat(it.amount)||0), 0);
+      const filteredTotal = vipExcluded.reduce((s,it) => s + (calcRowAmounts(it).paid||0), 0);
       const parts = [];
       if(sf) parts.push(`👤 ${sf}`);
       if(df) parts.push(`🩺 ${df}`);
@@ -6943,7 +6962,7 @@ function renderHistory(items){
       <span style="color:var(--muted)">${rangeLabel}</span>
       ${filterBadge}
       <span>총 <strong style="color:var(--text)">${totalCount}건</strong></span>
-      <span>합계 <strong style="color:var(--accent);font-size:15px">${(Math.round(totalAmt*100)/100).toLocaleString()}만원</strong></span>
+      <span>결제 합계 <strong style="color:var(--accent);font-size:15px">${(Math.round(totalAmt*100)/100).toLocaleString()}만원</strong></span>
       ${filterSubtotal}
     `;
   }
