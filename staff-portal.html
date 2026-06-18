@@ -673,7 +673,7 @@ window.fbSaveConsultation = async (data) => {
     ...data, id,
     staffUid: window._fbUser?.uid || 'unknown',
     staffEmail: window._fbUser?.email || '',
-    createdAt: data.createdAt || new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     serverTs: serverTimestamp()
   };
   await setDoc(doc(db, 'consultations', id), docData);
@@ -784,7 +784,8 @@ window.startListenHistory = (uid, email) => {
     items.sort((a,b)=>{
       const dateDiff = (b.date||'').localeCompare(a.date||'');
       if(dateDiff !== 0) return dateDiff;
-      return (b.createdAt||'').localeCompare(a.createdAt||'');
+      // 같은 날짜: createdAt 오름차순(먼저 입력된 시트 위쪽 건이 위로)
+      return (a.createdAt||'').localeCompare(b.createdAt||'');
     });
     window._allItems = items;
     updateGroupFilterOptions(items);
@@ -6031,8 +6032,6 @@ async function confirmImport(){
   progress.style.display='block';
 
   let saved=0, failed=0;
-  // 초안 순서 유지: 첫 행이 가장 큰 createdAt → 내림차순 정렬 시 맨 위 (역순 방지)
-  const _baseMs = Date.now();
   for(let i=0; i<_importRows.length; i++){
     const r = _importRows[i];
     progress.textContent = `저장 중... ${i+1}/${_importRows.length}`;
@@ -6064,7 +6063,6 @@ async function confirmImport(){
         treatments,
         paymentMethods,
         importedAt: new Date().toISOString(),
-        createdAt: new Date(_baseMs - i * 1000).toISOString(),
         isImported: true,
       });
       saved++;
