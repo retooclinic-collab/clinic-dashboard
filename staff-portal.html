@@ -329,13 +329,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
         <div class="form-group">
           <div class="form-label">상담직원</div>
           <select class="form-select" id="f-staff">
-            <option value="김구슬">김구슬</option>
-            <option value="길연주">길연주</option>
-            <option value="김도은">김도은</option>
-            <option value="호아신">호아신</option>
-            <option value="장나은">장나은</option>
-            <option value="테스트">테스트</option>
-            <option value="예약금">예약금</option>
+            <!-- 상담직원 옵션: 로그인 후 loadNames()가 채움 -->
           </select>
         </div>
         <div class="form-group">
@@ -350,12 +344,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
           <div class="form-label">진료의사<span>*</span></div>
           <select class="form-select" id="f-doctor" onchange="handleDoctorChange()">
             <option value="">선택</option>
-            <option value="김재림">김재림</option>
-            <option value="김선민">김선민</option>
-            <option value="윤규성">윤규성</option>
-            <option value="송승아">송승아</option>
-            <option value="장명선">장명선</option>
-            <option value="기록없음">기록없음</option>
+            <!-- 진료의사 옵션: 로그인 후 loadNames()가 채움 -->
             <option value="직접입력">직접 입력</option>
           </select>
           <input class="form-input" id="f-doctor-custom" type="text" placeholder="의사 이름 입력" style="display:none;margin-top:6px">
@@ -607,20 +596,13 @@ onAuthStateChanged(auth, async user => {
     }
 
     window._fbUser = user;
+    await loadNames();
     document.getElementById('login-screen').style.display='none';
     document.getElementById('shell').style.display='flex';
     document.getElementById('shell').style.flexDirection='column';
     document.getElementById('user-badge').textContent = user.email.split('@')[0];
     // 이메일 기반 상담직원 기본 선택
-    const emailToStaff = {
-      'retooclinic@gmail.com':'김구슬',
-      'progressio333@gmail.com':'테스트',
-      'gs.kim@retooclinic.com':'김구슬',
-      'yj.gil@retooclinic.com':'길연주',
-      'de.kim@retooclinic.com':'김도은',
-      'as.ho@retooclinic.com':'호아신',
-      'ne.jang@retooclinic.com':'장나은',
-    };
+    const emailToStaff = (window.NAMES && window.NAMES.emailToStaff) || {};
     const emailPrefix = user.email.split('@')[0];
     const mappedStaff = emailToStaff[user.email] || Object.values(STAFF_MAP||{}).find(v=>v===emailPrefix) || null;
     const staffSel = document.getElementById('f-staff');
@@ -1038,17 +1020,20 @@ function handleDoctorChange(){
 }
 
 /* ── 상담자 매핑 ── */
-const STAFF_MAP = {
-  '김':'김구슬', '길':'길연주', '명':'명재은', '도':'김도은', '도은':'김도은',
-  '장':'퇴사-장', '황':'퇴사-황', '나은':'장나은',
-  '이':'퇴사-이', '공':'퇴사-공', '데스크':'데스크',
-  '한빛':'퇴사-한빛', '유엄진':'퇴사-유엄진',
-  '주미진':'퇴사-주미진', '아신':'호아신', '단비':'단비',
-  // 풀네임 그대로
-  '김구슬':'김구슬', '길연주':'길연주', '명재은':'명재은',
-  '장나은':'장나은', '호아신':'호아신', '김도은':'김도은',
-  '예약금':'예약금'
-};
+let STAFF_MAP = {};  // 실명은 코드에 두지 않음. 로그인 후 Firestore(clinic_settings/staff_directory)에서 로드
+window.NAMES = { staffMap:{}, emailToStaff:{}, staffSelect:[], doctorSelect:[], staffList:[], staffAllExtra:[], doctors:[], doctorNames:[] };
+async function loadNames(){
+  try{
+    const d = await getDoc(doc(db,'clinic_settings','staff_directory'));
+    if(d.exists()){ Object.assign(window.NAMES, d.data()); STAFF_MAP = window.NAMES.staffMap || {}; }
+  }catch(e){ console.warn('이름 로드 실패(폴백):', e.message); }
+  try{
+    const fs=document.getElementById('f-staff');
+    if(fs && (window.NAMES.staffSelect||[]).length) fs.innerHTML = window.NAMES.staffSelect.map(function(s){return '<option value="'+s+'">'+s+'</option>';}).join('');
+    const fd=document.getElementById('f-doctor');
+    if(fd && (window.NAMES.doctorSelect||[]).length) fd.innerHTML = '<option value="">선택</option>'+window.NAMES.doctorSelect.map(function(s){return '<option value="'+s+'">'+s+'</option>';}).join('')+'<option value="직접입력">직접 입력</option>';
+  }catch(e){}
+}
 function mapStaff(s){
   if(!s) return s;
   const trimmed = s.trim();
@@ -1142,6 +1127,7 @@ let TREATMENT_ITEMS = [
   '티타튠','티타튠max',
   '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트',
   'NAD','백옥','미라젯쥬베룩','알라딘필','문신제거','쥬베룩스킨',
+  '조각주사','마운자로 2.5','마운자로 5.0','마운자로 7.5','마운자로 10.0',
   '피부관리','고압산소',
   '적립금차감','선납금차감','상품권차감','할인차감','적립금',
   '예약금','예약금제외','환불','위약금','제품','지정비용','점,편사제거','차액결제','양도'
@@ -1175,6 +1161,7 @@ const CHARGE_PRICE = {
   '수액':8.8, 'NAD':16.5, '백옥':8.8, 'TA':1.1, 'CO2':5.5,
   '알라딘필':33, '리쥬셀릭크림':4.2, '리쥬셀릭앰플':4.8,
   '리쥬셀릭선물세트':12.5, 'VIP회원권':0, '상담만':2.2,
+  '조각주사':44, '마운자로 2.5':40, '마운자로 5.0':40, '마운자로 7.5':40, '마운자로 10.0':40,
   '예약금':0, '하이쿡스':5.5, '플라즈마엑소좀':55,
   '새살주사':27.5, '인텐스울트라':27.5, '히알라제':16.5,
   '피부관리':11, '고압산소':11,
@@ -1259,6 +1246,8 @@ const _ITEM_KEYWORDS = {
   '줄기세포':/줄기세포/i,
   '히알라제':/히알라제/i, '새살주사':/새살주사/i,
   '인텐스울트라':/인텐스울트라/i, '위고비':/위고비/i,
+  '마운자로 10.0':/마운자로\s*10/i, '마운자로 7.5':/마운자로\s*7\.5/i, '마운자로 5.0':/마운자로\s*5/i, '마운자로 2.5':/마운자로\s*2\.5/i,
+  '조각주사':/조각주사/i,
   '스킨바이브':/스킨바이브/i, '하이쿡스':/하이쿡스/i,
   '플라즈마엑소좀':/플라즈마엑소좀/i,
   '피부관리':/진정(?:관리|팩)|피부관리|커스텀케어/i,
@@ -4365,14 +4354,14 @@ function localParse(raw){
     return posA - posB;
   });
 
-  // ── 시술의사 추출: "/ 도은" → 상담직원, 결제내역 끝부분 "도김재림" → 시술의사 ──
-  const DOCTOR_NAMES = ['김재림','김선민','윤규성','송승아','장명선'];
+  // ── 시술의사 추출: "/ 직원약칭" → 상담직원, 결제내역 끝부분 "약칭+의사명" → 시술의사 ──
+  const DOCTOR_NAMES = (window.NAMES && window.NAMES.doctorNames) || [];
   let doctor = '';
   // 패턴1: 텍스트 내 "도[의사이름]" (일괄입력 포맷)
   for(const dn of DOCTOR_NAMES){
     if(new RegExp('도' + dn).test(_origRaw)){ doctor = dn; break; }
   }
-  // 패턴2: "시술: 김재림", "의사: 김재림" 등
+  // 패턴2: "시술: 의사명", "의사: 의사명" 등
   if(!doctor){
     const docM = _origRaw.match(/(?:시술|의사|Dr|dr)[:\s]*([가-힣]{2,4})/);
     if(docM && DOCTOR_NAMES.includes(docM[1])) doctor = docM[1];
@@ -5774,10 +5763,10 @@ function openImportEditModal(idx){
   modal.id = 'import-edit-modal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
 
-  const STAFF_LIST = ['김구슬','길연주','김도은','호아신','장나은','테스트'];
-  const STAFF_ALL = [...STAFF_LIST, '명재은','데스크','퇴사-장','퇴사-황','퇴사-이','퇴사-공','퇴사-한빛','퇴사-유엄진','퇴사-주미진'];
+  const STAFF_LIST = (window.NAMES && window.NAMES.staffList) || [];
+  const STAFF_ALL = [...STAFF_LIST, ...((window.NAMES && window.NAMES.staffAllExtra) || [])];
   const CAT1_LIST = ['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국원내','일본(통)','외국인','예약금'];
-  const DOCTORS = ['김재림','김선민','윤규성','송승아','장명선','기록없음'];
+  const DOCTORS = (window.NAMES && window.NAMES.doctors) || [];
 
   modal.innerHTML = `
     <div style="background:var(--panel);border-radius:16px;padding:24px;width:100%;max-width:780px;border:1px solid var(--border);max-height:92vh;overflow-y:auto">
@@ -7291,10 +7280,10 @@ function openEditModal(id){
           <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">상담직원</div>
           <select id="edit-staff" class="form-select">
             <optgroup label="현직">
-              ${['김구슬','길연주','김도은','호아신','장나은'].map(s=>`<option value="${s}" ${(item.staff||'')==s?'selected':''}>${s}</option>`).join('')}
+              ${((window.NAMES&&window.NAMES.staffList)||[]).map(s=>`<option value="${s}" ${(item.staff||'')==s?'selected':''}>${s}</option>`).join('')}
             </optgroup>
             <optgroup label="퇴사/기타">
-              ${['명재은','데스크','퇴사-장','퇴사-황','퇴사-이','퇴사-공','퇴사-한빛','퇴사-유엄진','퇴사-주미진'].map(s=>`<option value="${s}" ${(item.staff||'')==s?'selected':''}>${s}</option>`).join('')}
+              ${((window.NAMES&&window.NAMES.staffAllExtra)||[]).map(s=>`<option value="${s}" ${(item.staff||'')==s?'selected':''}>${s}</option>`).join('')}
             </optgroup>
           </select>
         </div>
