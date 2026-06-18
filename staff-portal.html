@@ -5763,7 +5763,7 @@ function openImportEditModal(idx){
   modal.id = 'import-edit-modal';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;overflow-y:auto';
 
-  const STAFF_LIST = (window.NAMES && window.NAMES.staffList) || [];
+  const STAFF_LIST = ((window.NAMES && window.NAMES.staffList && window.NAMES.staffList.length) ? window.NAMES.staffList : ((window.NAMES && window.NAMES.staffSelect) || []));
   const STAFF_ALL = [...STAFF_LIST, ...((window.NAMES && window.NAMES.staffAllExtra) || [])];
   const CAT1_LIST = ['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국원내','일본(통)','외국인','예약금'];
   const DOCTORS = (window.NAMES && window.NAMES.doctors) || [];
@@ -7280,7 +7280,7 @@ function openEditModal(id){
           <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">상담직원</div>
           <select id="edit-staff" class="form-select">
             <optgroup label="현직">
-              ${((window.NAMES&&window.NAMES.staffList)||[]).map(s=>`<option value="${s}" ${(item.staff||'')==s?'selected':''}>${s}</option>`).join('')}
+              ${(((window.NAMES&&window.NAMES.staffList&&window.NAMES.staffList.length)?window.NAMES.staffList:((window.NAMES&&window.NAMES.staffSelect)||[]))).map(s=>`<option value="${s}" ${(item.staff||'')==s?'selected':''}>${s}</option>`).join('')}
             </optgroup>
             <optgroup label="퇴사/기타">
               ${((window.NAMES&&window.NAMES.staffAllExtra)||[]).map(s=>`<option value="${s}" ${(item.staff||'')==s?'selected':''}>${s}</option>`).join('')}
