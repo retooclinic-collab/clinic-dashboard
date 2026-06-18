@@ -494,8 +494,8 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
             <col style="width:auto">   <!-- 결제내역 -->
             <col style="width:58px">   <!-- 금액 -->
             <col style="width:90px">   <!-- 결제(방식+금액) -->
-            <col style="width:48px">   <!-- 의사 -->
             <col style="width:50px">   <!-- 상담자 -->
+            <col style="width:48px">   <!-- 의사 -->
             <col style="width:90px">   <!-- 수정/삭제 -->
           </colgroup>
           <thead>
@@ -508,8 +508,8 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border)">결제내역</th>
               <th style="padding:10px 8px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap">청구금액(만)</th>
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">결제</th>
-              <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">의사</th>
               <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">상담자</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">의사</th>
               <th style="padding:10px 8px;border-bottom:1px solid var(--border);width:40px"></th>
             </tr>
           </thead>
@@ -950,9 +950,9 @@ function renderRecentEntries(items){
             <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">분류</th>
             <th style="text-align:right;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">금액</th>
             <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">시술항목</th>
-            <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">의사</th>
             <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">결제방식</th>
             <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">상담자</th>
+            <th style="text-align:left;padding:4px 6px;color:var(--muted);font-weight:600;white-space:nowrap">의사</th>
           </tr></thead><tbody>`;
     dayItems.forEach(it=>{
       const isVip = it.type==='vip';
@@ -964,12 +964,12 @@ function renderRecentEntries(items){
       }
       // 시술항목
       const treats = (it.treatments||[]).map(t=>`${t.item}×${t.qty}`).join(', ') || '-';
-      // 결제방식
+      // 결제방식 (총액 먼저, 방식 상세는 뒤에. 2개 이상일 때 총합 표시)
       let payStr = '-';
       const pm = it.payMethods || it.payMethod || {};
       if(typeof pm === 'string'){ payStr = pm; }
-      else if(pm.items?.length > 0){ payStr = pm.items.map(i=>{ const m=(i.method||'').replace('알리페이','알리'); return i.amt?`${m} ${i.amt}`:m; }).join('+'); }
-      else if(pm.splitDetails?.length > 0){ payStr = pm.splitDetails.map(d=>`${(d.method||'').replace('알리페이','알리')} ${d.amt||''}`).join('+'); }
+      else if(pm.items?.length > 0){ payStr = fmtPayStr(pm.items); }
+      else if(pm.splitDetails?.length > 0){ payStr = fmtPayStr(pm.splitDetails); }
       else if(pm.methods?.length > 0){ payStr = pm.methods.map(m=>(m||'').replace('알리페이','알리')).join('/'); }
       else if(pm.method){ payStr = pm.method; }
       html += `<tr style="border-bottom:1px solid #1a2236">
@@ -977,9 +977,9 @@ function renderRecentEntries(items){
         <td style="padding:4px 6px;white-space:nowrap;color:var(--muted)">${it.cat1||''}</td>
         <td style="padding:4px 6px;text-align:right;white-space:nowrap;color:${isVip?'var(--muted)':'var(--accent)'};font-weight:${isVip?'400':'600'}">${isVip?'-':amt.toLocaleString()+'만'}</td>
         <td style="padding:4px 6px;color:var(--sub);max-width:180px;word-break:break-all">${treats}</td>
-        <td style="padding:4px 6px;white-space:nowrap;color:var(--muted)">${it.doctor||'-'}</td>
         <td style="padding:4px 6px;white-space:nowrap;color:var(--sub)">${payStr}</td>
         <td style="padding:4px 6px;white-space:nowrap;color:var(--muted)">${it.staff||'-'}</td>
+        <td style="padding:4px 6px;white-space:nowrap;color:var(--muted)">${it.doctor||'-'}</td>
       </tr>`;
     });
     html += '</tbody></table></div></div>';
@@ -5415,6 +5415,31 @@ function isHeaderRow(row){
   return str.includes('날짜') || str.includes('차트') || str.includes('date');
 }
 
+/* ── 결제방식 표시 포맷 (총액 먼저, 방식 상세는 뒤) ──
+   결제방식이 2개 이상이면 "총합 (방식1 금액+방식2 금액)" 형태로,
+   1개면 "방식 금액" 그대로. 미수는 실결제 합에서 제외하고 뒤에 "미수 N" 별도 표기. */
+function fmtPayStr(items){
+  if(!items || !items.length) return '';
+  var pay = items.filter(function(p){ return p.method !== '미수'; });
+  var misuItems = items.filter(function(p){ return p.method === '미수'; });
+  var detail = pay.map(function(p){
+    var m = (p.method||'').replace('알리페이','알리');
+    return p.amt ? (p.amt + m) : m;
+  }).join(' + ');
+  var out;
+  if(pay.length >= 2){
+    var sum = Math.round(pay.reduce(function(s,p){ return s + (p.amt||0); }, 0)*100)/100;
+    out = sum.toLocaleString() + ' (' + detail + ')';
+  } else {
+    out = detail;
+  }
+  if(misuItems.length){
+    var msum = Math.round(misuItems.reduce(function(s,p){ return s + (p.amt||0); }, 0)*100)/100;
+    out = (out ? out + ' ' : '') + '미수 ' + msum;
+  }
+  return out;
+}
+
 /* ── 결제/청구/미수 공통 계산 ──
    billed(청구) = 시술합계, misu = 결제방식 '미수' 합,
    paid(결제,실수납) = 미수 제외 결제방식 합 (없으면 _origColAmt/amount 폴백).
@@ -6892,14 +6917,11 @@ function renderHistory(items){
       const pm = it.paymentMethods;
       let payStr = '';
       if(pm){
-        // items 배열 우선 (새 형식 - 금액 포함)
+        // items 배열 우선 (새 형식 - 금액 포함). 2개 이상이면 총액 먼저, 방식 상세는 뒤에.
         if(pm.items?.length > 0){
-          payStr = pm.items.map(i=>{
-            const m = (i.method||'').replace('알리페이','알리');
-            return i.amt ? `${m} ${i.amt}` : m;
-          }).join('+');
+          payStr = fmtPayStr(pm.items);
         } else if(pm.splitDetails?.length > 0){
-          payStr = pm.splitDetails.map(d=>`${(d.method||'').replace('알리페이','알리')} ${d.amt||''}`).join('+');
+          payStr = fmtPayStr(pm.splitDetails);
         } else if(pm.methods?.length > 0){
           payStr = pm.methods.map(m=>(m||'').replace('알리페이','알리')).join('/');
         }
@@ -6940,8 +6962,8 @@ function renderHistory(items){
                + (showPaid ? '<div style="font-size:10px;color:#94a3b8;font-weight:600">결제 '+paid.toLocaleString()+'</div>' : '')
                + (rowMisu>0 ? '<div style="font-size:9px;color:#ef4444;font-weight:400">미수 '+rowMisu+'</div>' : ''))}</td>
         <td style="padding:9px 8px;color:var(--sub);font-size:11px;white-space:nowrap">${payStr}</td>
-        <td style="padding:9px 8px;color:var(--muted);font-size:11px;white-space:nowrap">${it.doctor||''}</td>
         <td style="padding:9px 8px;color:var(--muted);white-space:nowrap">${it.staff||''}</td>
+        <td style="padding:9px 8px;color:var(--muted);font-size:11px;white-space:nowrap">${it.doctor||''}</td>
         <td style="padding:6px 4px;white-space:nowrap">
           <button onclick="openEditModal('${it.id}')" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer">수정</button>
           <button onclick="confirmDeleteRecord('${it.id}')" style="font-size:11px;padding:4px 8px;background:none;border:1px solid var(--red);border-radius:6px;color:var(--red);cursor:pointer;margin-left:4px">삭제</button>
@@ -7238,6 +7260,12 @@ function openEditModal(id){
   // cat2 options
   const cat2opts = (CAT2_MAP[item.cat1]||[]).map(o=>`<option value="${o}" ${item.cat2===o?'selected':''}>${o}</option>`).join('');
 
+  // 진료의사 드롭다운 옵션 (Firestore doctors→doctorSelect 폴백, 기존 값이 목록에 없으면 보존)
+  const _docList = (window.NAMES&&window.NAMES.doctors&&window.NAMES.doctors.length) ? window.NAMES.doctors : ((window.NAMES&&window.NAMES.doctorSelect)||[]);
+  const docopts = _docList.map(d=>`<option value="${d}" ${(item.doctor||'')==d?'selected':''}>${d}</option>`).join('')
+    + ((item.doctor && !_docList.includes(item.doctor)) ? `<option value="${item.doctor}" selected>${item.doctor}</option>` : '')
+    + `<option value="" ${!item.doctor?'selected':''}>기록없음</option>`;
+
   modal.innerHTML = `
     <div style="background:var(--panel);border-radius:16px;padding:24px;width:100%;max-width:720px;border:1px solid var(--border);max-height:90vh;overflow-y:auto">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
@@ -7260,7 +7288,7 @@ function openEditModal(id){
         </div>
         <div>
           <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">진료의사</div>
-          <input id="edit-doctor" type="text" class="form-input" value="${item.doctor||''}">
+          <select id="edit-doctor" class="form-select">${docopts}</select>
         </div>
         <div>
           <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류1</div>
