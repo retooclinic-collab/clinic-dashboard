@@ -5766,7 +5766,7 @@ function openImportEditModal(idx){
   const STAFF_LIST = ((window.NAMES && window.NAMES.staffList && window.NAMES.staffList.length) ? window.NAMES.staffList : ((window.NAMES && window.NAMES.staffSelect) || []));
   const STAFF_ALL = [...STAFF_LIST, ...((window.NAMES && window.NAMES.staffAllExtra) || [])];
   const CAT1_LIST = ['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국원내','일본(통)','외국인','예약금'];
-  const DOCTORS = (window.NAMES && window.NAMES.doctors) || [];
+  const DOCTORS = ((window.NAMES && window.NAMES.doctors && window.NAMES.doctors.length) ? window.NAMES.doctors : ((window.NAMES && window.NAMES.doctorSelect) || []));
 
   modal.innerHTML = `
     <div style="background:var(--panel);border-radius:16px;padding:24px;width:100%;max-width:780px;border:1px solid var(--border);max-height:92vh;overflow-y:auto">
