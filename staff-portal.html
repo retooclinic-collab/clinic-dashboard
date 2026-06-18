@@ -1024,7 +1024,7 @@ let STAFF_MAP = {};  // 실명은 코드에 두지 않음. 로그인 후 Firesto
 window.NAMES = { staffMap:{}, emailToStaff:{}, staffSelect:[], doctorSelect:[], staffList:[], staffAllExtra:[], doctors:[], doctorNames:[] };
 async function loadNames(){
   try{
-    const d = await getDoc(doc(db,'clinic_settings','staff_directory'));
+    const fb=window._fb; const d = await fb.getDoc(fb.doc(fb.db,'clinic_settings','staff_directory'));
     if(d.exists()){ Object.assign(window.NAMES, d.data()); STAFF_MAP = window.NAMES.staffMap || {}; }
   }catch(e){ console.warn('이름 로드 실패(폴백):', e.message); }
   try{
