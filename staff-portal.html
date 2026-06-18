@@ -1698,7 +1698,23 @@ function extractTextPrices(raw, treatments){
 }
 
 /* ── 가격 분배 (텍스트 명시가 → 소폭 조정) ── */
+const __INTRND_EXCL=new Set(['적립금','적립금차감','선납금차감','상품권차감','할인차감','예약금','예약금제외','환불','위약금','제품','지정비용','차액결제','VIP회원권','VIP할인혜택','피부관리']);
+function __intRoundRegex(priced, rawText){
+  if(!Array.isArray(priced)) return priced;
+  const txt=(rawText||'').replace(/\s/g,'');
+  const isExplicit=(pr)=>{ const a=String(pr); return txt.includes(a)||txt.includes(a.replace('.',',')); };
+  const adj=priced.filter(p=>p&&p.price>0 && Math.abs(p.price-Math.round(p.price))>1e-9 && !isExplicit(p.price) && !__INTRND_EXCL.has(p.item));
+  if(adj.length===0) return priced;
+  const adjSum=adj.reduce((a,p)=>a+p.price,0); let acc=0;
+  for(let k=0;k<adj.length;k++){ if(k<adj.length-1){adj[k].price=Math.round(adj[k].price);acc+=adj[k].price;} else {adj[k].price=Math.round((adjSum-acc)*100)/100;} }
+  return priced;
+}
 function distributePrices(treatments, total, rawText){
+  const __p=_distributePricesRaw(treatments, total, rawText);
+  try{ __intRoundRegex(__p, rawText); }catch(e){ console.warn('intRound err',e); }
+  return __p;
+}
+function _distributePricesRaw(treatments, total, rawText){
   // 빈 배열 방어
   if(!treatments || treatments.length===0) return [];
   // 환불 등 _fixedAmt만 있는 단일항목은 바로 반환
