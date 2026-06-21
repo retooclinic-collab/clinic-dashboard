@@ -930,13 +930,8 @@ function renderRecentEntries(items){
   recent3.forEach(date=>{
     const dayItems = filtered.filter(it=>it.date===date);
     const dayTotal = dayItems.filter(it=>it.type!=='vip').reduce((s,it)=>{
-      let amt = parseFloat(it.amount)||0;
-      // 환불: amount=0이면 treatments에서 환불 금액 가져오기 (기존 데이터 호환)
-      if(amt===0 && it.treatments?.length){
-        const refund = it.treatments.find(t=>t.item==='환불');
-        if(refund) amt = refund.price||0;
-      }
-      return s + amt;
+      // 결제 = 입력값 기준 (환불 항목 자동 폴백 제거)
+      return s + (parseFloat(it.amount)||0);
     }, 0);
     html += `<div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--accent);padding:4px 0;border-bottom:1px solid var(--border);margin-bottom:4px">
@@ -956,12 +951,7 @@ function renderRecentEntries(items){
           </tr></thead><tbody>`;
     dayItems.forEach(it=>{
       const isVip = it.type==='vip';
-      let amt = parseFloat(it.amount)||0;
-      // 환불: amount=0이면 treatments에서 환불 금액 가져오기
-      if(amt===0 && it.treatments?.length){
-        const refund = it.treatments.find(t=>t.item==='환불');
-        if(refund) amt = refund.price||0;
-      }
+      const amt = parseFloat(it.amount)||0;
       // 시술항목
       const treats = (it.treatments||[]).map(t=>`${t.item}×${t.qty}`).join(', ') || '-';
       // 결제방식 (총액 먼저, 방식 상세는 뒤에. 2개 이상일 때 총합 표시)
@@ -6967,9 +6957,8 @@ function renderHistory(items){
     let dateMisu = 0, datePaid = 0, dateBilled = 0;
     grouped[date].filter(it=>it.type!=='vip').forEach(it=>{
       const a3 = calcRowAmounts(it);
-      let paid = a3.paid;
-      if(paid===0 && it.treatments?.length){ const r=it.treatments.find(t=>t.item==='환불'); if(r) paid=r.price||0; }
-      datePaid += paid; dateBilled += a3.billed; dateMisu += a3.misu;
+      // 결제 = 입력한 결제방식 기준 (환불 항목 자동 폴백 제거)
+      datePaid += a3.paid; dateBilled += a3.billed; dateMisu += a3.misu;
     });
     const dateTotal = datePaid;
     const dateCount = grouped[date].length;
@@ -6989,9 +6978,7 @@ function renderHistory(items){
 
     grouped[date].forEach(it=>{
       totalCount++;
-      let amt = calcRowAmounts(it).paid;   // 결제금액(실수납, 미수 제외)
-      // 환불: 결제 0이면 treatments에서 환불 금액 폴백
-      if(amt===0 && it.treatments?.length){ const r=it.treatments.find(t=>t.item==='환불'); if(r) amt=r.price||0; }
+      let amt = calcRowAmounts(it).paid;   // 결제금액(실수납, 미수 제외) = 입력한 결제방식 기준
       const isVip = it.type==='vip';
       if(!isVip) totalAmt += amt;
       const pm = it.paymentMethods;
@@ -7165,13 +7152,11 @@ function renderMiniCalendar(){
       dayMap[d].count++;
       monthCount++;
       if(it.type!=='vip'){
-        // 목록과 동일하게 calcRowAmounts로 결제(실수납,미수제외)/청구(시술합계) 산출
+        // 목록과 동일: 결제 = 입력한 결제방식 기준(calcRowAmounts), 청구 = 시술합계
         var a3 = calcRowAmounts(it);
-        var paid = a3.paid;
-        if(paid===0 && it.treatments && it.treatments.length){ var rf=it.treatments.find(function(t){return t.item==='환불';}); if(rf) paid=rf.price||0; }
-        dayMap[d].total += paid;
+        dayMap[d].total += a3.paid;
         dayMap[d].billed += a3.billed;
-        monthPaid += paid;
+        monthPaid += a3.paid;
         monthBilled += a3.billed;
       }
     }
@@ -7527,14 +7512,14 @@ async function saveEditModal(id){
   if(!data.treatments && payText){
     try { const parsed = localParse(payText); data.treatments = distributePrices(parsed.treatments, amt, payText); } catch(e){}
   }
-  // 결제방식 저장
-  if(window._editPayItems?.length){
-    data.paymentMethods = {
-      items: window._editPayItems,
-      splitDetails: window._editPayItems.filter(i=>i.amt>0),
-      methods: window._editPayItems.map(i=>i.method)
-    };
-  }
+  // 결제방식 저장 (전부 비우면 {}로 저장해 기존값 제거)
+  data.paymentMethods = (window._editPayItems && window._editPayItems.length)
+    ? {
+        items: window._editPayItems,
+        splitDetails: window._editPayItems.filter(i=>i.amt>0),
+        methods: window._editPayItems.map(i=>i.method)
+      }
+    : {};
 
   try {
     await window.fbUpdateConsultation(id, data);
