@@ -1698,8 +1698,46 @@ function __intRoundRegex(priced, rawText){
   for(let k=0;k<adj.length;k++){ if(k<adj.length-1){adj[k].price=Math.round(adj[k].price);acc+=adj[k].price;} else {adj[k].price=Math.round((adjSum-acc)*100)/100;} }
   return priced;
 }
+/* ── 할인차감 비례 정수배분 (2026-06-21): 별도 라인 대신 시술항목 가격에 녹임 ──
+   - 할인액을 당일 시술항목들에 (현재가=표준/명시가) 비율로 정수 배분하여 차감
+   - 마지막 대상 항목이 잔액(소수) 흡수, 피부관리도 배분 대상 포함(0까지 차감 가능)
+   - VIP할인혜택/적립금/예약금제외/환불 등 조정항목은 대상 제외(라인 유지)
+   - 녹일 대상이 없으면 기존처럼 할인차감 라인 유지 */
+function _meltDiscountDeduct(priced){
+  if(!Array.isArray(priced)) return priced;
+  const discLines = priced.filter(t=>t && t.item==='할인차감');
+  if(discLines.length===0) return priced;
+  const discTotal = Math.round((-discLines.reduce((s,t)=>s+(t.price||0),0))*100)/100;
+  const rest = priced.filter(t=>!(t && t.item==='할인차감'));
+  if(!(discTotal>0)) return rest;
+  const SKIP=new Set(['적립금','적립금차감','선납금차감','상품권차감','환불','예약금','예약금제외','위약금','지정비용','제품','양도','VIP회원권','VIP할인혜택','차액결제','상담만']);
+  const targets = rest.filter(t=>t.price>0 && !SKIP.has(t.item));
+  const base = targets.reduce((s,t)=>s+t.price,0);
+  if(!(base>0)) return priced;
+  let acc=0;
+  targets.forEach((t,i)=>{
+    let cut = (i<targets.length-1) ? Math.round(discTotal*t.price/base)
+                                   : Math.round((discTotal-acc)*100)/100;
+    if(cut>t.price) cut=t.price;
+    acc=Math.round((acc+cut)*100)/100;
+    t.price=Math.round((t.price-cut)*100)/100;
+  });
+  let leftover=Math.round((discTotal-acc)*100)/100;
+  if(leftover>0.001){
+    for(let i=targets.length-1;i>=0;i--){
+      if(targets[i].price>0){
+        const c=Math.min(leftover,targets[i].price);
+        targets[i].price=Math.round((targets[i].price-c)*100)/100;
+        leftover=Math.round((leftover-c)*100)/100;
+        if(leftover<=0.001) break;
+      }
+    }
+  }
+  return rest;
+}
 function distributePrices(treatments, total, rawText){
-  const __p=_distributePricesRaw(treatments, total, rawText);
+  let __p=_distributePricesRaw(treatments, total, rawText);
+  try{ __p=_meltDiscountDeduct(__p); }catch(e){ console.warn('meltDiscount err',e); }
   try{ __intRoundRegex(__p, rawText); }catch(e){ console.warn('intRound err',e); }
   return __p;
 }
