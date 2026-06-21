@@ -5727,7 +5727,8 @@ function _applyRegexFallbackAndRenderTable(){
 
 /* ── 미리보기 행 삭제 ── */
 function deleteImportRow(idx){
-  if(!confirm(`${idx+1}번째 행 (${_importRows[idx]?.name||'이름없음'}) 을 삭제할까요?`)) return;
+  const delName = _importRows[idx]?.name||'이름없음';
+  if(!confirm(`${idx+1}번째 행 (${delName}) 을 삭제할까요?`)) return;
   _importRows.splice(idx, 1);
   if(_importRows.length > 0){
     renderImportPreview();
@@ -5735,6 +5736,35 @@ function deleteImportRow(idx){
     document.getElementById('import-preview').style.display = 'none';
     document.getElementById('import-preview-body').innerHTML = '';
     showToast('모든 행이 삭제되었습니다','info');
+  }
+  // ★ 초안 모드면 Firestore draft에도 반영 (안 하면 새로고침 시 삭제된 행이 되살아남)
+  var draftId = _currentDraftId || window._currentDraftId;
+  if(draftId && window._fb){
+    try {
+      var fb = window._fb;
+      if(_importRows.length > 0){
+        fb.updateDoc(fb.doc(fb.db, 'draft_imports', draftId), {
+          rows: _importRows,
+          updatedAt: fb.serverTimestamp()
+        }).then(function(){
+          showToast('행 삭제 — 초안 저장 완료','success');
+        }).catch(function(e){
+          console.error('draft delete-row save error:', e);
+          showToast('초안 반영 실패: '+e.message,'error');
+        });
+      } else {
+        // 모든 행 삭제 → 초안 문서 자체 삭제
+        fb.deleteDoc(fb.doc(fb.db, 'draft_imports', draftId)).then(function(){
+          _currentDraftId = null; window._currentDraftId = null;
+          showToast('모든 행 삭제 — 초안 삭제 완료','success');
+        }).catch(function(e){
+          console.error('draft delete error:', e);
+          showToast('초안 삭제 실패: '+e.message,'error');
+        });
+      }
+    } catch(e){
+      console.error('draft delete-row save error:', e);
+    }
   }
 }
 
@@ -7113,18 +7143,25 @@ function renderMiniCalendar(){
   // 현재 전체 데이터에서 날짜별 건수/금액 집계
   var allItems = (window._allItems||[]).filter(function(it){ return !it.deleted; });
   var dayMap = {}; // 'YYYY-MM-DD' -> {count, total}
-  var monthTotal = 0, monthCount = 0;
+  var monthPaid = 0, monthBilled = 0, monthCount = 0;
   allItems.forEach(function(it){
     var d = it.date||'';
     if(!d) return;
     var parts = d.split('-');
     if(parseInt(parts[0])===y && parseInt(parts[1])===(m+1)){
-      if(!dayMap[d]) dayMap[d] = {count:0, total:0};
+      if(!dayMap[d]) dayMap[d] = {count:0, total:0, billed:0};
       dayMap[d].count++;
-      var amt = parseFloat(it.amount)||0;
-      if(it.type!=='vip') dayMap[d].total += amt;
       monthCount++;
-      if(it.type!=='vip') monthTotal += amt;
+      if(it.type!=='vip'){
+        // 목록과 동일하게 calcRowAmounts로 결제(실수납,미수제외)/청구(시술합계) 산출
+        var a3 = calcRowAmounts(it);
+        var paid = a3.paid;
+        if(paid===0 && it.treatments && it.treatments.length){ var rf=it.treatments.find(function(t){return t.item==='환불';}); if(rf) paid=rf.price||0; }
+        dayMap[d].total += paid;
+        dayMap[d].billed += a3.billed;
+        monthPaid += paid;
+        monthBilled += a3.billed;
+      }
     }
   });
 
@@ -7204,7 +7241,7 @@ function renderMiniCalendar(){
 
   // 월 요약
   summEl.innerHTML = monthCount > 0
-    ? '<span style="color:var(--text);font-weight:600">'+monthCount+'건</span> · <span style="color:var(--green);font-weight:700">'+(Math.round(monthTotal*100)/100).toLocaleString()+'만원</span>'
+    ? '<span style="color:var(--text);font-weight:600">'+monthCount+'건</span> · <span style="color:var(--green);font-weight:700">결제 '+(Math.round(monthPaid*100)/100).toLocaleString()+'만</span> · <span style="color:#38bdf8;font-weight:700">청구 '+(Math.round(monthBilled*100)/100).toLocaleString()+'만</span>'
     : '<span style="color:var(--muted)">데이터 없음</span>';
 }
 
@@ -7652,6 +7689,5 @@ function updateAiParserStatus(){
 document.addEventListener('DOMContentLoaded', updateAiParserStatus);
 setTimeout(updateAiParserStatus, 1000);
 </script>
-<script src="./parse-rules-2026-06-patch.js"></script>
 </body>
 </html>
