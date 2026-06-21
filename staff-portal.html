@@ -1698,38 +1698,50 @@ function __intRoundRegex(priced, rawText){
   for(let k=0;k<adj.length;k++){ if(k<adj.length-1){adj[k].price=Math.round(adj[k].price);acc+=adj[k].price;} else {adj[k].price=Math.round((adjSum-acc)*100)/100;} }
   return priced;
 }
-/* ── 할인차감 비례 정수배분 (2026-06-21): 별도 라인 대신 시술항목 가격에 녹임 ──
-   - 할인액을 당일 시술항목들에 (현재가=표준/명시가) 비율로 정수 배분하여 차감
-   - 마지막 대상 항목이 잔액(소수) 흡수, 피부관리도 배분 대상 포함(0까지 차감 가능)
-   - VIP할인혜택/적립금/예약금제외/환불 등 조정항목은 대상 제외(라인 유지)
-   - 녹일 대상이 없으면 기존처럼 할인차감 라인 유지 */
+/* ── 할인 비례배분 (2026-06-22: 피부관리 우선차감 + 비례 정수배분) ──
+   - 대상 할인: '할인차감' + 'VIP할인혜택' (둘 다 별도 라인 만들지 않고 시술항목에 녹임)
+   - 차감 순서: ① 피부관리부터 먼저 차감(11→0까지 가능) ② 남은 할인액만 나머지 시술항목에
+     (현재가=표준/명시가) 비율로 정수 배분, 마지막 대상 항목이 잔액(소수) 흡수
+   - 적립금/예약금제외/환불 등 조정항목·VIP회원권은 대상 제외(라인 유지)
+   - 라인 제거분(−할인액) = 항목 차감분 → 합계 균형 보존
+   - 녹일 대상이 없으면 할인 라인 그대로 유지(차감 안 함) */
 function _meltDiscountDeduct(priced){
   if(!Array.isArray(priced)) return priced;
-  const discLines = priced.filter(t=>t && t.item==='할인차감');
+  const isDisc = t => t && (t.item==='할인차감' || t.item==='VIP할인혜택');
+  const discLines = priced.filter(isDisc);
   if(discLines.length===0) return priced;
-  const discTotal = Math.round((-discLines.reduce((s,t)=>s+(t.price||0),0))*100)/100;
-  const rest = priced.filter(t=>!(t && t.item==='할인차감'));
+  let discTotal = Math.round((-discLines.reduce((s,t)=>s+(t.price||0),0))*100)/100;
+  const rest = priced.filter(t=>!isDisc(t));
   if(!(discTotal>0)) return rest;
   const SKIP=new Set(['적립금','적립금차감','선납금차감','상품권차감','환불','예약금','예약금제외','위약금','지정비용','제품','양도','VIP회원권','VIP할인혜택','차액결제','상담만']);
-  const targets = rest.filter(t=>t.price>0 && !SKIP.has(t.item));
-  const base = targets.reduce((s,t)=>s+t.price,0);
-  if(!(base>0)) return priced;
-  let acc=0;
-  targets.forEach((t,i)=>{
-    let cut = (i<targets.length-1) ? Math.round(discTotal*t.price/base)
-                                   : Math.round((discTotal-acc)*100)/100;
-    if(cut>t.price) cut=t.price;
-    acc=Math.round((acc+cut)*100)/100;
+  rest.filter(t=>t.item==='피부관리' && t.price>0).forEach(t=>{
+    if(discTotal<=0.001) return;
+    const cut=Math.min(discTotal, t.price);
     t.price=Math.round((t.price-cut)*100)/100;
+    discTotal=Math.round((discTotal-cut)*100)/100;
   });
-  let leftover=Math.round((discTotal-acc)*100)/100;
-  if(leftover>0.001){
-    for(let i=targets.length-1;i>=0;i--){
-      if(targets[i].price>0){
-        const c=Math.min(leftover,targets[i].price);
-        targets[i].price=Math.round((targets[i].price-c)*100)/100;
-        leftover=Math.round((leftover-c)*100)/100;
-        if(leftover<=0.001) break;
+  if(discTotal>0.001){
+    const targets = rest.filter(t=>t.price>0 && t.item!=='피부관리' && !SKIP.has(t.item));
+    const base = targets.reduce((s,t)=>s+t.price,0);
+    if(base>0){
+      let acc=0;
+      targets.forEach((t,i)=>{
+        let cut = (i<targets.length-1) ? Math.round(discTotal*t.price/base)
+                                       : Math.round((discTotal-acc)*100)/100;
+        if(cut>t.price) cut=t.price;
+        acc=Math.round((acc+cut)*100)/100;
+        t.price=Math.round((t.price-cut)*100)/100;
+      });
+      let leftover=Math.round((discTotal-acc)*100)/100;
+      if(leftover>0.001){
+        for(let i=targets.length-1;i>=0;i--){
+          if(targets[i].price>0){
+            const c=Math.min(leftover,targets[i].price);
+            targets[i].price=Math.round((targets[i].price-c)*100)/100;
+            leftover=Math.round((leftover-c)*100)/100;
+            if(leftover<=0.001) break;
+          }
+        }
       }
     }
   }
