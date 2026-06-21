@@ -4790,7 +4790,7 @@ function extractPayment(text){
     // 분할결제: (120현금자진+50.5카), (400카+나머지알리), (카998.7 위챗850) 형태
     // 공백도 구분자로 사용 (방식+금액 형태: "카998.7 위챗850")
     // "154.7m 카" → "154.7카" 로 사전 결합 (금액m + 공백 + 방식 패턴)
-    const innerJoined = inner.replace(/([\d.]+)\s*[mM万]\s+(?=카|현|알리|위챗?|이체|제로|자진)/g, '$1');
+    const innerJoined = inner.replace(/([\d.]+)\s*[mM万]\s+(?=카|현|알리|위[챗쳇]+|이체|제로|자진)/g, '$1');
     const parts = innerJoined.split(/[+,\/\s]+/).filter(Boolean).map(p => p.replace(/[mM万]\s*$/, ''));
     let remainderMethod = null; // "나머지" 키워드용
     parts.forEach(part => {
@@ -4849,7 +4849,7 @@ function extractPayment(text){
 
   // 분할결제 폴백: (50현금+50카드+100위챗+129알리), (카998.7 위챗850) 형태
   if(methods.length === 0){
-    const splitPattern = /\(([^)]+(?:현금|카드|카|위챗|알리|이체|자진)[^)]*)\)/gi;
+    const splitPattern = /\(([^)]+(?:현금|카드|카|위[챗쳇]+|알리|이체|자진)[^)]*)\)/gi;
     const splitMatches = [...text.matchAll(splitPattern)];
     if(splitMatches.length > 0){
       splitMatches.forEach(match => {
@@ -4932,7 +4932,7 @@ function normalizePayMethod(s){
   if(/이체\+현영|이체.*현영|현영/.test(s)) return '이체(현영)';
   if(/이체\+자진|이체.*자진|자진.*이체/.test(s)) return '이체(현영)';  // 자진→현영 통합
   if(/이체/.test(s)) return '이체(현영)';  // 단순 이체→현영 통합
-  if(/위챗|위쳇|wechat/.test(s)) return '위챗';
+  if(/위[챗쳇]+|wechat/.test(s)) return '위챗';
   if(/알리/.test(s)) return '알리페이';
   if(/자진/.test(s)) return '현금(자진)';
   if(/미수/.test(s)) return '미수';
