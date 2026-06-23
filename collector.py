@@ -22,6 +22,7 @@ BIRTHDATE    = os.environ.get("CODEF_BIRTHDATE", "")
 HD_CARDNO    = os.environ.get("HD_CARDNO", "")   # 현대카드 카드번호
 HD_CARDPW    = os.environ.get("HD_CARDPW", "")   # 현대카드 비번 4자리
 LOOKBACK     = int(os.environ.get("LOOKBACK_DAYS", "14"))  # 매일 실행이면 14일 겹쳐 수집(누락방지)
+HD_CONFIRMED = os.environ.get("HD_CONFIRMED", "0")  # "1"이면 현대카드를 결제확정(부가세포함) 모드로 최근 2년 조회
 COLLECTION   = os.environ.get("FIRESTORE_COLLECTION", "card_expenses")
 
 SVC = ServiceType.PRODUCT if ENV in ("api","prod","product") else ServiceType.DEMO
@@ -85,14 +86,18 @@ def make_codef():
 
 def fetch_org(codef, org):
     today = datetime.date.today()
-    back = min(LOOKBACK, int(MAX_MONTHS.get(org, 6) * 30))
+    max_m = MAX_MONTHS.get(org, 6)
+    hd_conf = (org == "0302" and HD_CONFIRMED == "1")
+    if hd_conf: max_m = 24            # 현대 결제확정(부가세포함) 모드 = 최근 2년 조회 가능
+    mst = "3" if hd_conf else "1"     # 3=가맹점+부가세(결제확정), 1=실시간승인
+    back = min(LOOKBACK, int(max_m * 30))
     start = today - datetime.timedelta(days=back)
     rows, ws = [], start
     while ws < today:
         we = min(ws + datetime.timedelta(days=60), today)
         p = {"organization":org,"connectedId":CONNECTED_ID,"birthDate":BIRTHDATE,
              "startDate":ws.strftime("%Y%m%d"),"endDate":we.strftime("%Y%m%d"),
-             "orderBy":"0","inquiryType":"1","memberStoreInfoType":"1","cardNo":"","cardPassword":""}
+             "orderBy":"0","inquiryType":"1","memberStoreInfoType":mst,"cardNo":"","cardPassword":""}
         if org == "0302":
             p["cardNo"] = HD_CARDNO
             p["cardPassword"] = encrypt_rsa(HD_CARDPW, PUBLIC_KEY) if HD_CARDPW else ""
