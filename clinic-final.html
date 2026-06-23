@@ -285,14 +285,35 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
 
   <!-- 카드지출 탭 -->
   <div id="tab-card" style="display:none;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
-      <div><h2 style="font-size:20px;font-weight:800;margin-bottom:3px;">카드 지출</h2><p style="color:#64748b;font-size:13px;">5개 카드(KB·현대·삼성·롯데·하나) 결제내역 · 매일 자동 수집</p></div>
-      <button class="btn btn-o btn-sm no-print" onclick="renderCardTab()">↻ 새로고침</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div><h2 style="font-size:20px;font-weight:800;margin-bottom:3px;">카드 지출</h2><p style="color:#64748b;font-size:13px;">5개 카드(KB·현대·삼성·롯데·하나) · 매일 자동 수집</p></div>
+      <button class="btn btn-o btn-sm no-print" onclick="loadCardRows(true)">↻ 새로고침</button>
+    </div>
+    <div id="card-coverage" style="margin-bottom:12px;"></div>
+    <div class="no-print" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;">
+      <span style="font-size:12px;color:#475569;font-weight:600;">기간단위</span>
+      <div id="card-gran-btns" style="display:flex;gap:4px;">
+        <button class="btn btn-o btn-sm" data-g="day" onclick="setCardGran('day')">일별</button>
+        <button class="btn btn-o btn-sm" data-g="week" onclick="setCardGran('week')">주별</button>
+        <button class="btn btn-o btn-sm" data-g="month" onclick="setCardGran('month')">월별</button>
+      </div>
+      <span style="width:1px;height:18px;background:#cbd5e1;"></span>
+      <span style="font-size:12px;color:#475569;font-weight:600;">기간</span>
+      <input type="date" id="card-from" style="padding:4px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;">
+      <span>~</span>
+      <input type="date" id="card-to" style="padding:4px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;">
+      <button class="btn btn-o btn-sm" onclick="applyCardFilter()">적용</button>
+      <span style="margin-left:auto;display:flex;gap:4px;">
+        <button class="btn btn-o btn-sm" onclick="cardRangeQuick(30)">최근30일</button>
+        <button class="btn btn-o btn-sm" onclick="cardRangeQuick(90)">90일</button>
+        <button class="btn btn-o btn-sm" onclick="cardRangeThisYear()">2026</button>
+        <button class="btn btn-o btn-sm" onclick="cardRangeAll()">전체</button>
+      </span>
     </div>
     <div id="card-kpi" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;"></div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
       <div style="flex:1;min-width:320px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-weight:700;margin-bottom:8px;font-size:13px;">카테고리별 지출</div><canvas id="cardCatChart" height="180"></canvas></div>
-      <div style="flex:1;min-width:320px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-weight:700;margin-bottom:8px;font-size:13px;">월별 추이</div><canvas id="cardMonChart" height="180"></canvas></div>
+      <div style="flex:1;min-width:320px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div id="card-trend-title" style="font-weight:700;margin-bottom:8px;font-size:13px;">월별 추이</div><canvas id="cardMonChart" height="180"></canvas></div>
     </div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;">
       <div style="flex:1;min-width:300px;" id="card-cat-table"></div>
@@ -2053,34 +2074,55 @@ function goTab(t){
 }
 
 /* === 카드 지출 탭 === */
-var _cardCharts={};
-async function renderCardTab(){
-  var kpi=document.getElementById('card-kpi');
-  if(!kpi) return;
+var _cardCharts={}, _cardRows=null, _cardGran='month';
+async function renderCardTab(){ if(_cardRows===null){ await loadCardRows(false); } else { applyCardFilter(); } }
+async function loadCardRows(force){
+  var kpi=document.getElementById('card-kpi'); if(!kpi) return;
   if(!window.fbGetCardExpenses){ kpi.innerHTML='<div style="color:#ef4444;">Firebase 연결 필요</div>'; return; }
-  kpi.innerHTML='<div style="color:#64748b;">불러오는 중...</div>';
-  var rows;
-  try{ rows=await window.fbGetCardExpenses(); }
-  catch(e){ kpi.innerHTML='<div style="color:#ef4444;">조회 실패: '+e.message+'</div>'; return; }
-  var ok=rows.filter(function(r){return r.cancelYN==='정상';});
+  if(force||_cardRows===null){
+    kpi.innerHTML='<div style="color:#64748b;">불러오는 중...</div>';
+    try{ _cardRows=await window.fbGetCardExpenses(); }
+    catch(e){ kpi.innerHTML='<div style="color:#ef4444;">조회 실패: '+e.message+'</div>'; return; }
+  }
+  var f=document.getElementById('card-from'), t=document.getElementById('card-to');
+  if(f&&!f.value){ var ds=_cardRows.map(function(r){return r.date||'';}).filter(Boolean).sort(); if(ds.length){ f.value=ds[0]; t.value=ds[ds.length-1]; } }
+  setGranActive(); applyCardFilter();
+}
+function setCardGran(g){ _cardGran=g; setGranActive(); applyCardFilter(); }
+function setGranActive(){ var b=document.querySelectorAll('#card-gran-btns button'); b.forEach(function(x){ var on=x.getAttribute('data-g')===_cardGran; x.style.background=on?'#7c3aed':''; x.style.color=on?'#fff':''; }); }
+function cardRangeAll(){ var ds=_cardRows.map(function(r){return r.date||'';}).filter(Boolean).sort(); if(ds.length){document.getElementById('card-from').value=ds[0];document.getElementById('card-to').value=ds[ds.length-1];} applyCardFilter(); }
+function cardRangeQuick(days){ var to=new Date(); var fr=new Date(Date.now()-days*86400000); document.getElementById('card-to').value=to.toISOString().slice(0,10); document.getElementById('card-from').value=fr.toISOString().slice(0,10); applyCardFilter(); }
+function cardRangeThisYear(){ document.getElementById('card-from').value='2026-01-01'; document.getElementById('card-to').value='2026-12-31'; applyCardFilter(); }
+function cardWeekKey(d){ var dt=new Date(d+'T00:00:00'); var day=(dt.getDay()+6)%7; dt.setDate(dt.getDate()-day); return dt.toISOString().slice(0,10); }
+function cardUniqDays(rows){var s={};rows.forEach(function(r){if(r.date)s[r.date]=1;});return Object.keys(s).length;}
+function applyCardFilter(){
+  if(!_cardRows) return;
   var won=function(n){return (n||0).toLocaleString('ko-KR')+'원';};
-  if(!ok.length){ kpi.innerHTML='<div style="color:#64748b;">카드 데이터가 아직 없습니다. (수집 대기 중)</div>'; return; }
+  var cov={}; _cardRows.forEach(function(r){ var c=r.card||'?'; if(!r.date) return; if(!cov[c])cov[c]={min:r.date,max:r.date,n:0}; if(r.date<cov[c].min)cov[c].min=r.date; if(r.date>cov[c].max)cov[c].max=r.date; cov[c].n++; });
+  var covEl=document.getElementById('card-coverage');
+  if(covEl){ var hc='<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;font-size:12px;"><b>카드별 데이터 보유기간</b> <span style="color:#94a3b8;">(스크래핑 가능 범위 — 시작일 이전은 미보유)</span><div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;">'; Object.keys(cov).sort().forEach(function(c){ hc+='<span style="white-space:nowrap;">'+c+': <b>'+cov[c].min+'</b> ~ '+cov[c].max+' <span style="color:#94a3b8;">('+cov[c].n+'건)</span></span>'; }); hc+='</div></div>'; covEl.innerHTML=hc; }
+  var from=(document.getElementById('card-from')||{}).value||'', to=(document.getElementById('card-to')||{}).value||'';
+  var ok=_cardRows.filter(function(r){ if(r.cancelYN!=='정상') return false; if(from&&(r.date||'')<from) return false; if(to&&(r.date||'')>to) return false; return true; });
+  var kpi=document.getElementById('card-kpi');
+  if(!ok.length){ kpi.innerHTML='<div style="color:#64748b;">선택 기간에 데이터가 없습니다.</div>'; try{if(_cardCharts.cat)_cardCharts.cat.destroy();if(_cardCharts.mon)_cardCharts.mon.destroy();}catch(e){} ['card-cat-table','card-vendor-table','card-card-table'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';}); return; }
   var total=ok.reduce(function(s,r){return s+(r.amount||0);},0);
-  var dates=ok.map(function(r){return r.date||'';}).filter(Boolean).sort();
   var misu=ok.filter(function(r){return r.category==='미분류';}).reduce(function(s,r){return s+(r.amount||0);},0);
-  function kc(t,v){return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:130px;"><div style="font-size:11px;color:#64748b;">'+t+'</div><div style="font-size:18px;font-weight:800;margin-top:2px;">'+v+'</div></div>';}
-  kpi.innerHTML=kc('총 지출(정상)',won(total))+kc('건수',ok.length.toLocaleString())+kc('기간',(dates[0]||'')+' ~ '+(dates[dates.length-1]||''))+kc('미분류 비중',(total?(100*misu/total).toFixed(1):0)+'%');
+  function kc(t,v){return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:120px;"><div style="font-size:11px;color:#64748b;">'+t+'</div><div style="font-size:18px;font-weight:800;margin-top:2px;">'+v+'</div></div>';}
+  kpi.innerHTML=kc('총 지출',won(total))+kc('건수',ok.length.toLocaleString())+kc('일평균',won(Math.round(total/Math.max(1,cardUniqDays(ok)))))+kc('미분류',(total?(100*misu/total).toFixed(1):0)+'%');
   function agg(keyFn){var m={};ok.forEach(function(r){var k=keyFn(r)||'(기타)';if(!m[k])m[k]={sum:0,cnt:0};m[k].sum+=(r.amount||0);m[k].cnt++;});return m;}
-  var byCat=agg(function(r){return r.category;}), byMon=agg(function(r){return r.month;}), byVendor=agg(function(r){return r.merchant;}), byCard=agg(function(r){return r.card;});
+  var byCat=agg(function(r){return r.category;}), byVendor=agg(function(r){return r.merchant;}), byCard=agg(function(r){return r.card;});
+  var gran=_cardGran;
+  var byT=agg(function(r){ var d=r.date||''; if(!d) return ''; if(gran==='month') return d.slice(0,7); if(gran==='day') return d; return cardWeekKey(d); });
+  var tKeys=Object.keys(byT).filter(Boolean).sort();
   var catArr=Object.keys(byCat).map(function(k){return [k,byCat[k].sum,byCat[k].cnt];}).sort(function(a,b){return b[1]-a[1];});
-  var monArr=Object.keys(byMon).sort();
   var vendArr=Object.keys(byVendor).map(function(k){return [k,byVendor[k].sum,byVendor[k].cnt];}).sort(function(a,b){return b[1]-a[1];}).slice(0,15);
   var cardArr=Object.keys(byCard).map(function(k){return [k,byCard[k].sum,byCard[k].cnt];}).sort(function(a,b){return b[1]-a[1];});
+  var tt=document.getElementById('card-trend-title'); if(tt)tt.textContent=({day:'일별',week:'주별',month:'월별'}[gran])+' 추이';
   try{ if(_cardCharts.cat)_cardCharts.cat.destroy(); if(_cardCharts.mon)_cardCharts.mon.destroy(); }catch(e){}
   var cc=document.getElementById('cardCatChart');
   if(cc&&window.Chart) _cardCharts.cat=new Chart(cc.getContext('2d'),{type:'bar',data:{labels:catArr.map(function(x){return x[0];}),datasets:[{label:'지출',data:catArr.map(function(x){return x[1];}),backgroundColor:'#7c3aed'}]},options:{indexAxis:'y',plugins:{legend:{display:false}}}});
   var mc=document.getElementById('cardMonChart');
-  if(mc&&window.Chart) _cardCharts.mon=new Chart(mc.getContext('2d'),{type:'line',data:{labels:monArr,datasets:[{label:'월별 지출',data:monArr.map(function(m){return byMon[m].sum;}),borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.1)',fill:true,tension:.2}]},options:{plugins:{legend:{display:false}}}});
+  if(mc&&window.Chart) _cardCharts.mon=new Chart(mc.getContext('2d'),{type:(gran==='day'?'bar':'line'),data:{labels:tKeys,datasets:[{label:'지출',data:tKeys.map(function(k){return byT[k].sum;}),borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.12)',fill:true,tension:.2}]},options:{plugins:{legend:{display:false}}}});
   function tbl(title,arr){var h='<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-weight:700;margin-bottom:8px;font-size:13px;">'+title+'</div><table style="width:100%;border-collapse:collapse;font-size:12px;">';arr.forEach(function(x){h+='<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:5px 4px;">'+x[0]+'</td><td style="padding:5px 4px;text-align:right;color:#64748b;">'+x[2]+'건</td><td style="padding:5px 4px;text-align:right;font-weight:600;">'+won(x[1])+'</td></tr>';});h+='</table></div>';return h;}
   document.getElementById('card-cat-table').innerHTML=tbl('카테고리별',catArr);
   document.getElementById('card-vendor-table').innerHTML=tbl('상위 거래처 TOP15',vendArr);
