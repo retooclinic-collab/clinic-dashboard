@@ -7,8 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       lookback_days:
-        description: "조회 일수 (평소 14, 과거 전체 백필은 600)"
+        description: "조회 일수 (평소 14, 과거 전체 백필은 600, 현대2년은 730)"
         default: "14"
+        required: false
+      hd_confirmed:
+        description: "현대 2년 결제확정 모드 (백필=1, 평소=0)"
+        default: "0"
         required: false
 
 jobs:
@@ -33,5 +37,6 @@ jobs:
           HD_CARDPW:         ${{ secrets.HD_CARDPW }}
           FIREBASE_SA_JSON:  ${{ secrets.FIREBASE_SA_JSON }}
           LOOKBACK_DAYS:     ${{ github.event.inputs.lookback_days || '14' }}
+          HD_CONFIRMED:      ${{ github.event.inputs.hd_confirmed || '0' }}
           FIRESTORE_COLLECTION: "card_expenses"
         run: python collector.py
