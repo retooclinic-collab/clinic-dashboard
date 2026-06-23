@@ -290,7 +290,18 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
       <button class="btn btn-o btn-sm no-print" onclick="loadCardRows(true)">↻ 새로고침</button>
     </div>
     <div id="card-coverage" style="margin-bottom:12px;"></div>
-    <div class="no-print" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;">
+    <div class="no-print" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;">
+      <span style="font-size:12px;color:#475569;font-weight:600;">빠른기간</span>
+      <div id="card-preset-btns" style="display:flex;gap:4px;flex-wrap:wrap;">
+        <button class="btn btn-o btn-sm" data-p="today" onclick="cardPreset('today')">오늘</button>
+        <button class="btn btn-o btn-sm" data-p="week" onclick="cardPreset('week')">이번주</button>
+        <button class="btn btn-o btn-sm" data-p="month" onclick="cardPreset('month')">이번달</button>
+        <button class="btn btn-o btn-sm" data-p="prevmonth" onclick="cardPreset('prevmonth')">전달</button>
+        <button class="btn btn-o btn-sm" data-p="3m" onclick="cardPreset('3m')">최근3개월</button>
+        <button class="btn btn-o btn-sm" data-p="year" onclick="cardPreset('year')">올해</button>
+        <button class="btn btn-o btn-sm" data-p="all" onclick="cardPreset('all')">전체</button>
+      </div>
+      <span style="width:1px;height:18px;background:#cbd5e1;"></span>
       <span style="font-size:12px;color:#475569;font-weight:600;">기간단위</span>
       <div id="card-gran-btns" style="display:flex;gap:4px;">
         <button class="btn btn-o btn-sm" data-g="day" onclick="setCardGran('day')">일별</button>
@@ -298,17 +309,11 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
         <button class="btn btn-o btn-sm" data-g="month" onclick="setCardGran('month')">월별</button>
       </div>
       <span style="width:1px;height:18px;background:#cbd5e1;"></span>
-      <span style="font-size:12px;color:#475569;font-weight:600;">기간</span>
+      <span style="font-size:12px;color:#475569;font-weight:600;">직접</span>
       <input type="date" id="card-from" style="padding:4px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;">
       <span>~</span>
       <input type="date" id="card-to" style="padding:4px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;">
-      <button class="btn btn-o btn-sm" onclick="applyCardFilter()">적용</button>
-      <span style="margin-left:auto;display:flex;gap:4px;">
-        <button class="btn btn-o btn-sm" onclick="cardRangeQuick(30)">최근30일</button>
-        <button class="btn btn-o btn-sm" onclick="cardRangeQuick(90)">90일</button>
-        <button class="btn btn-o btn-sm" onclick="cardRangeThisYear()">2026</button>
-        <button class="btn btn-o btn-sm" onclick="cardRangeAll()">전체</button>
-      </span>
+      <button class="btn btn-o btn-sm" onclick="setPresetActive(null);applyCardFilter()">적용</button>
     </div>
     <div id="card-kpi" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;"></div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
@@ -2084,15 +2089,27 @@ async function loadCardRows(force){
     try{ _cardRows=await window.fbGetCardExpenses(); }
     catch(e){ kpi.innerHTML='<div style="color:#ef4444;">조회 실패: '+e.message+'</div>'; return; }
   }
-  var f=document.getElementById('card-from'), t=document.getElementById('card-to');
-  if(f&&!f.value){ var ds=_cardRows.map(function(r){return r.date||'';}).filter(Boolean).sort(); if(ds.length){ f.value=ds[0]; t.value=ds[ds.length-1]; } }
-  setGranActive(); applyCardFilter();
+  setGranActive();
+  cardPreset('month');
 }
 function setCardGran(g){ _cardGran=g; setGranActive(); applyCardFilter(); }
 function setGranActive(){ var b=document.querySelectorAll('#card-gran-btns button'); b.forEach(function(x){ var on=x.getAttribute('data-g')===_cardGran; x.style.background=on?'#7c3aed':''; x.style.color=on?'#fff':''; }); }
-function cardRangeAll(){ var ds=_cardRows.map(function(r){return r.date||'';}).filter(Boolean).sort(); if(ds.length){document.getElementById('card-from').value=ds[0];document.getElementById('card-to').value=ds[ds.length-1];} applyCardFilter(); }
-function cardRangeQuick(days){ var to=new Date(); var fr=new Date(Date.now()-days*86400000); document.getElementById('card-to').value=to.toISOString().slice(0,10); document.getElementById('card-from').value=fr.toISOString().slice(0,10); applyCardFilter(); }
-function cardRangeThisYear(){ document.getElementById('card-from').value='2026-01-01'; document.getElementById('card-to').value='2026-12-31'; applyCardFilter(); }
+function cardFmt(d){ var y=d.getFullYear(), m=('0'+(d.getMonth()+1)).slice(-2), da=('0'+d.getDate()).slice(-2); return y+'-'+m+'-'+da; }
+function setPresetActive(kind){ var b=document.querySelectorAll('#card-preset-btns button'); b.forEach(function(x){ var on=x.getAttribute('data-p')===kind; x.style.background=on?'#2563eb':''; x.style.color=on?'#fff':''; }); }
+function cardPreset(kind){
+  var now=new Date(), f, t=new Date(now);
+  if(kind==='all'){ var ds=_cardRows.map(function(r){return r.date||'';}).filter(Boolean).sort(); document.getElementById('card-from').value=ds[0]||''; document.getElementById('card-to').value=ds[ds.length-1]||''; setPresetActive(kind); applyCardFilter(); return; }
+  if(kind==='today'){ f=new Date(now); }
+  else if(kind==='week'){ f=new Date(now); var dow=(now.getDay()+6)%7; f.setDate(now.getDate()-dow); }
+  else if(kind==='month'){ f=new Date(now.getFullYear(), now.getMonth(), 1); }
+  else if(kind==='prevmonth'){ f=new Date(now.getFullYear(), now.getMonth()-1, 1); t=new Date(now.getFullYear(), now.getMonth(), 0); }
+  else if(kind==='3m'){ f=new Date(now.getFullYear(), now.getMonth()-2, 1); }
+  else if(kind==='year'){ f=new Date(now.getFullYear(), 0, 1); }
+  else { f=new Date(now); }
+  document.getElementById('card-from').value=cardFmt(f);
+  document.getElementById('card-to').value=cardFmt(t);
+  setPresetActive(kind); applyCardFilter();
+}
 function cardWeekKey(d){ var dt=new Date(d+'T00:00:00'); var day=(dt.getDay()+6)%7; dt.setDate(dt.getDate()-day); return dt.toISOString().slice(0,10); }
 function cardUniqDays(rows){var s={};rows.forEach(function(r){if(r.date)s[r.date]=1;});return Object.keys(s).length;}
 function applyCardFilter(){
