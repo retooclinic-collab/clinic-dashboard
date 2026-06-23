@@ -112,6 +112,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
     <button class="sbn on" id="nav-an" onclick="goTab('an')">📊 월별 분석</button>
     <button class="sbn" id="nav-daily" onclick="goTab('daily')">📋 수납 내역</button>
     <button class="sbn" id="nav-trend" onclick="goTab('trend')">📈 종합 분석</button>
+    <button class="sbn" id="nav-card" onclick="goTab('card')">💳 카드지출</button>
     <button class="sbn" id="nav-cloud" onclick="goTab('cloud')">☁ 저장 현황</button>
     <button class="sbn" id="nav-cfg" onclick="goTab('cfg')">⚙️ 설정</button>
     <button class="sbn" id="nav-admin" onclick="goTab('admin')" style="background:#1a0a2e;color:#a78bfa;border-left:2px solid #7c3aed;margin-top:8px">👑 관리자</button>
@@ -280,6 +281,24 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
       <button class="btn btn-o btn-sm" onclick="refreshTrendFromDB()">🔄 새로고침</button>
     </div>
     <div id="trend-content"></div>
+  </div>
+
+  <!-- 카드지출 탭 -->
+  <div id="tab-card" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <div><h2 style="font-size:20px;font-weight:800;margin-bottom:3px;">카드 지출</h2><p style="color:#64748b;font-size:13px;">5개 카드(KB·현대·삼성·롯데·하나) 결제내역 · 매일 자동 수집</p></div>
+      <button class="btn btn-o btn-sm no-print" onclick="renderCardTab()">↻ 새로고침</button>
+    </div>
+    <div id="card-kpi" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;"></div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
+      <div style="flex:1;min-width:320px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-weight:700;margin-bottom:8px;font-size:13px;">카테고리별 지출</div><canvas id="cardCatChart" height="180"></canvas></div>
+      <div style="flex:1;min-width:320px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-weight:700;margin-bottom:8px;font-size:13px;">월별 추이</div><canvas id="cardMonChart" height="180"></canvas></div>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:300px;" id="card-cat-table"></div>
+      <div style="flex:1;min-width:300px;" id="card-vendor-table"></div>
+    </div>
+    <div id="card-card-table" style="margin-top:16px;"></div>
   </div>
 
   <!-- 설정 탭 -->
@@ -591,6 +610,13 @@ try {
     const items = [];
     snap.forEach(function(d) { items.push(d.data()); });
     return items.filter(function(it){ return !it.deleted; });
+  };
+
+  // ── 카드 지출 내역 조회 ──
+  window.fbGetCardExpenses = async function() {
+    const snap = await getDocs(collection(db, 'card_expenses'));
+    const arr = []; snap.forEach(function(d){ arr.push(d.data()); });
+    return arr;
   };
 
   // ── 관리자: 감사로그 조회 ──
@@ -2013,7 +2039,7 @@ document.getElementById('col-mdl').addEventListener('click',function(e){if(e.tar
 
 /* ═══ NAV ═══ */
 function goTab(t){
-  ['an','daily','trend','cloud','cfg','admin'].forEach(function(id){
+  ['an','daily','trend','cloud','cfg','admin','card'].forEach(function(id){
     var el=document.getElementById('tab-'+id);
     if(el)el.style.display=t===id?'block':'none';
     var nav=document.getElementById('nav-'+id);
@@ -2022,7 +2048,43 @@ function goTab(t){
   if(t==='trend')renderTrendTab();
   if(t==='cloud')renderCloudTab();
   if(t==='admin')renderAdminTab();
+  if(t==='card')renderCardTab();
   if(t==='daily'){ if(!_dailyAllItems.length) loadAllDaily(); else if(!_dailyFiltered.length && _dailyAllItems.length) applyDailyFilter(); }
+}
+
+/* === 카드 지출 탭 === */
+var _cardCharts={};
+async function renderCardTab(){
+  var kpi=document.getElementById('card-kpi');
+  if(!kpi) return;
+  if(!window.fbGetCardExpenses){ kpi.innerHTML='<div style="color:#ef4444;">Firebase 연결 필요</div>'; return; }
+  kpi.innerHTML='<div style="color:#64748b;">불러오는 중...</div>';
+  var rows;
+  try{ rows=await window.fbGetCardExpenses(); }
+  catch(e){ kpi.innerHTML='<div style="color:#ef4444;">조회 실패: '+e.message+'</div>'; return; }
+  var ok=rows.filter(function(r){return r.cancelYN==='정상';});
+  var won=function(n){return (n||0).toLocaleString('ko-KR')+'원';};
+  if(!ok.length){ kpi.innerHTML='<div style="color:#64748b;">카드 데이터가 아직 없습니다. (수집 대기 중)</div>'; return; }
+  var total=ok.reduce(function(s,r){return s+(r.amount||0);},0);
+  var dates=ok.map(function(r){return r.date||'';}).filter(Boolean).sort();
+  var misu=ok.filter(function(r){return r.category==='미분류';}).reduce(function(s,r){return s+(r.amount||0);},0);
+  function kc(t,v){return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:130px;"><div style="font-size:11px;color:#64748b;">'+t+'</div><div style="font-size:18px;font-weight:800;margin-top:2px;">'+v+'</div></div>';}
+  kpi.innerHTML=kc('총 지출(정상)',won(total))+kc('건수',ok.length.toLocaleString())+kc('기간',(dates[0]||'')+' ~ '+(dates[dates.length-1]||''))+kc('미분류 비중',(total?(100*misu/total).toFixed(1):0)+'%');
+  function agg(keyFn){var m={};ok.forEach(function(r){var k=keyFn(r)||'(기타)';if(!m[k])m[k]={sum:0,cnt:0};m[k].sum+=(r.amount||0);m[k].cnt++;});return m;}
+  var byCat=agg(function(r){return r.category;}), byMon=agg(function(r){return r.month;}), byVendor=agg(function(r){return r.merchant;}), byCard=agg(function(r){return r.card;});
+  var catArr=Object.keys(byCat).map(function(k){return [k,byCat[k].sum,byCat[k].cnt];}).sort(function(a,b){return b[1]-a[1];});
+  var monArr=Object.keys(byMon).sort();
+  var vendArr=Object.keys(byVendor).map(function(k){return [k,byVendor[k].sum,byVendor[k].cnt];}).sort(function(a,b){return b[1]-a[1];}).slice(0,15);
+  var cardArr=Object.keys(byCard).map(function(k){return [k,byCard[k].sum,byCard[k].cnt];}).sort(function(a,b){return b[1]-a[1];});
+  try{ if(_cardCharts.cat)_cardCharts.cat.destroy(); if(_cardCharts.mon)_cardCharts.mon.destroy(); }catch(e){}
+  var cc=document.getElementById('cardCatChart');
+  if(cc&&window.Chart) _cardCharts.cat=new Chart(cc.getContext('2d'),{type:'bar',data:{labels:catArr.map(function(x){return x[0];}),datasets:[{label:'지출',data:catArr.map(function(x){return x[1];}),backgroundColor:'#7c3aed'}]},options:{indexAxis:'y',plugins:{legend:{display:false}}}});
+  var mc=document.getElementById('cardMonChart');
+  if(mc&&window.Chart) _cardCharts.mon=new Chart(mc.getContext('2d'),{type:'line',data:{labels:monArr,datasets:[{label:'월별 지출',data:monArr.map(function(m){return byMon[m].sum;}),borderColor:'#2563eb',backgroundColor:'rgba(37,99,235,.1)',fill:true,tension:.2}]},options:{plugins:{legend:{display:false}}}});
+  function tbl(title,arr){var h='<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-weight:700;margin-bottom:8px;font-size:13px;">'+title+'</div><table style="width:100%;border-collapse:collapse;font-size:12px;">';arr.forEach(function(x){h+='<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:5px 4px;">'+x[0]+'</td><td style="padding:5px 4px;text-align:right;color:#64748b;">'+x[2]+'건</td><td style="padding:5px 4px;text-align:right;font-weight:600;">'+won(x[1])+'</td></tr>';});h+='</table></div>';return h;}
+  document.getElementById('card-cat-table').innerHTML=tbl('카테고리별',catArr);
+  document.getElementById('card-vendor-table').innerHTML=tbl('상위 거래처 TOP15',vendArr);
+  document.getElementById('card-card-table').innerHTML=tbl('카드별',cardArr);
 }
 /* ═══ DAILY ANALYSIS ═══ */
 var _dailyAllItems=[];
