@@ -1,0 +1,4 @@
+easycodefpy
+pycryptodome
+firebase-admin
+requests
