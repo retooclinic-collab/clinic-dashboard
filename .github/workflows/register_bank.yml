@@ -1,0 +1,31 @@
+# 저장소의 .github/workflows/register_bank.yml 위치에 두세요.
+# 하나·부산 은행계좌를 CODEF connectedId에 1회 등록하는 워크플로 (수동 실행 전용).
+# 등록 성공 후에는 더 돌릴 필요 없음(이미 등록 시 자동 건너뜀).
+name: bank-register
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install
+        run: pip install -r requirements.txt
+      - name: register bank accounts
+        env:
+          CODEF_ENV:          "demo"
+          CODEF_CLIENT_ID:    ${{ secrets.CODEF_CLIENT_ID }}
+          CODEF_CLIENT_SECRET: ${{ secrets.CODEF_CLIENT_SECRET }}
+          CODEF_PUBLIC_KEY:   ${{ secrets.CODEF_PUBLIC_KEY }}
+          CODEF_CONNECTED_ID: ${{ secrets.CODEF_CONNECTED_ID }}
+          CODEF_BIRTHDATE:    ${{ secrets.CODEF_BIRTHDATE }}
+          BANK_HANA_ID:       ${{ secrets.BANK_HANA_ID }}
+          BANK_HANA_PW:       ${{ secrets.BANK_HANA_PW }}
+          BANK_BUSAN_ID:      ${{ secrets.BANK_BUSAN_ID }}
+          BANK_BUSAN_PW:      ${{ secrets.BANK_BUSAN_PW }}
+        run: python register_bank.py
