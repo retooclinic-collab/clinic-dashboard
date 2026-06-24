@@ -2242,6 +2242,8 @@ function applyCardFilter(){
   document.getElementById('card-card-table').innerHTML=tbl('카드별',cardArr);
 }
 /* === 카드 거래내역 상세 표 (자체 기간/카드 필터) === */
+var _cardTxSort={key:'date',dir:'desc'};
+function cardTxSort(key){ if(_cardTxSort.key===key){ _cardTxSort.dir=_cardTxSort.dir==='asc'?'desc':'asc'; } else { _cardTxSort.key=key; _cardTxSort.dir=(key==='amount'||key==='date')?'desc':'asc'; } renderCardTx(); }
 function setCardTxPresetActive(kind){ var b=document.querySelectorAll('#card-tx-preset-btns button'); b.forEach(function(x){ var on=x.getAttribute('data-p')===kind; x.style.background=on?'#2563eb':''; x.style.color=on?'#fff':''; }); }
 function cardTxPreset(kind){
   if(!_cardRows) return;
@@ -2277,7 +2279,15 @@ function _cardTxFiltered(){
     if(q && String(r.merchant||'').toLowerCase().indexOf(q)<0) return false;
     return true;
   });
-  rows.sort(function(a,b){ var d=(b.date||'').localeCompare(a.date||''); if(d) return d; return (b.time||'').localeCompare(a.time||''); });
+  var sk=_cardTxSort.key, dir=_cardTxSort.dir==='asc'?1:-1;
+  var col={merchant:'merchant',card:'card',category:'category'};
+  rows.sort(function(a,b){
+    if(sk==='amount'){ if((a.amount||0)!==(b.amount||0)) return ((a.amount||0)-(b.amount||0))*dir; }
+    else if(sk==='date'){ var c=(a.date||'').localeCompare(b.date||''); if(c) return c*dir; var tc=(a.time||'').localeCompare(b.time||''); if(tc) return tc*dir; }
+    else if(sk==='pay'){ var c2=(a.paymentType||'').localeCompare(b.paymentType||''); if(c2) return c2*dir; }
+    else { var c3=String(a[col[sk]]||'').localeCompare(String(b[col[sk]]||'')); if(c3) return c3*dir; }
+    var td=(b.date||'').localeCompare(a.date||''); if(td) return td; return (b.time||'').localeCompare(a.time||'');
+  });
   return rows;
 }
 function renderCardTx(){
@@ -2288,13 +2298,10 @@ function renderCardTx(){
   var total=rows.reduce(function(s,r){return s+(r.amount||0);},0);
   var sm=document.getElementById('card-tx-summary'); if(sm) sm.textContent=rows.length.toLocaleString()+'건 · 합계 '+won(total);
   var CAP=1500, show=rows.slice(0,CAP);
+  function _th(key,label,align){ var on=_cardTxSort.key===key, ar=on?(_cardTxSort.dir==='asc'?' ▲':' ▼'):''; return '<th onclick="cardTxSort(\''+key+'\')" title="클릭하여 정렬" style="cursor:pointer;user-select:none;text-align:'+align+';padding:6px;border-bottom:1px solid #e2e8f0;white-space:nowrap;'+(on?'color:#2563eb;':'')+'">'+label+ar+'</th>'; }
   var h='<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="position:sticky;top:0;background:#f8fafc;">'
-    +'<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">날짜</th>'
-    +'<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">카드</th>'
-    +'<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">가맹점</th>'
-    +'<th style="text-align:right;padding:6px;border-bottom:1px solid #e2e8f0;">금액</th>'
-    +'<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">결제</th>'
-    +'<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">카테고리</th></tr></thead><tbody>';
+    +_th('date','날짜','left')+_th('card','카드','left')+_th('merchant','가맹점','left')+_th('amount','금액','right')+_th('pay','결제','left')+_th('category','카테고리','left')
+    +'</tr></thead><tbody>';
   show.forEach(function(r){
     var pay=(r.paymentType||'')+((r.paymentType==='할부'&&r.installment&&r.installment!=='00'&&r.installment!=='0')?(' '+r.installment+'개월'):'');
     h+='<tr style="border-bottom:1px solid #f1f5f9;">'
