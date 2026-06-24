@@ -3,19 +3,18 @@
 청담리투의원 은행계좌 CODEF 등록기 (1회용) — 공동인증서 방식
 - 기존 connectedId에 하나(0081)·부산(0032) 기업뱅킹 계좌를 add_account로 추가
 - 개인사업자 기업뱅킹 → clientType "B"(기본), loginType "0"(공동인증서)
+- ★ CODEF 공식 인증서 필드명: derFile / keyFile / password(RSA암호화)
 - 인증서 파일(.der, .key)은 base64로 시크릿에 저장 → 여기서 그대로 사용
 - 모든 비밀정보는 환경변수(깃허브 시크릿)로 주입. 코드/로그에 평문 없음.
 
 필요 시크릿:
   CODEF_CLIENT_ID, CODEF_CLIENT_SECRET, CODEF_PUBLIC_KEY, CODEF_CONNECTED_ID, CODEF_BIRTHDATE
-  공유 인증서(권장, 한 인증서로 두 은행):
-    BANK_CERT     = signCert.der 파일을 base64 인코딩한 문자열
-    BANK_KEY      = signPri.key  파일을 base64 인코딩한 문자열
-    BANK_CERTPW   = 인증서 암호(평문) — RSA 암호화는 코드가 처리
-  (은행별로 인증서가 다르면 BANK_HANA_CERT/KEY/CERTPW, BANK_BUSAN_CERT/KEY/CERTPW 로 개별 지정 가능)
-  (기업뱅킹이 인증서+아이디를 함께 요구하면 BANK_HANA_ID/BANK_BUSAN_ID 도 사용)
-환경변수:
-  BANK_CLIENT_TYPE (기본 B), BANK_LOGIN_TYPE (기본 0=인증서)
+  공유 인증서(한 인증서로 두 은행):
+    BANK_CERT     = signCert.der 를 base64 인코딩한 문자열 (→ derFile)
+    BANK_KEY      = signPri.key  를 base64 인코딩한 문자열 (→ keyFile)
+    BANK_CERTPW   = 인증서 암호(평문) — RSA 암호화는 코드가 처리 (→ password)
+  (은행별로 다르면 BANK_HANA_CERT/KEY/CERTPW, BANK_BUSAN_CERT/KEY/CERTPW)
+환경변수: BANK_CLIENT_TYPE(기본 B), BANK_LOGIN_TYPE(기본 0=인증서)
 """
 import os, json
 from easycodefpy import Codef, ServiceType
@@ -27,12 +26,12 @@ CLIENT_SECRET= os.environ["CODEF_CLIENT_SECRET"]
 PUBLIC_KEY   = os.environ["CODEF_PUBLIC_KEY"]
 CONNECTED_ID = os.environ["CODEF_CONNECTED_ID"]
 BIRTHDATE    = os.environ.get("CODEF_BIRTHDATE", "")
-CLIENT_TYPE  = os.environ.get("BANK_CLIENT_TYPE", "B")   # B=기업뱅킹(기본), P=개인
-LOGIN_TYPE   = os.environ.get("BANK_LOGIN_TYPE", "0")    # 0=공동인증서(기본), 1=아이디/비번
+CLIENT_TYPE  = os.environ.get("BANK_CLIENT_TYPE", "B")
+LOGIN_TYPE   = os.environ.get("BANK_LOGIN_TYPE", "0")
+DEBUG        = os.environ.get("BANK_DEBUG", "0") == "1"
 
 SVC = ServiceType.PRODUCT if ENV in ("api","prod","product") else ServiceType.DEMO
 
-# (기관코드, 표시이름, 시크릿 접두어)
 BANKS = [
     ("0081", "하나",  "HANA"),
     ("0032", "부산",  "BUSAN"),
@@ -70,6 +69,8 @@ def main():
         if LOGIN_TYPE == "0" and (not cert or not key or not cpw):
             print(f"[{name}({org})] 인증서 시크릿 누락(BANK_{key_prefix}_CERT/KEY/CERTPW 또는 BANK_CERT/KEY/CERTPW) — 건너뜀", flush=True)
             continue
+        if DEBUG:
+            print(f"  [DEBUG {name}] derFile={len(cert)}B keyFile={len(key)}B certpw={'set' if cpw else 'EMPTY'}", flush=True)
         item = {
             "countryCode": "KR",
             "businessType": "BK",
@@ -78,13 +79,11 @@ def main():
             "loginType":   LOGIN_TYPE,
         }
         if LOGIN_TYPE == "0":
-            item["certFile"]     = cert
-            item["keyFile"]      = key
-            item["certPassword"] = encrypt_rsa(cpw, PUBLIC_KEY)
+            item["derFile"]  = cert                              # ★ CODEF 정식 필드명
+            item["keyFile"]  = key
+            item["password"] = encrypt_rsa(cpw, PUBLIC_KEY)      # ★ 인증서 암호 = password
         if bid:
             item["id"] = bid
-        if BIRTHDATE:
-            item["birthDate"] = BIRTHDATE
         param = {"connectedId": CONNECTED_ID, "accountList": [item]}
         r = json.loads(codef.add_account(SVC, param))
         result = r.get("result") or {}
@@ -98,7 +97,7 @@ def main():
             for f in fail:
                 print(f"  실패: {json.dumps(f, ensure_ascii=False)}", flush=True)
         else:
-            print(f"  응답 확인 필요: {json.dumps(r, ensure_ascii=False)[:600]}", flush=True)
+            print(f"  응답: {json.dumps(r, ensure_ascii=False)[:500]}", flush=True)
 
     print("최종 등록 기관:", sorted(set(registered_orgs(codef))), flush=True)
 
