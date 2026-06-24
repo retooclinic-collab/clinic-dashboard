@@ -2175,13 +2175,27 @@ function goTab(t){
 
 /* === 카드 지출 탭 === */
 var _cardCharts={}, _cardRows=null, _cardGran='month';
+/* 같은 결제가 VAN/PG명 + 실가맹점명 두 줄로 들어오는 카드사 중복 제거.
+   같은 카드·날짜·시각·금액·승인번호면 1건으로 합치고, 더 구체적(긴) 가맹점명을 유지. 승인번호 없으면 합치지 않음(안전). */
+function _dedupeCard(rows){
+  rows=rows||[]; var seen={}, out=[];
+  rows.forEach(function(r){
+    var ap=String(r.approvalNo||'').trim();
+    if(!ap){ out.push(r); return; }
+    var k=(r.card||'')+'|'+(r.date||'')+'|'+(r.time||'')+'|'+(r.amount||0)+'|'+ap;
+    if(!(k in seen)){ seen[k]=out.length; out.push(r); return; }
+    var i=seen[k];
+    if(String(r.merchant||'').length>String(out[i].merchant||'').length) out[i]=r;
+  });
+  return out;
+}
 async function renderCardTab(){ if(_cardRows===null){ await loadCardRows(false); } else { applyCardFilter(); } }
 async function loadCardRows(force){
   var kpi=document.getElementById('card-kpi'); if(!kpi) return;
   if(!window.fbGetCardExpenses){ kpi.innerHTML='<div style="color:#ef4444;">Firebase 연결 필요</div>'; return; }
   if(force||_cardRows===null){
     kpi.innerHTML='<div style="color:#64748b;">불러오는 중...</div>';
-    try{ _cardRows=await window.fbGetCardExpenses(); }
+    try{ _cardRows=_dedupeCard(await window.fbGetCardExpenses()); }
     catch(e){ kpi.innerHTML='<div style="color:#ef4444;">조회 실패: '+e.message+'</div>'; return; }
   }
   setGranActive();
