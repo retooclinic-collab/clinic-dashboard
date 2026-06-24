@@ -378,6 +378,18 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
       <div style="flex:1;min-width:300px;" id="card-vendor-table"></div>
     </div>
     <div id="card-card-table" style="margin-top:16px;"></div>
+    <!-- 카드 거래내역 상세 -->
+    <div style="margin-top:20px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+        <div style="font-weight:700;font-size:13px;">거래내역 상세</div>
+        <span style="width:1px;height:16px;background:#cbd5e1;"></span>
+        <select id="card-tx-card" onchange="renderCardTx()" style="padding:4px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;"></select>
+        <input id="card-tx-q" oninput="renderCardTx()" placeholder="가맹점 검색" style="padding:4px 8px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;">
+        <span id="card-tx-summary" style="font-size:12px;color:#64748b;margin-left:auto;"></span>
+        <button class="btn btn-o btn-sm no-print" onclick="exportCardTxCsv()">⬇ CSV</button>
+      </div>
+      <div id="card-tx-table" style="max-height:560px;overflow:auto;"></div>
+    </div>
     <div style="margin-top:24px;padding:14px 16px;border:1px dashed #cbd5e1;border-radius:10px;background:#fbfcfe;font-size:11.5px;color:#94a3b8;line-height:1.8;">
       <b style="color:#64748b;font-size:12px;">📌 추후 디벨롭 가능 / 개선 필요사항</b><br>
       • <b>IBK카드(기업은행 BC카드) 미연동</b> — CODEF 데모 스크래퍼 CF-12701 오류로 보류, 패치 문의 대기중 (현재 KB·현대·삼성·롯데·하나 5개 카드만 수집)<br>
@@ -2190,7 +2202,7 @@ function applyCardFilter(){
   var from=(document.getElementById('card-from')||{}).value||'', to=(document.getElementById('card-to')||{}).value||'';
   var ok=_cardRows.filter(function(r){ if(r.cancelYN!=='정상') return false; if(from&&(r.date||'')<from) return false; if(to&&(r.date||'')>to) return false; return true; });
   var kpi=document.getElementById('card-kpi');
-  if(!ok.length){ kpi.innerHTML='<div style="color:#64748b;">선택 기간에 데이터가 없습니다.</div>'; try{if(_cardCharts.cat)_cardCharts.cat.destroy();if(_cardCharts.mon)_cardCharts.mon.destroy();}catch(e){} ['card-cat-table','card-vendor-table','card-card-table'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';}); return; }
+  if(!ok.length){ kpi.innerHTML='<div style="color:#64748b;">선택 기간에 데이터가 없습니다.</div>'; try{if(_cardCharts.cat)_cardCharts.cat.destroy();if(_cardCharts.mon)_cardCharts.mon.destroy();}catch(e){} ['card-cat-table','card-vendor-table','card-card-table','card-tx-table'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';}); _cardTxRows=[]; var _sm=document.getElementById('card-tx-summary'); if(_sm)_sm.textContent=''; return; }
   var total=ok.reduce(function(s,r){return s+(r.amount||0);},0);
   var misu=ok.filter(function(r){return r.category==='미분류';}).reduce(function(s,r){return s+(r.amount||0);},0);
   function kc(t,v){return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:120px;"><div style="font-size:11px;color:#64748b;">'+t+'</div><div style="font-size:18px;font-weight:800;margin-top:2px;">'+v+'</div></div>';}
@@ -2213,6 +2225,66 @@ function applyCardFilter(){
   document.getElementById('card-cat-table').innerHTML=tbl('카테고리별',catArr);
   document.getElementById('card-vendor-table').innerHTML=tbl('상위 거래처 TOP15',vendArr);
   document.getElementById('card-card-table').innerHTML=tbl('카드별',cardArr);
+  _cardTxRows=ok; renderCardTx();
+}
+/* === 카드 거래내역 상세 표 === */
+var _cardTxRows=[];
+function _cardTxCardOptions(){
+  var sel=document.getElementById('card-tx-card'); if(!sel) return;
+  var cur=sel.value||'__all';
+  var cards={}; (_cardRows||[]).forEach(function(r){ if(r.card) cards[r.card]=1; });
+  sel.innerHTML='<option value="__all">전체 카드</option>'+Object.keys(cards).sort().map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join('');
+  sel.value=cur;
+}
+function _cardTxFiltered(){
+  var card=(document.getElementById('card-tx-card')||{}).value||'__all';
+  var q=((document.getElementById('card-tx-q')||{}).value||'').trim().toLowerCase();
+  var rows=(_cardTxRows||[]).filter(function(r){
+    if(card!=='__all' && r.card!==card) return false;
+    if(q && String(r.merchant||'').toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+  rows.sort(function(a,b){ var d=(b.date||'').localeCompare(a.date||''); if(d) return d; return (b.time||'').localeCompare(a.time||''); });
+  return rows;
+}
+function renderCardTx(){
+  var won=function(n){return (n||0).toLocaleString('ko-KR')+'원';};
+  var el=document.getElementById('card-tx-table'); if(!el) return;
+  _cardTxCardOptions();
+  var rows=_cardTxFiltered();
+  var total=rows.reduce(function(s,r){return s+(r.amount||0);},0);
+  var sm=document.getElementById('card-tx-summary'); if(sm) sm.textContent=rows.length.toLocaleString()+'건 · 합계 '+won(total);
+  var CAP=1500, show=rows.slice(0,CAP);
+  var h='<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="position:sticky;top:0;background:#f8fafc;">'
+    +'<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">날짜</th>'
+    +'<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">카드</th>'
+    +'<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">가맹점</th>'
+    +'<th style="text-align:right;padding:6px;border-bottom:1px solid #e2e8f0;">금액</th>'
+    +'<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">결제</th>'
+    +'<th style="text-align:left;padding:6px;border-bottom:1px solid #e2e8f0;">카테고리</th></tr></thead><tbody>';
+  show.forEach(function(r){
+    var pay=(r.paymentType||'')+((r.paymentType==='할부'&&r.installment&&r.installment!=='00'&&r.installment!=='0')?(' '+r.installment+'개월'):'');
+    h+='<tr style="border-bottom:1px solid #f1f5f9;">'
+      +'<td style="padding:5px 6px;white-space:nowrap;">'+(r.date||'')+'</td>'
+      +'<td style="padding:5px 6px;white-space:nowrap;">'+(r.card||'')+'</td>'
+      +'<td style="padding:5px 6px;">'+(r.merchant||'')+'</td>'
+      +'<td style="padding:5px 6px;text-align:right;font-weight:600;white-space:nowrap;">'+won(r.amount)+'</td>'
+      +'<td style="padding:5px 6px;white-space:nowrap;color:#64748b;">'+pay+'</td>'
+      +'<td style="padding:5px 6px;white-space:nowrap;color:#64748b;">'+(r.category||'')+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  if(rows.length>CAP) h+='<div style="padding:8px;font-size:11px;color:#94a3b8;">상위 '+CAP.toLocaleString()+'건만 표시 — 전체는 CSV로 받으세요.</div>';
+  if(!rows.length) h='<div style="padding:16px;color:#94a3b8;font-size:12px;">표시할 거래내역이 없습니다.</div>';
+  el.innerHTML=h;
+}
+function exportCardTxCsv(){
+  var rows=_cardTxFiltered();
+  var esc=function(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  var lines=[['날짜','시간','카드','가맹점','금액','결제유형','할부','카테고리','승인번호'].join(',')];
+  rows.forEach(function(r){ lines.push([r.date,r.time,r.card,r.merchant,r.amount,r.paymentType,r.installment,r.category,r.approvalNo].map(esc).join(',')); });
+  var blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download='카드거래내역.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 /* === 은행 입출금 탭 === */
 var _bankCharts={}, _bankRows=null, _bankGran='month';
