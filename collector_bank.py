@@ -27,6 +27,8 @@ SVC = ServiceType.PRODUCT if ENV in ("api","prod","product") else ServiceType.DE
 ORG_NAME   = {"0081":"하나", "0032":"부산"}
 MAX_MONTHS = {"0081":18, "0032":12}
 ACCTPW_KEY = {"0081":"BANK_HANA_ACCTPW", "0032":"BANK_BUSAN_ACCTPW"}
+# 수시입출 아닌 계좌(퇴직연금/ISA/신탁/펀드/정기/외화 등)는 조회 불가 → 호출 낭비 방지 위해 스킵
+SKIP_ACCT = ("퇴직연금","irp","ira","isa","신탁","펀드","적금","정기예금","정기적금","밀리언달러","빌리언달러","외화","닥터클럽","플래티늄","청약")
 
 # 스코프: b=법인/기업뱅킹(기본), p=개인. (청담리투는 기업계좌)
 SCOPE = os.environ.get("BANK_SCOPE", "b")
@@ -106,10 +108,12 @@ def list_accounts(codef, org):
     out = []
     for a in accts:
         no = _g(a, "resAccount", "resAccountNo", "resAccountDisplay")
-        if no:
-            out.append({"no":str(no).strip(),
-                        "name":_g(a,"resAccountName","resAccountNickName","resAccountDeposit"),
+        nm = str(_g(a,"resAccountName","resAccountNickName","resAccountDeposit"))
+        if no and not any(k in nm.lower() for k in SKIP_ACCT):
+            out.append({"no":str(no).strip(), "name":nm,
                         "balance":_g(a,"resAccountBalance","resAccountBalanceAmt", default="0")})
+        elif no:
+            print(f"    (스킵: {no[-4:]} {nm} — 수시입출 아님)", flush=True)
     return out
 
 def fetch_trans(codef, org, account_no, acctpw_enc):
