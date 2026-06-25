@@ -68,6 +68,12 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
 .stbl td{padding:6px 7px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
 .stbl tr:last-child td{border:none;}
 .stbl input[type=number],.stbl select{font-size:12px;padding:6px 9px;}
+.proc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:4px 18px;margin-bottom:14px;}
+.proc-cell{display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #f1f5f9;}
+.proc-cell .proc-nm{flex:1;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.proc-cell input{width:88px;font-size:12px;padding:5px 7px;}
+.proc-cell .pdel{border:none;background:none;color:#cbd5e1;cursor:pointer;font-size:16px;line-height:1;padding:0 3px;}
+.proc-cell .pdel:hover{color:#ef4444;}
 /* modal */
 .mbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:center;justify-content:center;}
 .mbg.on{display:flex;}
@@ -427,12 +433,8 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
         <span class="saved-badge" id="proc-saved">✓ 저장됨</span>
       </div>
       <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">각 시술의 재료비 단가(원)를 입력하세요. 0이면 0으로 계산됩니다.</div>
-      <div style="overflow-x:auto;margin-bottom:14px;">
-        <table class="stbl">
-          <thead><tr><th style="width:50%;">시술 이름</th><th>재료비 단가 (원)</th><th style="width:60px;"></th></tr></thead>
-          <tbody id="proc-body"></tbody>
-        </table>
-      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">단가(원) 입력 · 여러 열로 표시 · ×로 삭제</div>
+      <div id="proc-body" class="proc-grid"></div>
       <!-- 새 항목 추가 -->
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
         <div style="flex:1;min-width:160px;"><div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">새 시술 이름</div><input type="text" id="new-p-nm" placeholder="시술 이름 직접 추가"></div>
@@ -440,6 +442,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
         <button class="btn btn-o btn-sm" style="margin-bottom:1px;" onclick="addProc()">+ 추가</button>
       </div>
       <button class="btn btn-p btn-big" onclick="applyProc()">🧪 재료비 단가 저장 및 반영</button>
+      <button class="btn btn-o btn-sm" style="margin-top:8px;" onclick="syncProcsFromConsultations(false)">🔄 기록에서 시술항목 동기화</button>
 
       <!-- 일괄 입력 -->
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #f1f5f9;">
@@ -918,6 +921,28 @@ var DEFAULT_ROUTES={
   '중국(따)':{type:'percent',value:25},
   '일본(통)':{type:'fixed',value:8000000}
 };
+
+// 재료비 불필요 회계성/비시술 항목 (자동동기화 시 제외)
+var NON_MATERIAL_ITEMS=new Set(['예약금','예약금제외','수면비제외','VIP회원권','VIP할인혜택','적립금','적립금차감','선납금차감','상품권차감','할인차감','할인','환불','위약금','양도','결제오류','미수금결제','상담만','소견서','지정비용','결제','환불후재결제','재결제']);
+
+// consultations 전체에서 시술항목을 읽어 설정 재료비 목록에 누락분 자동 추가 (단가 0)
+async function syncProcsFromConsultations(silent){
+  if(!window.fbGetConsultations){ if(!silent)alert('Firebase 연결이 필요해요'); return; }
+  try{
+    var items=await window.fbGetConsultations('2026-01-01','2026-12-31');
+    var cfg=loadCfg(); var added=[];
+    items.forEach(function(it){
+      (it.treatments||[]).forEach(function(t){
+        var nm=(t.item||'').trim();
+        if(nm && !NON_MATERIAL_ITEMS.has(nm) && !cfg.procedures.hasOwnProperty(nm)){
+          cfg.procedures[nm]={price:0}; added.push(nm);
+        }
+      });
+    });
+    if(added.length){ saveCfg(cfg); renderCfgUI(); }
+    if(!silent) alert(added.length? ('✅ 재료비 목록에 신규 시술 '+added.length+'개 추가 (단가 0):\n'+added.join(', ')+'\n\n각 단가를 입력 후 저장하세요.') : '✓ 이미 최신 — 추가할 신규 시술 없음');
+  }catch(e){ if(!silent)alert('동기화 실패: '+e.message); console.error(e); }
+}
 
 /* ═══ STORAGE ═══ */
 function loadCfg(){
@@ -1808,10 +1833,10 @@ function renderCfgUI(){
   var pb=document.getElementById('proc-body');
   var procs=Object.entries(cfg.procedures);
   pb.innerHTML=procs.length?procs.map(function(e,i){
-    return'<tr><td><b>'+esc(e[0])+'</b></td>'+
-      '<td><input type="number" class="proc-price" data-idx="'+i+'" value="'+(parseFloat(e[1].price)||0)+'" min="0" placeholder="0"></td>'+
-      '<td><button class="btn btn-r btn-sm" onclick="delProc('+i+')">삭제</button></td></tr>';
-  }).join(''):'<tr><td colspan="3" style="color:#94a3b8;font-size:12px;padding:12px;">② 파일 업로드 후 자동 추가됩니다</td></tr>';
+    return'<div class="proc-cell"><span class="proc-nm" title="'+esc(e[0])+'">'+esc(e[0])+'</span>'+
+      '<input type="number" class="proc-price" data-idx="'+i+'" value="'+(parseFloat(e[1].price)||0)+'" min="0" placeholder="0">'+
+      '<button class="pdel" title="삭제" onclick="delProc('+i+')">×</button></div>';
+  }).join(''):'<div style="color:#94a3b8;font-size:12px;padding:12px;">② 파일 업로드 후 자동 추가됩니다</div>';
 
   /* 경로 수수료 */
   var rb=document.getElementById('route-body');
@@ -1994,6 +2019,12 @@ function viewArc(i){
   // 원본 rows 복원
   G.cRows=a.cRows||null; G.aRows=a.aRows||null; G.bRows=a.bRows||null;
   G.cCols=a.cCols||null;
+  // 신규 시술항목 설정 자동 반영 (회계성 제외)
+  try{ var _cfg=loadCfg(),_ad=false;
+    ((a.aData&&a.aData.items)||[]).forEach(function(it){ var nm=(it.name||'').trim();
+      if(nm && !NON_MATERIAL_ITEMS.has(nm) && !_cfg.procedures.hasOwnProperty(nm)){_cfg.procedures[nm]={price:0};_ad=true;} });
+    if(_ad){saveCfg(_cfg);renderCfgUI();}
+  }catch(e){}
   document.querySelectorAll('.sbm').forEach(function(el){el.classList.remove('on')});
   var el=document.getElementById('sbm-'+i);if(el)el.classList.add('on');
   // 업로드 영역에 저장된 파일명 표시
@@ -4549,6 +4580,7 @@ window.onFbReady = function(){
       localStorage.setItem(SKEY,JSON.stringify(cfg));
       window.fbSaveSettings(cfg);
       renderCfgUI();renderFixedDisplay();renderSummary();
+      try{ syncProcsFromConsultations(true); }catch(e){}
     });
   }
   }, 500); // auth 토큰 전파 대기
