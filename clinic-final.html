@@ -1341,6 +1341,14 @@ function accumTreatRev(it,txs,treatMap,cfg){
   });
 }
 
+/* 시술별 재료비 집계표 열 정렬 토글 */
+function sortMat(col){
+  var s=window._matSort||{col:'subtotal',asc:false};
+  if(s.col===col){ s.asc=!s.asc; } else { s.col=col; s.asc=(col==='name'); } // 이름은 가나다 오름차순부터, 숫자는 내림차순부터
+  window._matSort=s;
+  render();
+}
+
 function computeA(){
   if(!G.aRows){return}
   var cfg=loadCfg();
@@ -1466,11 +1474,29 @@ function render(){
   /* ② 시술별집계 → 재료비 */
   if(ad){
     h+='<div class="sdiv">② 시술별 재료비 ('+esc(G.aFile)+')</div>';
-    var priced=ad.items.filter(function(i){return i.price>0}).sort(function(a,b){return b.subtotal-a.subtotal});
+    var priced=ad.items.filter(function(i){return i.price>0});
     var unpriced=ad.items.filter(function(i){return i.price===0}).sort(function(a,b){return b.count-a.count});
+    // 정렬 상태 (열 클릭 시 토글)
+    var ms=window._matSort||(window._matSort={col:'subtotal',asc:false});
+    var mval=function(i,col){
+      if(col==='name') return i.name||'';
+      if(col==='count') return parseFloat(i.count)||0;
+      if(col==='price') return parseFloat(i.price)||0;
+      if(col==='subtotal') return parseFloat(i.subtotal)||0;
+      if(col==='rev') return parseFloat(i.rev)||0;
+      if(col==='ratio'){var r=parseFloat(i.rev)||0; return r>0?(i.subtotal/r):-1;}
+      return 0;
+    };
+    priced.sort(function(a,b){
+      var va=mval(a,ms.col), vb=mval(b,ms.col);
+      if(ms.col==='name') return ms.asc?String(va).localeCompare(vb):String(vb).localeCompare(va);
+      return ms.asc?(va-vb):(vb-va);
+    });
+    var mar=function(col){return ms.col===col?(ms.asc?' ▲':' ▼'):'<span style="color:#cbd5e1;">↕</span>';};
+    var mth=function(label,col,w){return '<th class="r" style="cursor:pointer;'+(w?'width:'+w+';':'')+'" onclick="sortMat(\''+col+'\')">'+label+' '+mar(col)+'</th>';};
     h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">시술별 재료비 집계</div>';
-    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">시술이름(건수) 자동 파싱 · 건수 × 단가 = 소계</div>';
-    h+='<table><thead><tr><th>시술 이름</th><th class="r" style="width:8%;">건수</th><th class="r" style="width:13%;">단가 (원)</th><th class="r" style="width:15%;">재료비 소계</th><th class="r" style="width:22%;">매출</th><th class="r" style="width:11%;">재료비율</th></tr></thead><tbody>';
+    h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">시술이름(건수) 자동 파싱 · 건수 × 단가 = 소계 · 열 제목 클릭으로 정렬</div>';
+    h+='<table><thead><tr><th style="cursor:pointer;" onclick="sortMat(\'name\')">시술 이름 '+mar('name')+'</th>'+mth('건수','count','8%')+mth('단가 (원)','price','13%')+mth('재료비 소계','subtotal','15%')+mth('매출','rev','22%')+mth('재료비율','ratio','11%')+'</tr></thead><tbody>';
     var revSum=0;
     priced.forEach(function(i){
       var rev=parseFloat(i.rev)||0; revSum+=rev;
