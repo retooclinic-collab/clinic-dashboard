@@ -1837,13 +1837,17 @@ function cfBuildTable(){
   h+='</tbody></table></div>';
   return h;
 }
-function cfFormulaBlocks(){
-  var pick=cfPickMonths(), keys=Object.keys(pick).sort();
-  if(!keys.length) return '';
-  var _nowK=(function(){var d=new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);})();
-  var _done=keys.filter(function(x){return x<_nowK;}); var _ks=_done.length?_done:keys;
-  var k=_ks[_ks.length-1]; var a=pick[k].a;
-  var rev=a.cData?a.cData.total:0, mat=a.aData?a.aData.totalCost:0, comm=a.bData?a.bData.totalCommission:0;
+function cfFormulaBlocks(argRev,argComm,argK,argTitle){
+  var k,rev,comm,title;
+  if(argK){k=argK;rev=argRev||0;comm=argComm||0;title=argTitle||(k+' 계산식 (실측 기준)');}
+  else{
+    var pick=cfPickMonths(), keys=Object.keys(pick).sort();
+    if(!keys.length) return '';
+    var _nowK=(function(){var d=new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);})();
+    var _done=keys.filter(function(x){return x<_nowK;}); var _ks=_done.length?_done:keys;
+    k=_ks[_ks.length-1]; var a=pick[k].a;
+    rev=a.cData?a.cData.total:0; comm=a.bData?a.bData.totalCommission:0; title=k+' 계산식 (실측 기준)';
+  }
   var fixed=getFixedTotal(), fixedExCard=getFixedExCard();
   var cardv=(window._cfCard&&window._cfCard[k])||0, bk=(window._cfBank&&window._cfBank[k])||{op:0,noself:0,capex:0};
   var won=function(n){return cfManwon(n)+'만';};
@@ -1856,7 +1860,7 @@ function cfFormulaBlocks(){
     h+='<div style="font-size:12px;color:#94a3b8;padding:8px 10px;background:#fff;border-radius:7px;line-height:1.6;">'+parts+'</div></div>';
     return h;
   }
-  var h='<div class="sdiv">🧮 '+k+' 계산식 (실측 기준)</div><div class="card">';
+  var h='<div class="sdiv">🧮 '+title+'</div><div class="card">';
   var _noncard=bk.op-(bk.cardpay||0); h+=block('#f8fafc','#0369a1','④ 카드 승인 기준','<b>그 달 실제 카드 사용액(승인 기준·취소 제외)</b>으로 본 순이익. 카드값은 통장에서 다음 달 빠지지만, ‘승인’ 기준이라 그 달 쓴 걸 그 달에 반영해 시점을 맞춘 버전. 통장에선 카드대금 덩어리를 통째로 빼고, 카드 외(이체)로 나간 비용만 더한다.','총수납 '+won(rev)+' − 카드승인(정상) '+won(cardv)+' − 비카드통장지출(통장운영−카드대금) '+won(_noncard)+' − 수수료(매출×내원경로비율) '+won(comm)+' = <b>'+won(rev-cardv-_noncard-comm)+'</b>', rev-cardv-_noncard-comm);
   h+=block('#f0f9ff','#0369a1','⑤ 통장 운영 기준','<b>그 달 통장에서 실제로 빠진 돈(현금흐름)</b> 기준 순이익. 자전거래(대표 자금이동)·에이전시·일회성 투자는 빼서 ‘평소 운영지출’만 본다. 에이전시는 결제 시점이 한 달 늦어 빼고, 대신 수수료를 매출×내원경로비율로 다시 반영. 카드대금은 통장에 잡힌 그대로 포함(지난달 사용분이라 시점은 늦음).','총수납 '+won(rev)+' − 통장출금(운영: 자전·에이전시·일회성 제외) '+won(bk.op)+' − 수수료(매출×내원경로비율) '+won(comm)+' = <b>'+won(rev-bk.op-comm)+'</b>', rev-bk.op-comm);
   h+=block('#eff6ff','#1d4ed8','⑥ 통장 전체 기준','<b>그 달 통장에서 나간 돈 전부</b>(자전거래만 제외)로 본 순수 현금흐름 순이익. 에이전시·일회성·카드대금까지 다 포함한, 가장 단순하고 보수적인 실제 현금 기준.','총수납 '+won(rev)+' − 통장출금 전체(자전거래만 제외) '+won(bk.noself)+' = <b>'+won(rev-bk.noself)+'</b>', rev-bk.noself);
@@ -1864,11 +1868,22 @@ function cfFormulaBlocks(){
   h+='</div>';
   return h;
 }
+async function cfFillSummary(){
+  var box=document.getElementById('cf-summary'); if(!box)return;
+  if(!G.cData){box.innerHTML='';return;}
+  box.innerHTML='<div class="card" style="color:#94a3b8;font-size:13px;">💵 실측 순이익(④⑤⑥) 불러오는 중…</div>';
+  await cfLoad();
+  var k=(typeof cfMonthKey==='function')?cfMonthKey(G.cFile):null;
+  if(!k){var pk=cfPickMonths(),ks=Object.keys(pk).sort();k=ks.length?ks[ks.length-1]:null;}
+  if(!k){box.innerHTML='';return;}
+  var rev=G.cData?G.cData.total:0, comm=G.bData?G.bData.totalCommission:0;
+  try{box.innerHTML=cfFormulaBlocks(rev,comm,k,'④ ⑤ ⑥ 실측 기준 ('+k+')');}catch(e){box.innerHTML='<div class="card" style="color:#ef4444;">실측 렌더 오류: '+e.message+'</div>';}
+}
 async function cfFill(){
   var box=document.getElementById('cf-section'); if(!box)return;
   box.innerHTML='<div class="card" style="color:#94a3b8;font-size:13px;">💵 현금흐름 데이터 불러오는 중…</div>';
   await cfLoad();
-  try{box.innerHTML=cfBuildTable()+cfFormulaBlocks();}catch(e){box.innerHTML='<div class="card" style="color:#ef4444;">현금흐름 렌더 오류: '+e.message+'</div>';}
+  try{box.innerHTML=cfBuildTable();}catch(e){box.innerHTML='<div class="card" style="color:#ef4444;">현금흐름 렌더 오류: '+e.message+'</div>';}
 }
 
 /* ═══ 종합 분석 탭 ═══ */
@@ -4500,7 +4515,9 @@ function renderSummary(){
   h+='</div></div>';
 
   h+='</div>';
+  h+='<div id="cf-summary" style="margin-top:8px;"></div>';
   el.innerHTML=h;
+  try{cfFillSummary();}catch(e){console.warn('cfFillSummary',e);}
 }
 
 /* ═══ BULK IMPORT ═══ */
