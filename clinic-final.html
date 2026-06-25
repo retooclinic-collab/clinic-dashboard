@@ -72,6 +72,9 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
 .proc-cell{display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid #f1f5f9;}
 .proc-cell .proc-nm{flex:1;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .proc-cell input{width:88px;font-size:12px;padding:5px 7px;}
+.proc-cell{flex-wrap:wrap;}
+.proc-cell .proc-date{width:120px;font-size:11px;padding:4px 6px;color:#64748b;}
+.proc-cell .proc-hist{flex-basis:100%;font-size:10px;color:#a855f7;padding:2px 0 0 2px;}
 .proc-cell .pdel{border:none;background:none;color:#cbd5e1;cursor:pointer;font-size:16px;line-height:1;padding:0 3px;}
 .proc-cell .pdel:hover{color:#ef4444;}
 .proc-cat{font-size:12px;font-weight:700;color:#6d28d9;margin:16px 0 6px;padding-bottom:3px;border-bottom:1px solid #ede9fe;}
@@ -932,7 +935,7 @@ var NON_MATERIAL_ITEMS=new Set(['예약금','예약금제외','수면비제외',
 var PROC_CATEGORIES=[
  {g:'리프팅·타이트닝', items:['울쎄라(100샷)','소프웨이브(50샷)','슈링크(100샷)','슈링크','써마지300','써마지600','써마지900샷','아이써마지225','아이써마지450샷','써마지 아이450','티타늄','온다','온다(바디)','온다리프트','티타튠','티타튠max','튠페이스','튠라이너','튠바디','엠페이스','오푸스','인텐스울트라','힐로웨이브','코레지셀핏','아이리프팅','릴리이드','리투오']},
  {g:'레이저·토닝·IPL', items:['듀얼피코','피코슈어','피코웨이','제네시스','제네시스+PTT','BBL','BBL(여드름)','BBL(색소)','BBL(홍조)','BBL(스킨타이트닝)','BBL(포에버영)','BBL(바디)','LDM','CO2','moxi','MOXI','클라리티','플라즈마','라라필','밀크필','튠라이트IPL','힐라이트','문신제거']},
- {g:'주사·스킨부스터', items:['리쥬란','리쥬란HB','리쥬란아이','쥬베룩','쥬베룩볼륨','쥬베룩아이','쥬베룩스킨','쥬브아셀','쥬브아셀(추가분)','스킨바이브','멀티스킨부스터','미라젯','미라젯쥬베룩','새살주사','리투핏주사','리투핏주사(바디)','조각주사','스컬트라']},
+ {g:'주사·스킨부스터', items:['리쥬란','리쥬란HB','리쥬란아이','쥬베룩','쥬베룩볼륨','쥬베룩아이','쥬베룩스킨','쥬브아셀','쥬브아셀3%','쥬브아셀8%','쥬브아셀V','쥬브아셀(추가분)','스킨바이브','멀티스킨부스터','미라젯','미라젯쥬베룩','새살주사','리투핏주사','리투핏주사(바디)','조각주사','스컬트라']},
  {g:'보톡스·필러', items:['보톡스(국산)','보톡스(수입)','필러(수입)','필러(국산)','히알라제']},
  {g:'포텐자·모공·재생', items:['포텐자(펌핑)','포텐자(모공)','포텐자(기미)','펌핑팁','아그네스','아쿠아필']},
  {g:'IV·수액·영양', items:['수액','백옥','NAD','TA','PDRN','비타민','고압산소']},
@@ -1155,7 +1158,8 @@ async function loadFromConsultations(){
       Object.keys(treatMap).forEach(function(nm){
         var cnt=treatMap[nm].count;
         var pr=cfgT.procedures[nm]?parseFloat(cfgT.procedures[nm].price)||0:0;
-        aItems.push({name:nm,count:cnt,price:pr,subtotal:cnt*pr,rev:treatMap[nm].rev});
+        var sub=(treatMap[nm].matCost!==undefined)?treatMap[nm].matCost:cnt*pr;
+        aItems.push({name:nm,count:cnt,price:pr,subtotal:sub,rev:treatMap[nm].rev});
       });
       aItems.sort(function(a,b){return b.subtotal-a.subtotal});
       G.aData={items:aItems,totalCost:aItems.reduce(function(s,i){return s+i.subtotal},0)};
@@ -1322,17 +1326,22 @@ function computeC(){
    - 그래도 가중치 0이면 균등분배 */
 function accumTreatRev(it,txs,treatMap,cfg){
   var amt=(parseFloat(it.amount)||0)*10000; // 결제금액(원)
+  var _d=(it.date||'').trim();              // 거래일 (재료가 시점 적용)
   var priceSum=0; txs.forEach(function(t){priceSum+=(parseFloat(t.price)||0);});
   var ws=txs.map(function(t){
     var nm=(t.item||'').trim();
-    var up=(cfg&&cfg.procedures[nm])?parseFloat(cfg.procedures[nm].price)||0:0;
+    var up=(cfg&&cfg.procedures[nm])?procPriceAt(cfg.procedures[nm],_d):0;
     return up*(parseFloat(t.qty)||1);
   });
   var wSum=ws.reduce(function(s,w){return s+w;},0);
   txs.forEach(function(t,k){
     var nm=(t.item||'').trim();
-    if(!treatMap[nm]) treatMap[nm]={count:0,rev:0};
-    treatMap[nm].count+=(parseFloat(t.qty)||1);
+    if(!treatMap[nm]) treatMap[nm]={count:0,rev:0,matCost:0};
+    if(treatMap[nm].matCost===undefined) treatMap[nm].matCost=0;
+    var _qty=(parseFloat(t.qty)||1);
+    treatMap[nm].count+=_qty;
+    var _up=(cfg&&cfg.procedures[nm])?procPriceAt(cfg.procedures[nm],_d):0;
+    treatMap[nm].matCost+=_up*_qty;        // 거래일 기준 재료비 누적
     var rev;
     if(priceSum>0) rev=(parseFloat(t.price)||0)*10000;       // 명시가(만원→원)
     else if(wSum>0) rev=amt*(ws[k]/wSum);                     // 재료비 가중 분배
@@ -1733,7 +1742,8 @@ async function refreshTrendFromDB(){
         Object.keys(treatMap).forEach(function(nm){
           var c=treatMap[nm].count;
           var pr=cfgT.procedures[nm]?parseFloat(cfgT.procedures[nm].price)||0:0;
-          aItems.push({name:nm,count:c,price:pr,subtotal:c*pr,rev:treatMap[nm].rev});
+          var sub=(treatMap[nm].matCost!==undefined)?treatMap[nm].matCost:c*pr;
+          aItems.push({name:nm,count:c,price:pr,subtotal:sub,rev:treatMap[nm].rev});
         });
         aItems.sort(function(x,y){return y.subtotal-x.subtotal});
         a.aData={items:aItems,totalCost:aItems.reduce(function(s,i){return s+i.subtotal},0)};
@@ -1996,9 +2006,13 @@ function renderCfgUI(){
   if(!procKeys.length){ pb.innerHTML='<div style="color:#94a3b8;font-size:12px;padding:12px;">② 파일 업로드 후 자동 추가됩니다</div>'; }
   else {
     var idxOf={}; procKeys.forEach(function(k,i){idxOf[k]=i;});
-    function _cell(k){ return '<div class="proc-cell"><span class="proc-nm" title="'+esc(k)+'">'+esc(k)+'</span>'+
-      '<input type="number" class="proc-price" data-idx="'+idxOf[k]+'" value="'+(parseFloat(cfg.procedures[k].price)||0)+'" min="0" placeholder="0">'+
-      '<button class="pdel" title="삭제" onclick="delProc('+idxOf[k]+')">×</button></div>'; }
+    function _cell(k){
+      var _p=cfg.procedures[k]||{};
+      var _hist=(_p.history&&_p.history.length)?'<div class="proc-hist" title="재료가 변경 이력">📅 '+_p.history.slice().sort(function(a,b){return a.from<b.from?-1:1;}).map(function(h){return esc(h.from)+'~ '+(parseFloat(h.price)||0).toLocaleString();}).join(' / ')+'</div>':'';
+      return '<div class="proc-cell"><span class="proc-nm" title="'+esc(k)+'">'+esc(k)+'</span>'+
+      '<input type="number" class="proc-price" data-idx="'+idxOf[k]+'" value="'+(parseFloat(_p.price)||0)+'" min="0" placeholder="0">'+
+      '<input type="date" class="proc-date" data-idx="'+idxOf[k]+'" title="이 단가를 적용할 시작일(선택). 비우면 현재가만 변경">'+
+      '<button class="pdel" title="삭제" onclick="delProc('+idxOf[k]+')">×</button>'+_hist+'</div>'; }
     var placed={}, html='';
     PROC_CATEGORIES.forEach(function(cat){
       var present=cat.items.filter(function(k){return cfg.procedures.hasOwnProperty(k);});
@@ -2037,7 +2051,22 @@ function applyProc(){
   document.querySelectorAll('.proc-price').forEach(function(inp){
     var idx=parseInt(inp.getAttribute('data-idx'));
     if(idx>=0&&idx<procs.length){
-      cfg.procedures[procs[idx]].price=parseFloat(inp.value)||0;
+      var nm=procs[idx];
+      var newPrice=parseFloat(inp.value)||0;
+      var p=cfg.procedures[nm]||{price:0};
+      var dateInp=document.querySelector('.proc-date[data-idx="'+idx+'"]');
+      var fromDate=(dateInp&&dateInp.value)?dateInp.value.trim():'';
+      if(fromDate){
+        p.history=p.history||[];
+        var ex=null; for(var hi=0;hi<p.history.length;hi++){ if(p.history[hi].from===fromDate){ex=p.history[hi];break;} }
+        if(ex) ex.price=newPrice; else p.history.push({from:fromDate,price:newPrice});
+        p.history.sort(function(a,b){return a.from<b.from?-1:(a.from>b.from?1:0);});
+        p.price=procPriceAt(p, new Date().toISOString().slice(0,10)); // 현재가 = 오늘 기준 유효가
+      } else {
+        p.price=newPrice;
+        if(p.history&&p.history.length){ p.history[p.history.length-1].price=newPrice; }
+      }
+      cfg.procedures[nm]=p;
     }
   });
   saveCfg(cfg);
@@ -3132,8 +3161,19 @@ function renderDailyTotals(){
   renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2);
 }
 
-function getUnitPrice(name, cfg2){
-  if(cfg2.procedures[name]) return parseFloat(cfg2.procedures[name].price)||0;
+/* 재료가: 거래일(dateStr) 기준 유효 단가. history=[{from:'YYYY-MM-DD',price}] 있으면 그 시점 단가, 없으면 현재가 */
+function procPriceAt(p, dateStr){
+  if(!p) return 0;
+  var base=parseFloat(p.price)||0;
+  if(!p.history||!p.history.length||!dateStr) return base;
+  var h=p.history.slice().sort(function(a,b){return a.from<b.from?-1:(a.from>b.from?1:0);});
+  var chosen=null;
+  for(var i=0;i<h.length;i++){ if(h[i].from<=dateStr) chosen=h[i].price; }
+  if(chosen===null) chosen=h[0].price;
+  return parseFloat(chosen)||0;
+}
+function getUnitPrice(name, cfg2, dateStr){
+  if(cfg2.procedures[name]) return procPriceAt(cfg2.procedures[name], dateStr);
   if(/울쎄라/i.test(name)) return parseFloat((cfg2.procedures['울쎄라(100샷)']||{}).price)||125000;
   if(/소프웨이브|소프/i.test(name)) return parseFloat((cfg2.procedures['소프웨이브(50샷)']||{}).price)||70000;
   if(/써마지.*?900/i.test(name)) return parseFloat((cfg2.procedures['써마지900샷']||{}).price)||883000;
@@ -3341,7 +3381,7 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     txs.forEach(function(t){
       var name=t.item; var qty=parseFloat(t.qty)||1;
       var up=0;
-      if(cfg2.procedures[name]) up=parseFloat(cfg2.procedures[name].price)||0;
+      if(cfg2.procedures[name]) up=procPriceAt(cfg2.procedures[name], (it.date||''));
       units.push({name:name, qty:qty, up:up, weight: up*qty});
       unitSum+=up*qty;
     });
