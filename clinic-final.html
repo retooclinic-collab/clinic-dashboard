@@ -1847,18 +1847,19 @@ function cfFormulaBlocks(){
   var fixed=getFixedTotal(), fixedExCard=getFixedExCard();
   var cardv=(window._cfCard&&window._cfCard[k])||0, bk=(window._cfBank&&window._cfBank[k])||{op:0,noself:0,capex:0};
   var won=function(n){return cfManwon(n)+'만';};
-  function block(bg,lc,label,parts,result){
+  function block(bg,lc,label,desc,parts,result){
     var p=rev>0?' <span style="font-size:13px;color:#94a3b8;font-weight:400;">('+(result/rev*100).toFixed(1)+'%)</span>':'';
     var h='<div style="background:'+bg+';border-radius:10px;padding:14px;margin-bottom:10px;">';
-    h+='<div style="font-size:11px;color:'+lc+';font-weight:700;letter-spacing:1px;margin-bottom:8px;">'+label+'</div>';
+    h+='<div style="font-size:11px;color:'+lc+';font-weight:700;letter-spacing:1px;margin-bottom:6px;">'+label+'</div>';
+    h+='<div style="font-size:12px;color:#475569;margin-bottom:8px;line-height:1.7;">'+desc+'</div>';
     h+='<div style="font-size:14px;font-weight:800;color:'+(result>=0?'#10b981':'#ef4444')+';margin-bottom:8px;">= '+won(result)+p+'</div>';
     h+='<div style="font-size:12px;color:#94a3b8;padding:8px 10px;background:#fff;border-radius:7px;line-height:1.6;">'+parts+'</div></div>';
     return h;
   }
   var h='<div class="sdiv">🧮 '+k+' 계산식 (실측 기준)</div><div class="card">';
-  var _noncard=bk.op-(bk.cardpay||0); h+=block('#f8fafc','#0369a1','④ 카드 승인 기준','총수납 '+won(rev)+' − 카드승인(정상) '+won(cardv)+' − 비카드통장지출(통장운영−카드대금) '+won(_noncard)+' − 수수료(매출×내원경로비율) '+won(comm)+' = <b>'+won(rev-cardv-_noncard-comm)+'</b>', rev-cardv-_noncard-comm);
-  h+=block('#f0f9ff','#0369a1','⑤ 통장 운영 기준','총수납 '+won(rev)+' − 통장출금(운영: 자전·에이전시·일회성 제외) '+won(bk.op)+' − 수수료(매출×내원경로비율) '+won(comm)+' = <b>'+won(rev-bk.op-comm)+'</b>', rev-bk.op-comm);
-  h+=block('#eff6ff','#1d4ed8','⑥ 통장 전체 기준','총수납 '+won(rev)+' − 통장출금 전체(자전거래만 제외) '+won(bk.noself)+' = <b>'+won(rev-bk.noself)+'</b>', rev-bk.noself);
+  var _noncard=bk.op-(bk.cardpay||0); h+=block('#f8fafc','#0369a1','④ 카드 승인 기준','<b>그 달 실제 카드 사용액(승인 기준·취소 제외)</b>으로 본 순이익. 카드값은 통장에서 다음 달 빠지지만, ‘승인’ 기준이라 그 달 쓴 걸 그 달에 반영해 시점을 맞춘 버전. 통장에선 카드대금 덩어리를 통째로 빼고, 카드 외(이체)로 나간 비용만 더한다.','총수납 '+won(rev)+' − 카드승인(정상) '+won(cardv)+' − 비카드통장지출(통장운영−카드대금) '+won(_noncard)+' − 수수료(매출×내원경로비율) '+won(comm)+' = <b>'+won(rev-cardv-_noncard-comm)+'</b>', rev-cardv-_noncard-comm);
+  h+=block('#f0f9ff','#0369a1','⑤ 통장 운영 기준','<b>그 달 통장에서 실제로 빠진 돈(현금흐름)</b> 기준 순이익. 자전거래(대표 자금이동)·에이전시·일회성 투자는 빼서 ‘평소 운영지출’만 본다. 에이전시는 결제 시점이 한 달 늦어 빼고, 대신 수수료를 매출×내원경로비율로 다시 반영. 카드대금은 통장에 잡힌 그대로 포함(지난달 사용분이라 시점은 늦음).','총수납 '+won(rev)+' − 통장출금(운영: 자전·에이전시·일회성 제외) '+won(bk.op)+' − 수수료(매출×내원경로비율) '+won(comm)+' = <b>'+won(rev-bk.op-comm)+'</b>', rev-bk.op-comm);
+  h+=block('#eff6ff','#1d4ed8','⑥ 통장 전체 기준','<b>그 달 통장에서 나간 돈 전부</b>(자전거래만 제외)로 본 순수 현금흐름 순이익. 에이전시·일회성·카드대금까지 다 포함한, 가장 단순하고 보수적인 실제 현금 기준.','총수납 '+won(rev)+' − 통장출금 전체(자전거래만 제외) '+won(bk.noself)+' = <b>'+won(rev-bk.noself)+'</b>', rev-bk.noself);
   h+='<div style="background:#fffbeb;border-radius:10px;padding:14px;border-left:3px solid #f59e0b;"><div style="font-size:11px;color:#b45309;font-weight:700;letter-spacing:1px;margin-bottom:6px;">※ 일회성 시설·장비 투자 (capex · 별도)</div><div style="font-size:18px;font-weight:800;color:#b45309;">'+won(bk.capex)+'</div><div style="font-size:11px;color:#94a3b8;margin-top:4px;">운영 순이익과 분리 — 인테리어·장비구매 등 일회성. 위 ⑤⑥ 운영지표에서 제외됨.</div></div>';
   h+='</div>';
   return h;
