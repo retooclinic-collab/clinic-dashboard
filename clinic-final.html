@@ -930,7 +930,9 @@ async function syncProcsFromConsultations(silent){
   if(!window.fbGetConsultations){ if(!silent)alert('Firebase 연결이 필요해요'); return; }
   try{
     var items=await window.fbGetConsultations('2026-01-01','2026-12-31');
-    var cfg=loadCfg(); var added=[];
+    var cfg=loadCfg(); var added=[]; var removed=[];
+    // 회계성/비시술 항목은 재료비 목록에서 제거
+    Object.keys(cfg.procedures).forEach(function(k){ if(NON_MATERIAL_ITEMS.has(k)){ delete cfg.procedures[k]; removed.push(k); } });
     items.forEach(function(it){
       (it.treatments||[]).forEach(function(t){
         var nm=(t.item||'').trim();
@@ -939,8 +941,8 @@ async function syncProcsFromConsultations(silent){
         }
       });
     });
-    if(added.length){ saveCfg(cfg); renderCfgUI(); }
-    if(!silent) alert(added.length? ('✅ 재료비 목록에 신규 시술 '+added.length+'개 추가 (단가 0):\n'+added.join(', ')+'\n\n각 단가를 입력 후 저장하세요.') : '✓ 이미 최신 — 추가할 신규 시술 없음');
+    if(added.length||removed.length){ saveCfg(cfg); renderCfgUI(); }
+    if(!silent){ var msg=[]; if(added.length)msg.push('✅ 신규 시술 '+added.length+'개 추가 (단가 0):\n'+added.join(', ')); if(removed.length)msg.push('🧹 회계성 항목 '+removed.length+'개 제거:\n'+removed.join(', ')); alert(msg.length? msg.join('\n\n')+'\n\n각 단가 입력 후 저장하세요.' : '✓ 이미 최신 — 변경 없음'); }
   }catch(e){ if(!silent)alert('동기화 실패: '+e.message); console.error(e); }
 }
 
