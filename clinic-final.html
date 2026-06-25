@@ -2008,7 +2008,7 @@ function renderCfgUI(){
     var idxOf={}; procKeys.forEach(function(k,i){idxOf[k]=i;});
     function _cell(k){
       var _p=cfg.procedures[k]||{};
-      var _hist=(_p.history&&_p.history.length)?'<div class="proc-hist" title="재료가 변경 이력">📅 '+_p.history.slice().sort(function(a,b){return a.from<b.from?-1:1;}).map(function(h){return esc(h.from)+'~ '+(parseFloat(h.price)||0).toLocaleString();}).join(' / ')+'</div>':'';
+      var _hist=(_p.history&&_p.history.length)?'<div class="proc-hist" title="재료가 변경 이력">📅 '+_p.history.slice().sort(function(a,b){return a.from<b.from?-1:1;}).map(function(h){return (h.from==='2000-01-01'?'처음':esc(h.from))+'~ '+(parseFloat(h.price)||0).toLocaleString();}).join(' / ')+'</div>':'';
       return '<div class="proc-cell"><span class="proc-nm" title="'+esc(k)+'">'+esc(k)+'</span>'+
       '<input type="number" class="proc-price" data-idx="'+idxOf[k]+'" value="'+(parseFloat(_p.price)||0)+'" min="0" placeholder="0">'+
       '<input type="date" class="proc-date" data-idx="'+idxOf[k]+'" title="이 단가를 적용할 시작일(선택). 비우면 현재가만 변경">'+
@@ -2057,7 +2057,12 @@ function applyProc(){
       var dateInp=document.querySelector('.proc-date[data-idx="'+idx+'"]');
       var fromDate=(dateInp&&dateInp.value)?dateInp.value.trim():'';
       if(fromDate){
+        var oldPrice=parseFloat(p.price)||0;
         p.history=p.history||[];
+        // 이력이 없고 기존가와 새가격이 다르면 → '변경 이전(처음부터)' 구간 자동 생성
+        if(p.history.length===0 && oldPrice>0 && oldPrice!==newPrice){
+          p.history.push({from:'2000-01-01',price:oldPrice});
+        }
         var ex=null; for(var hi=0;hi<p.history.length;hi++){ if(p.history[hi].from===fromDate){ex=p.history[hi];break;} }
         if(ex) ex.price=newPrice; else p.history.push({from:fromDate,price:newPrice});
         p.history.sort(function(a,b){return a.from<b.from?-1:(a.from>b.from?1:0);});
