@@ -1479,13 +1479,13 @@ function render(){
       h+='<td class="r">'+won(i.price)+'</td>';
       h+='<td class="r bold">'+won(i.subtotal)+'</td>';
       h+='<td class="r">'+(rev>0?won(rev):'<span class="muted">—</span>')+'</td>';
-      h+='<td class="r"><span style="color:#cbd5e1;font-size:11px;">'+(ratio!==null?ratio.toFixed(1)+'%':'—')+'</span></td></tr>';
+      h+='<td class="r"><span style="color:#64748b;font-size:11px;">'+(ratio!==null?ratio.toFixed(1)+'%':'—')+'</span></td></tr>';
     });
     var totRatio=revSum>0?(ad.totalCost/revSum*100):null;
     h+='<tr class="rowtotal"><td colspan="3" class="bold">재료비 합계</td>';
     h+='<td class="r bold" style="color:#8b5cf6;font-size:15px;">'+won(ad.totalCost)+'</td>';
     h+='<td class="r bold">'+(revSum>0?won(revSum):'<span class="muted">—</span>')+'</td>';
-    h+='<td class="r"><span style="color:#94a3b8;font-size:12px;font-weight:700;">'+(totRatio!==null?totRatio.toFixed(1)+'%':'—')+'</span></td></tr>';
+    h+='<td class="r"><span style="color:#475569;font-size:12px;font-weight:700;">'+(totRatio!==null?totRatio.toFixed(1)+'%':'—')+'</span></td></tr>';
     h+='</tbody></table>';
     // 미설정 항목 접힘
     if(unpriced.length){
