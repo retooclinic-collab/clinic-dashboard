@@ -74,6 +74,9 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
 .proc-cell input{width:88px;font-size:12px;padding:5px 7px;}
 .proc-cell .pdel{border:none;background:none;color:#cbd5e1;cursor:pointer;font-size:16px;line-height:1;padding:0 3px;}
 .proc-cell .pdel:hover{color:#ef4444;}
+.proc-cat{font-size:12px;font-weight:700;color:#6d28d9;margin:16px 0 6px;padding-bottom:3px;border-bottom:1px solid #ede9fe;}
+.proc-cat:first-child{margin-top:0;}
+.proc-cat-n{font-size:10px;color:#a78bfa;font-weight:600;margin-left:4px;}
 /* modal */
 .mbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:center;justify-content:center;}
 .mbg.on{display:flex;}
@@ -434,7 +437,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
       </div>
       <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">각 시술의 재료비 단가(원)를 입력하세요. 0이면 0으로 계산됩니다.</div>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">단가(원) 입력 · 여러 열로 표시 · ×로 삭제</div>
-      <div id="proc-body" class="proc-grid"></div>
+      <div id="proc-body"></div>
       <!-- 새 항목 추가 -->
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;">
         <div style="flex:1;min-width:160px;"><div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">새 시술 이름</div><input type="text" id="new-p-nm" placeholder="시술 이름 직접 추가"></div>
@@ -924,6 +927,20 @@ var DEFAULT_ROUTES={
 
 // 재료비 불필요 회계성/비시술 항목 (자동동기화 시 제외)
 var NON_MATERIAL_ITEMS=new Set(['예약금','예약금제외','수면비제외','VIP회원권','VIP할인혜택','적립금','적립금차감','선납금차감','상품권차감','할인차감','할인','환불','위약금','양도','결제오류','미수금결제','상담만','소견서','지정비용','결제','환불후재결제','재결제']);
+
+// 재료비 목록 카테고리 분류 (설정 화면 그룹 표시용). 미분류 항목은 '기타·미분류'로 모임.
+var PROC_CATEGORIES=[
+ {g:'리프팅·타이트닝', items:['울쎄라(100샷)','소프웨이브(50샷)','슈링크(100샷)','슈링크','써마지300','써마지600','써마지900샷','아이써마지225','아이써마지450샷','써마지 아이450','티타늄','온다','온다(바디)','온다리프트','티타튠','티타튠max','튠페이스','튠라이너','튠바디','엠페이스','오푸스','인텐스울트라','힐로웨이브','코레지셀핏','아이리프팅','릴리이드','리투오']},
+ {g:'레이저·토닝·IPL', items:['듀얼피코','피코슈어','피코웨이','제네시스','제네시스+PTT','BBL','BBL(여드름)','BBL(색소)','BBL(홍조)','BBL(스킨타이트닝)','BBL(포에버영)','BBL(바디)','LDM','CO2','moxi','MOXI','클라리티','플라즈마','라라필','밀크필','튠라이트IPL','힐라이트','문신제거']},
+ {g:'주사·스킨부스터', items:['리쥬란','리쥬란HB','리쥬란아이','쥬베룩','쥬베룩볼륨','쥬베룩아이','쥬베룩스킨','쥬브아셀','쥬브아셀(추가분)','스킨바이브','멀티스킨부스터','미라젯','미라젯쥬베룩','새살주사','리투핏주사','리투핏주사(바디)','조각주사','스컬트라']},
+ {g:'보톡스·필러', items:['보톡스(국산)','보톡스(수입)','필러(수입)','필러(국산)','히알라제']},
+ {g:'포텐자·모공·재생', items:['포텐자(펌핑)','포텐자(모공)','포텐자(기미)','펌핑팁','아그네스','아쿠아필']},
+ {g:'IV·수액·영양', items:['수액','백옥','NAD','TA','PDRN','비타민','고압산소']},
+ {g:'줄기세포·엑소좀', items:['줄기세포30cc','줄기세포 60cc','줄기세포60cc','줄기세포120cc','줄기세포240cc','자가엑소좀','하이쿡스']},
+ {g:'비만·주사약', items:['위고비','위고비0.25','위고비0.5','위고비1.0','위고비1.7','위고비2.4','마운자로 2.5','마운자로 5.0','마운자로 7.5','마운자로 10.0']},
+ {g:'제품·처방', items:['리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트','제품','재생테이프','처방전','여드름약처방']},
+ {g:'기타시술', items:['피부관리','수면비','제모','제모(남자)','제모(여자)','점,편사제거','점제거','ACT2','진정관리']}
+];
 
 // consultations 전체에서 시술항목을 읽어 설정 재료비 목록에 누락분 자동 추가 (단가 0)
 async function syncProcsFromConsultations(silent){
@@ -1833,12 +1850,28 @@ function renderCfgUI(){
   var cfg=loadCfg();
   /* 시술 단가 */
   var pb=document.getElementById('proc-body');
-  var procs=Object.entries(cfg.procedures);
-  pb.innerHTML=procs.length?procs.map(function(e,i){
-    return'<div class="proc-cell"><span class="proc-nm" title="'+esc(e[0])+'">'+esc(e[0])+'</span>'+
-      '<input type="number" class="proc-price" data-idx="'+i+'" value="'+(parseFloat(e[1].price)||0)+'" min="0" placeholder="0">'+
-      '<button class="pdel" title="삭제" onclick="delProc('+i+')">×</button></div>';
-  }).join(''):'<div style="color:#94a3b8;font-size:12px;padding:12px;">② 파일 업로드 후 자동 추가됩니다</div>';
+  var procKeys=Object.keys(cfg.procedures);
+  if(!procKeys.length){ pb.innerHTML='<div style="color:#94a3b8;font-size:12px;padding:12px;">② 파일 업로드 후 자동 추가됩니다</div>'; }
+  else {
+    var idxOf={}; procKeys.forEach(function(k,i){idxOf[k]=i;});
+    function _cell(k){ return '<div class="proc-cell"><span class="proc-nm" title="'+esc(k)+'">'+esc(k)+'</span>'+
+      '<input type="number" class="proc-price" data-idx="'+idxOf[k]+'" value="'+(parseFloat(cfg.procedures[k].price)||0)+'" min="0" placeholder="0">'+
+      '<button class="pdel" title="삭제" onclick="delProc('+idxOf[k]+')">×</button></div>'; }
+    var placed={}, html='';
+    PROC_CATEGORIES.forEach(function(cat){
+      var present=cat.items.filter(function(k){return cfg.procedures.hasOwnProperty(k);});
+      if(!present.length) return;
+      present.forEach(function(k){placed[k]=1;});
+      html+='<div class="proc-cat">'+esc(cat.g)+'<span class="proc-cat-n">'+present.length+'</span></div>';
+      html+='<div class="proc-grid">'+present.map(_cell).join('')+'</div>';
+    });
+    var rest=procKeys.filter(function(k){return !placed[k];});
+    if(rest.length){
+      html+='<div class="proc-cat">기타·미분류<span class="proc-cat-n">'+rest.length+'</span></div>';
+      html+='<div class="proc-grid">'+rest.map(_cell).join('')+'</div>';
+    }
+    pb.innerHTML=html;
+  }
 
   /* 경로 수수료 */
   var rb=document.getElementById('route-body');
