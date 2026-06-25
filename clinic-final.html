@@ -126,6 +126,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
     <button class="sbn" id="nav-trend" onclick="goTab('trend')">📈 종합 분석</button>
     <button class="sbn" id="nav-bank" onclick="goTab('bank')">🏦 입출금</button>
     <button class="sbn" id="nav-card" onclick="goTab('card')">💳 카드지출</button>
+    <button class="sbn" id="nav-inv" onclick="goTab('inv')">📦 재고자산</button>
     <button class="sbn" id="nav-cloud" onclick="goTab('cloud')">☁ 저장 현황</button>
     <button class="sbn" id="nav-cfg" onclick="goTab('cfg')">⚙️ 설정</button>
     <button class="sbn" id="nav-admin" onclick="goTab('admin')" style="background:#1a0a2e;color:#a78bfa;border-left:2px solid #7c3aed;margin-top:8px">👑 관리자</button>
@@ -424,6 +425,25 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
       • <b>CODEF 데모키 한도(3개월·일100회)</b> — 지속 운영 시 정식(유료) 키 전환 필요<br>
       • 새 거래처가 '미분류'로 뜨면 분류 사전(VENDOR) 보강 필요<br>
       <span style="color:#cbd5e1;">— 카드 자동연동 파이프라인 · 최종 업데이트 2026-06</span>
+    </div>
+  </div>
+
+  <!-- 재고자산 탭 -->
+  <div id="tab-inv" style="display:none;">
+    <h2 style="font-size:20px;font-weight:800;margin-bottom:4px;">📦 현재 재고자산</h2>
+    <p style="color:#64748b;font-size:13px;margin-bottom:14px;">간호재고관리 시트의 <b>현재고</b>를 가져와, 시술별 <b>재료비 단가</b>로 자산가치를 평가합니다. <b>재고자산 = Σ(현재고 × 단가)</b>. 단가는 매핑된 시술 재료비를 자동 사용하고, 매핑 안 된 품목만 직접 입력하세요.</p>
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <button class="btn btn-o btn-sm" onclick="loadInvStock(true)">🔄 현재고 새로고침</button>
+      <button class="btn btn-g btn-sm" onclick="saveInvMap()">💾 매핑·단가 저장</button>
+      <span class="saved-badge" id="inv-saved" style="align-self:center;">✓ 저장됨</span>
+      <span id="inv-src" style="margin-left:auto;align-self:center;font-size:12px;color:#94a3b8;"></span>
+    </div>
+    <div id="inv-kpi" style="margin-bottom:16px;"></div>
+    <div id="inv-table"></div>
+    <div class="card" style="margin-top:18px;">
+      <div style="font-weight:700;margin-bottom:8px;">📈 재고자산 추이 (일별)</div>
+      <canvas id="inv-chart" height="90"></canvas>
+      <div id="inv-chart-empty" style="color:#94a3b8;font-size:12px;display:none;">아직 일별 스냅샷이 1개뿐이라 추이가 표시되지 않습니다. 매일 접속하면 누적됩니다.</div>
     </div>
   </div>
 
@@ -816,6 +836,26 @@ try {
       if(st){st.textContent='⚠ 설정 로드 실패: '+e.code;st.style.color='#ef4444';}
       return null;
     }
+  };
+
+  // ── 재고자산: 현재고 미러(Apps Script가 씀) 읽기 / 일별 평가 스냅샷 ──
+  window.fbGetInventoryStock = async function() {
+    try {
+      const d = await getDoc(doc(db, 'inventory_stock', 'current'));
+      return d.exists() ? d.data() : null;
+    } catch(e) { console.error('fbGetInventoryStock:', e.code, e.message); return null; }
+  };
+  window.fbSaveDailyValue = async function(dateStr, entry) {
+    try { await setDoc(doc(db, 'inventory_value_daily', dateStr), entry); return true; }
+    catch(e) { console.error('fbSaveDailyValue:', e.code, e.message); return false; }
+  };
+  window.fbGetDailyValues = async function() {
+    try {
+      const snap = await getDocs(collection(db, 'inventory_value_daily'));
+      const arr = []; snap.forEach(function(d){ arr.push(d.data()); });
+      arr.sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); });
+      return arr;
+    } catch(e) { console.error('fbGetDailyValues:', e.code, e.message); return []; }
   };
 
   window.dispatchEvent(new CustomEvent('fb-ready'));
@@ -2403,8 +2443,206 @@ document.getElementById('save-lbl').addEventListener('keydown',function(e){if(e.
 document.getElementById('col-mdl').addEventListener('click',function(e){if(e.target===this)closeColMdl()});
 
 /* ═══ NAV ═══ */
+/* ═══════════ 재고자산 탭 ═══════════ */
+// 재고 품목 → 시술 재료비 매핑 기본값. {proc:'시술명', factor:재고1단위당 시술재료비 배수}
+var DEFAULT_INV_MAP={
+ '리쥬란힐러':{proc:'리쥬란',factor:2}, '리투오':{proc:'리투오',factor:1},
+ '쥬브아셀8%':{proc:'쥬브아셀8%',factor:1}, '쥬브아셀V':{proc:'쥬브아셀V',factor:1}, '쥬브아셀3%':{proc:'쥬브아셀3%',factor:1},
+ '제오민':{proc:'보톡스(수입)',factor:1}, '리쥬란아이':{proc:'리쥬란아이',factor:1}, '리쥬란HB':{proc:'리쥬란HB',factor:1},
+ '힐로웨이브':{proc:'힐로웨이브',factor:1}, '줄기세포240':{proc:'줄기세포240cc',factor:1},
+ '쥬베룩':{proc:'쥬베룩',factor:1}, '쥬베룩볼륨':{proc:'쥬베룩볼륨',factor:1}, '쥬베룩아이':{proc:'쥬베룩아이',factor:1}, '쥬베룩스킨':{proc:'쥬베룩스킨',factor:1},
+ '써마지300':{proc:'써마지300',factor:1}, '써마지600':{proc:'써마지600',factor:1}, '써마지900':{proc:'써마지900샷',factor:1},
+ '아이써마지225':{proc:'아이써마지225',factor:1}, '아이써마지450':{proc:'아이써마지450샷',factor:1},
+ '울쎄라4.5':{proc:'울쎄라(100샷)',factor:1}, '울쎄라3.0':{proc:'울쎄라(100샷)',factor:1}, '울쎄라1.5':{proc:'울쎄라(100샷)',factor:1},
+ '엠페이스':{proc:'엠페이스',factor:1}, '스킨바이브':{proc:'스킨바이브',factor:2},
+ '줄기세포30':{proc:'줄기세포30cc',factor:1}, '줄기세포60':{proc:'줄기세포 60cc',factor:1}, '줄기세포120':{proc:'줄기세포120cc',factor:1},
+ '스컬트라':{proc:'스컬트라',factor:1}, '브이트리':{proc:'NAD',factor:1}
+};
+// 시트 미연동 시 폴백용 내장 현재고 스냅샷 (간호, 2026-06-26 기준)
+var INV_STOCK_SEED={team:'간호',updatedAt:'2026-06-26(내장)',items:[
+ {name:'리쥬란힐러',unit:'박스',cur:54,safe:20},{name:'리투오',unit:'개',cur:49,safe:20},
+ {name:'쥬브아셀8%',unit:'개',cur:55,safe:20},{name:'쥬브아셀V',unit:'개',cur:102,safe:30},
+ {name:'제오민',unit:'개',cur:93,safe:30},{name:'리쥬란아이',unit:'박스',cur:40,safe:10},
+ {name:'리쥬란HB',unit:'박스',cur:23,safe:10},{name:'힐로웨이브',unit:'개',cur:8,safe:5},
+ {name:'줄기세포240',unit:'박스',cur:2,safe:1},{name:'쥬브아셀3%',unit:'개',cur:0,safe:0},
+ {name:'쥬베룩',unit:'개',cur:0,safe:0},{name:'쥬베룩볼륨',unit:'개',cur:0,safe:0},
+ {name:'쥬베룩아이',unit:'개',cur:0,safe:0},{name:'쥬베룩스킨',unit:'개',cur:0,safe:0},
+ {name:'써마지300',unit:'개',cur:9,safe:3},{name:'써마지600',unit:'개',cur:11,safe:4},
+ {name:'써마지900',unit:'개',cur:3,safe:2},{name:'아이써마지225',unit:'개',cur:8,safe:3},
+ {name:'아이써마지450',unit:'개',cur:1,safe:2},{name:'울쎄라4.5',unit:'개',cur:5,safe:2},
+ {name:'울쎄라3.0',unit:'개',cur:5,safe:2},{name:'울쎄라1.5',unit:'개',cur:0,safe:1},
+ {name:'엠페이스',unit:'개',cur:27,safe:8},{name:'볼리프트',unit:'박스',cur:6,safe:4},
+ {name:'볼루마',unit:'박스',cur:8,safe:3},{name:'벨로테로',unit:'박스',cur:5,safe:3},
+ {name:'벨로테로소프트',unit:'박스',cur:3,safe:2},{name:'스킨바이브',unit:'박스',cur:4,safe:2},
+ {name:'아띠에르',unit:'박스',cur:3,safe:2},{name:'엑소브이',unit:'개',cur:3,safe:2},
+ {name:'엑소필터',unit:'박스',cur:20,safe:5},{name:'줄기세포30',unit:'박스',cur:5,safe:1},
+ {name:'줄기세포60',unit:'박스',cur:2,safe:1},{name:'줄기세포120',unit:'박스',cur:4,safe:1},
+ {name:'스컬트라',unit:'개',cur:2,safe:2},{name:'리즈네',unit:'박스',cur:24,safe:5},
+ {name:'벨치온',unit:'개',cur:5,safe:2},{name:'브이트리',unit:'개',cur:0,safe:0},
+ {name:'엘라비에',unit:'박스',cur:0,safe:2},{name:'민트프티',unit:'박스',cur:5,safe:1}
+]};
+var _invStock=null, _invChart=null, _invSnapDone=false, _invPrevTotal=null, _invRows=[], _invToday=0;
+
+function _invMapFor(name,cfg){
+  cfg=cfg||loadCfg();
+  if(cfg.invMap&&cfg.invMap[name]) return cfg.invMap[name];
+  return DEFAULT_INV_MAP[name]||{};
+}
+// 품목 단가(원) 계산: override 우선, 없으면 매핑시술 재료비×계수
+function invUnitPrice(name,cfg){
+  cfg=cfg||loadCfg();
+  var m=_invMapFor(name,cfg), today=new Date().toISOString().slice(0,10);
+  if(m.override!==undefined&&m.override!==null&&m.override!==''){ var ov=parseFloat(m.override); if(ov>0) return {price:ov,src:'직접입력',proc:'',factor:1}; }
+  if(m.proc&&cfg.procedures&&cfg.procedures[m.proc]){
+    var pp=procPriceAt(cfg.procedures[m.proc],today)||0, f=parseFloat(m.factor)||1;
+    return {price:pp*f,src:m.proc+(f!==1?' ×'+f:''),proc:m.proc,factor:f};
+  }
+  return {price:0,src:'',proc:(m.proc||''),factor:(parseFloat(m.factor)||1)};
+}
+function _won(n){ return (Math.round(n||0)).toLocaleString('ko-KR'); }
+
+async function loadInvStock(force){
+  var src=document.getElementById('inv-src');
+  if(window.fbGetInventoryStock){
+    var d=await window.fbGetInventoryStock();
+    if(d&&d.items&&d.items.length){ _invStock=d; if(src){src.textContent='출처: 시트 미러 ('+(d.updatedAt||'')+')';src.style.color='#94a3b8';} }
+    else { _invStock=INV_STOCK_SEED; if(src){src.textContent='⚠ 시트 미연동 — 내장 스냅샷('+INV_STOCK_SEED.updatedAt+')';src.style.color='#f59e0b';} }
+  } else { _invStock=INV_STOCK_SEED; if(src){src.textContent='⚠ Firebase 준비 전 — 내장 스냅샷';src.style.color='#f59e0b';} }
+  if(force) _invSnapDone=false;
+  renderInvTab();
+}
+
+async function renderInvTab(){
+  if(!_invStock){ loadInvStock(false); return; }
+  var cfg=loadCfg(), today=new Date().toISOString().slice(0,10);
+  // 일별 이력 로드 (추이 + 어제대비)
+  var hist=window.fbGetDailyValues? await window.fbGetDailyValues():[];
+  _invPrevTotal=null;
+  for(var i=hist.length-1;i>=0;i--){ if(hist[i].date<today){ _invPrevTotal=hist[i].total; break; } }
+  buildInvTable(cfg);
+  invRecalc();
+  drawInvChart(hist);
+  if(!_invSnapDone&&_invToday>0&&window.fbSaveDailyValue){
+    _invSnapDone=true;
+    window.fbSaveDailyValue(today,{date:today,total:_invToday,count:_invRows.length,
+      team:_invStock.team||'간호',
+      items:_invRows.map(function(r){return {name:r.name,unit:r.unit,cur:r.cur,price:r.price,value:r.value};}),
+      savedAt:new Date().toISOString()});
+  }
+}
+
+function buildInvTable(cfg){
+  cfg=cfg||loadCfg();
+  var procKeys=Object.keys(cfg.procedures||{}).sort();
+  var items=(_invStock.items||[]).slice();
+  var optsBase='<option value="">(직접입력)</option>'+procKeys.map(function(k){return '<option value="'+esc(k)+'">'+esc(k)+'</option>';}).join('');
+  var h='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  h+='<thead><tr style="background:#0f172a;color:#cbd5e1;text-align:left;">'
+    +'<th style="padding:8px;">품목</th><th style="padding:8px;">단위</th><th style="padding:8px;text-align:right;">현재고</th>'
+    +'<th style="padding:8px;">매핑 시술(재료비)</th><th style="padding:8px;text-align:right;">계수</th>'
+    +'<th style="padding:8px;text-align:right;">단가(원)</th><th style="padding:8px;text-align:right;">평가액(원)</th>'
+    +'<th style="padding:8px;text-align:center;">발주</th></tr></thead><tbody>';
+  items.forEach(function(it,idx){
+    var m=_invMapFor(it.name,cfg);
+    var hasOverride=(m.override!==undefined&&m.override!==null&&m.override!=='');
+    var proc=hasOverride?'':(m.proc||'');
+    var fac=parseFloat(m.factor)||1;
+    var up=invUnitPrice(it.name,cfg);
+    var sel='<select id="inv-proc-'+idx+'" data-idx="'+idx+'" onchange="invRecalc()" style="max-width:170px;padding:3px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;">'+optsBase+'</select>';
+    var safe=parseFloat(it.safe)||0, cur=parseFloat(it.cur)||0;
+    var order=(safe>0&&cur<=safe)?'<span style="color:#ef4444;font-weight:700;">⚠ 발주</span>':'';
+    h+='<tr data-idx="'+idx+'" style="border-bottom:1px solid #1e293b;">'
+      +'<td style="padding:7px;font-weight:600;">'+esc(it.name)+'</td>'
+      +'<td style="padding:7px;color:#94a3b8;">'+esc(it.unit||'')+'</td>'
+      +'<td style="padding:7px;text-align:right;">'+cur+'</td>'
+      +'<td style="padding:7px;">'+sel+'</td>'
+      +'<td style="padding:7px;text-align:right;"><input id="inv-fac-'+idx+'" type="number" min="0" step="0.5" value="'+fac+'" oninput="invRecalc()" style="width:54px;text-align:right;padding:3px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;"></td>'
+      +'<td style="padding:7px;text-align:right;"><input id="inv-prc-'+idx+'" type="number" min="0" step="1000" value="'+(hasOverride?parseFloat(m.override):Math.round(up.price))+'" oninput="invRecalc(true)" style="width:90px;text-align:right;padding:3px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;"></td>'
+      +'<td id="inv-val-'+idx+'" style="padding:7px;text-align:right;font-weight:700;">0</td>'
+      +'<td style="padding:7px;text-align:center;">'+order+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  document.getElementById('inv-table').innerHTML=h;
+  // 저장된 매핑/직접입력 select 값 반영
+  items.forEach(function(it,idx){
+    var m=_invMapFor(it.name,cfg);
+    var hasOverride=(m.override!==undefined&&m.override!==null&&m.override!=='');
+    var s=document.getElementById('inv-proc-'+idx);
+    if(s) s.value=hasOverride?'':(m.proc||'');
+  });
+}
+
+// fromPrice: 단가 입력란을 직접 수정한 경우(true) → 그 값 유지, 아니면 매핑시술×계수로 단가 재계산
+function invRecalc(fromPrice){
+  if(!_invStock) return;
+  var cfg=loadCfg(), today=new Date().toISOString().slice(0,10);
+  var items=_invStock.items||[]; _invRows=[]; var total=0, missing=0;
+  items.forEach(function(it,idx){
+    var sel=document.getElementById('inv-proc-'+idx), facI=document.getElementById('inv-fac-'+idx), prcI=document.getElementById('inv-prc-'+idx), valC=document.getElementById('inv-val-'+idx);
+    if(!sel||!prcI) return;
+    var proc=sel.value, fac=parseFloat(facI.value)||1, price;
+    if(proc){
+      facI.disabled=false; prcI.disabled=true; prcI.style.opacity=.6;
+      var pp=(cfg.procedures&&cfg.procedures[proc])?(procPriceAt(cfg.procedures[proc],today)||0):0;
+      price=pp*fac; if(!fromPrice) prcI.value=Math.round(price);
+    } else {
+      facI.disabled=true; prcI.disabled=false; prcI.style.opacity=1;
+      price=parseFloat(prcI.value)||0;
+    }
+    var cur=parseFloat(it.cur)||0, val=cur*price;
+    if(price<=0) missing++;
+    if(valC) valC.textContent=_won(val);
+    total+=val;
+    _invRows.push({name:it.name,unit:it.unit,cur:cur,price:Math.round(price),value:Math.round(val),proc:proc,factor:fac});
+  });
+  _invToday=total;
+  renderInvKpi(total,missing,items.length);
+}
+
+function renderInvKpi(total,missing,count){
+  function card(label,val,sub,color){
+    return '<div class="card" style="flex:1;min-width:150px;"><div style="font-size:12px;color:#94a3b8;">'+label+'</div>'
+      +'<div style="font-size:22px;font-weight:800;color:'+(color||'#e2e8f0')+';margin-top:2px;">'+val+'</div>'
+      +(sub?'<div style="font-size:11px;color:#64748b;margin-top:2px;">'+sub+'</div>':'')+'</div>';
+  }
+  var diff='', dcolor='#94a3b8';
+  if(_invPrevTotal!==null){ var d=total-_invPrevTotal; dcolor=d>0?'#16a34a':(d<0?'#ef4444':'#94a3b8'); diff=(d>0?'▲ +':d<0?'▼ ':'±')+_won(Math.abs(d))+'원 (전일 '+_won(_invPrevTotal)+')'; }
+  var h='<div style="display:flex;gap:12px;flex-wrap:wrap;">'
+    +card('총 재고자산 평가액', _won(total)+'원', diff, '#38bdf8')
+    +card('전일 대비', _invPrevTotal!==null?((total-_invPrevTotal>=0?'+':'')+_won(total-_invPrevTotal)+'원'):'—', _invPrevTotal!==null?'':'스냅샷 누적 후 표시', dcolor)
+    +card('품목 수', count+'개','', '#e2e8f0')
+    +card('단가 미설정', missing+'개', missing>0?'빨강 단가=0, 매핑/직접입력 필요':'모두 설정됨', missing>0?'#f59e0b':'#16a34a')
+    +'</div>';
+  document.getElementById('inv-kpi').innerHTML=h;
+}
+
+function saveInvMap(){
+  if(!_invStock) return;
+  var cfg=loadCfg(); cfg.invMap=cfg.invMap||{};
+  (_invStock.items||[]).forEach(function(it,idx){
+    var sel=document.getElementById('inv-proc-'+idx), facI=document.getElementById('inv-fac-'+idx), prcI=document.getElementById('inv-prc-'+idx);
+    if(!sel) return;
+    var proc=sel.value, fac=parseFloat(facI.value)||1;
+    if(proc){ cfg.invMap[it.name]={proc:proc,factor:fac}; }
+    else { cfg.invMap[it.name]={proc:'',factor:1,override:parseFloat(prcI.value)||0}; }
+  });
+  saveCfg(cfg);
+  flashSaved('inv-saved');
+}
+
+function drawInvChart(hist){
+  var cv=document.getElementById('inv-chart'), empty=document.getElementById('inv-chart-empty');
+  if(!cv||!window.Chart) return;
+  if(_invChart){ _invChart.destroy(); _invChart=null; }
+  if(!hist||hist.length<2){ if(empty)empty.style.display='block'; cv.style.display='none'; return; }
+  if(empty)empty.style.display='none'; cv.style.display='block';
+  _invChart=new Chart(cv.getContext('2d'),{type:'line',
+    data:{labels:hist.map(function(x){return x.date;}),datasets:[{label:'재고자산 평가액',data:hist.map(function(x){return x.total;}),borderColor:'#38bdf8',backgroundColor:'rgba(56,189,248,.12)',fill:true,tension:.2}]},
+    options:{plugins:{legend:{display:false}},scales:{y:{ticks:{callback:function(v){return (v/10000).toLocaleString()+'만';}}}}}});
+}
+
 function goTab(t){
-  ['an','daily','trend','cloud','cfg','admin','card','bank'].forEach(function(id){
+  ['an','daily','trend','cloud','cfg','admin','card','bank','inv'].forEach(function(id){
     var el=document.getElementById('tab-'+id);
     if(el)el.style.display=t===id?'block':'none';
     var nav=document.getElementById('nav-'+id);
@@ -2415,6 +2653,7 @@ function goTab(t){
   if(t==='admin')renderAdminTab();
   if(t==='card')renderCardTab();
   if(t==='bank')renderBankTab();
+  if(t==='inv')renderInvTab();
   if(t==='daily'){ if(!_dailyAllItems.length) loadAllDaily(); else if(!_dailyFiltered.length && _dailyAllItems.length) applyDailyFilter(); }
 }
 
@@ -5153,3 +5392,4 @@ async function loadAuditLog(){
 </script>
 </body>
 </html>
+                      
