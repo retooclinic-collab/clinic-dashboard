@@ -1143,13 +1143,11 @@ async function loadFromConsultations(){
 
     // 상담데이터 treatments → aData(재료비) 자동 계산
     var treatMap={};
+    var _cfgRev=loadCfg();
     items.forEach(function(it){
-      (it.treatments||[]).forEach(function(t){
-        var nm=(t.item||'').trim();
-        if(!nm) return;
-        if(!treatMap[nm]) treatMap[nm]={count:0};
-        treatMap[nm].count+=(parseFloat(t.qty)||1);
-      });
+      var txs=(it.treatments||[]).filter(function(t){return t&&(t.item||'').trim();});
+      if(!txs.length) return;
+      accumTreatRev(it,txs,treatMap,_cfgRev);
     });
     if(Object.keys(treatMap).length){
       var cfgT=loadCfg();
@@ -1157,7 +1155,7 @@ async function loadFromConsultations(){
       Object.keys(treatMap).forEach(function(nm){
         var cnt=treatMap[nm].count;
         var pr=cfgT.procedures[nm]?parseFloat(cfgT.procedures[nm].price)||0:0;
-        aItems.push({name:nm,count:cnt,price:pr,subtotal:cnt*pr});
+        aItems.push({name:nm,count:cnt,price:pr,subtotal:cnt*pr,rev:treatMap[nm].rev});
       });
       aItems.sort(function(a,b){return b.subtotal-a.subtotal});
       G.aData={items:aItems,totalCost:aItems.reduce(function(s,i){return s+i.subtotal},0)};
@@ -1318,6 +1316,31 @@ function computeC(){
     skip:skip,manwon:cols.manwon};
 }
 
+/* 시술별 매출(결제금액 파싱합) 누적
+   - 각 시술 명시가(t.price, 만원) 우선 사용 → 합산이 곧 결제금액 파싱합
+   - 명시가가 전혀 없으면 결제금액(it.amount)을 재료비단가 가중치로 분배(폴백)
+   - 그래도 가중치 0이면 균등분배 */
+function accumTreatRev(it,txs,treatMap,cfg){
+  var amt=(parseFloat(it.amount)||0)*10000; // 결제금액(원)
+  var priceSum=0; txs.forEach(function(t){priceSum+=(parseFloat(t.price)||0);});
+  var ws=txs.map(function(t){
+    var nm=(t.item||'').trim();
+    var up=(cfg&&cfg.procedures[nm])?parseFloat(cfg.procedures[nm].price)||0:0;
+    return up*(parseFloat(t.qty)||1);
+  });
+  var wSum=ws.reduce(function(s,w){return s+w;},0);
+  txs.forEach(function(t,k){
+    var nm=(t.item||'').trim();
+    if(!treatMap[nm]) treatMap[nm]={count:0,rev:0};
+    treatMap[nm].count+=(parseFloat(t.qty)||1);
+    var rev;
+    if(priceSum>0) rev=(parseFloat(t.price)||0)*10000;       // 명시가(만원→원)
+    else if(wSum>0) rev=amt*(ws[k]/wSum);                     // 재료비 가중 분배
+    else rev=amt/txs.length;                                  // 균등 분배
+    treatMap[nm].rev+=rev;
+  });
+}
+
 function computeA(){
   if(!G.aRows){return}
   var cfg=loadCfg();
@@ -1447,14 +1470,22 @@ function render(){
     var unpriced=ad.items.filter(function(i){return i.price===0}).sort(function(a,b){return b.count-a.count});
     h+='<div class="card"><div style="font-size:14px;font-weight:700;margin-bottom:4px;">시술별 재료비 집계</div>';
     h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">시술이름(건수) 자동 파싱 · 건수 × 단가 = 소계</div>';
-    h+='<table><thead><tr><th>시술 이름</th><th class="r">건수</th><th class="r">단가 (원)</th><th class="r">소계</th></tr></thead><tbody>';
+    h+='<table><thead><tr><th>시술 이름</th><th class="r" style="width:8%;">건수</th><th class="r" style="width:13%;">단가 (원)</th><th class="r" style="width:15%;">재료비 소계</th><th class="r" style="width:22%;">매출</th><th class="r" style="width:11%;">재료비율</th></tr></thead><tbody>';
+    var revSum=0;
     priced.forEach(function(i){
+      var rev=parseFloat(i.rev)||0; revSum+=rev;
+      var ratio=rev>0?(i.subtotal/rev*100):null;
       h+='<tr><td><b>'+esc(i.name)+'</b></td><td class="r muted">'+nf(i.count)+'건</td>';
       h+='<td class="r">'+won(i.price)+'</td>';
-      h+='<td class="r bold">'+won(i.subtotal)+'</td></tr>';
+      h+='<td class="r bold">'+won(i.subtotal)+'</td>';
+      h+='<td class="r">'+(rev>0?won(rev):'<span class="muted">—</span>')+'</td>';
+      h+='<td class="r"><span style="color:#cbd5e1;font-size:11px;">'+(ratio!==null?ratio.toFixed(1)+'%':'—')+'</span></td></tr>';
     });
+    var totRatio=revSum>0?(ad.totalCost/revSum*100):null;
     h+='<tr class="rowtotal"><td colspan="3" class="bold">재료비 합계</td>';
-    h+='<td class="r bold" style="color:#8b5cf6;font-size:15px;">'+won(ad.totalCost)+'</td></tr>';
+    h+='<td class="r bold" style="color:#8b5cf6;font-size:15px;">'+won(ad.totalCost)+'</td>';
+    h+='<td class="r bold">'+(revSum>0?won(revSum):'<span class="muted">—</span>')+'</td>';
+    h+='<td class="r"><span style="color:#94a3b8;font-size:12px;font-weight:700;">'+(totRatio!==null?totRatio.toFixed(1)+'%':'—')+'</span></td></tr>';
     h+='</tbody></table>';
     // 미설정 항목 접힘
     if(unpriced.length){
@@ -1664,13 +1695,11 @@ async function refreshTrendFromDB(){
 
       // aData 재계산 (시술 집계)
       var treatMap={};
+      var _cfgRev=loadCfg();
       items.forEach(function(it){
-        (it.treatments||[]).forEach(function(t){
-          var nm=(t.item||'').trim();
-          if(!nm) return;
-          if(!treatMap[nm]) treatMap[nm]={count:0};
-          treatMap[nm].count+=(parseFloat(t.qty)||1);
-        });
+        var txs=(it.treatments||[]).filter(function(t){return t&&(t.item||'').trim();});
+        if(!txs.length) return;
+        accumTreatRev(it,txs,treatMap,_cfgRev);
       });
       if(Object.keys(treatMap).length){
         var cfgT=loadCfg();
@@ -1678,7 +1707,7 @@ async function refreshTrendFromDB(){
         Object.keys(treatMap).forEach(function(nm){
           var c=treatMap[nm].count;
           var pr=cfgT.procedures[nm]?parseFloat(cfgT.procedures[nm].price)||0:0;
-          aItems.push({name:nm,count:c,price:pr,subtotal:c*pr});
+          aItems.push({name:nm,count:c,price:pr,subtotal:c*pr,rev:treatMap[nm].rev});
         });
         aItems.sort(function(x,y){return y.subtotal-x.subtotal});
         a.aData={items:aItems,totalCost:aItems.reduce(function(s,i){return s+i.subtotal},0)};
@@ -1745,6 +1774,76 @@ async function refreshTrendFromDB(){
   }
 }
 
+/* === CASHFLOW 현금흐름 다기준 (지출분석) === */
+var CF_AGENCY=['비주얼제이','박선하','비요네즈','JIN TAIGEN','목금미여','에스큐뷰티','아이메이그룹','HAN DAN','신화월드투어'];
+var CF_CAPEX=['아베크디자','제이알케이','올포메디홀딩스','애거슨','메디컬노바','아이벡스메디칼','서울시스템에어','이원오엠에스','골지어스'];
+function cfHit(r,arr){var s=(r.counterparty||'')+' '+(r.desc||'');return arr.some(function(a){return s.indexOf(a)>=0;});}
+function cfSelf(r){var s=(r.counterparty||'')+' '+(r.desc||'');return (s.indexOf('김재림')>=0&&s.indexOf('당행송금')>=0)||(r.counterparty==='청담리투의원'&&s.indexOf('타행송금')>=0);}
+function cfMonthKey(lbl){var m=String(lbl||'').match(/(\d{4})\D*?(\d{1,2})\s*월/);if(!m)return null;return m[1]+'-'+('0'+m[2]).slice(-2);}
+function getFixedExCard(){var t=getFixedTotal();var list=(typeof getFixedList==='function')?getFixedList():[];var ci=0;list.forEach(function(f){if(f&&!f.isSep&&/삼성카드/.test(f.name||''))ci+=(f.amount||0);});return t-ci;}
+async function cfLoad(force){
+  try{
+    if(force){window._cfCard=null;window._cfBank=null;}
+    if(!window._cfCard && window.fbGetCardExpenses){var c=await window.fbGetCardExpenses();var cm={};c.forEach(function(r){if(r.cancelYN!=='정상')return;var k=r.month||((r.date||'').slice(0,7));cm[k]=(cm[k]||0)+(r.amount||0);});window._cfCard=cm;}
+    if(!window._cfBank && window.fbGetBankTransactions){var b=await window.fbGetBankTransactions();var bm={};b.forEach(function(r){if(r.inout!=='출금'||!r.month)return;var k=r.month,a=r.amount||0;if(!bm[k])bm[k]={all:0,noself:0,op:0,ag:0,self:0,capex:0,cardpay:0};var o=bm[k];o.all+=a;if(cfSelf(r)){o.self+=a;return;}o.noself+=a;if(cfHit(r,CF_AGENCY)){o.ag+=a;return;}if(cfHit(r,CF_CAPEX)){o.capex+=a;return;}o.op+=a;if(r.category==='카드대금출금')o.cardpay+=a;});window._cfBank=bm;}
+  }catch(e){console.warn('cfLoad',e);}
+}
+function cfPickMonths(){var pick={};(G.arc||[]).forEach(function(a){var k=cfMonthKey(a.displayLabel||a.label);if(!k)return;var isSL=/상담리스트/.test(a.displayLabel||a.label||'');if(!pick[k]||(isSL&&!pick[k].isSL)||((isSL===pick[k].isSL)&&((a.savedAt||'')>(pick[k].a.savedAt||'')))){pick[k]={a:a,isSL:isSL};}});return pick;}
+function cfManwon(n){return Math.round((n||0)/10000).toLocaleString('ko-KR');}
+function cfBuildTable(){
+  var pick=cfPickMonths(), keys=Object.keys(pick).sort();
+  var fixed=getFixedTotal(), fixedExCard=getFixedExCard();
+  var cell=function(n,rev){var col=n>=0?'#10b981':'#ef4444';return '<td class="r" style="color:'+col+';font-weight:700;">'+cfManwon(n)+'<span style="color:#94a3b8;font-weight:400;font-size:11px;"> '+(rev>0?(n/rev*100).toFixed(1)+'%':'-')+'</span></td>';};
+  var h='<div class="sdiv">💵 현금흐름 · 순이익 다기준 비교 <span style="font-size:10px;color:#cbd5e1;">(만원 · 매출=총수납)</span></div>';
+  h+='<div class="card" style="overflow-x:auto;">';
+  h+='<table style="font-size:13px;min-width:760px;"><thead><tr><th>월</th><th class="r">매출</th><th class="r">②추정</th><th class="r">④카드</th><th class="r">⑤통장운영</th><th class="r">⑥통장전체</th><th class="r" style="color:#b45309;">일회성투자</th></tr></thead><tbody>';
+  keys.forEach(function(k){
+    var a=pick[k].a;
+    var rev=a.cData?a.cData.total:0, mat=a.aData?a.aData.totalCost:0, comm=a.bData?a.bData.totalCommission:0;
+    var cardv=(window._cfCard&&window._cfCard[k])||0, bk=(window._cfBank&&window._cfBank[k])||{op:0,noself:0,capex:0};
+    var s2=rev-mat-comm-fixed, s4=rev-cardv-(bk.op-(bk.cardpay||0))-comm, s5=rev-bk.op-comm, s6=rev-bk.noself;
+    var _now=(new Date()).getFullYear()+'-'+('0'+((new Date()).getMonth()+1)).slice(-2);
+    h+='<tr><td><b>'+k+'</b>'+(k===_now?' <span style="color:#0ea5e9;font-size:10px;">진행중</span>':'')+(cardv?'':' <span style="color:#f59e0b;font-size:10px;">카드무</span>')+'</td>';
+    h+='<td class="r" style="color:#3b82f6;font-weight:700;">'+cfManwon(rev)+'</td>';
+    h+=cell(s2,rev)+cell(s4,rev)+cell(s5,rev)+cell(s6,rev);
+    h+='<td class="r" style="color:#b45309;font-weight:700;">'+(bk.capex?cfManwon(bk.capex):'-')+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+  return h;
+}
+function cfFormulaBlocks(){
+  var pick=cfPickMonths(), keys=Object.keys(pick).sort();
+  if(!keys.length) return '';
+  var _nowK=(function(){var d=new Date();return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);})();
+  var _done=keys.filter(function(x){return x<_nowK;}); var _ks=_done.length?_done:keys;
+  var k=_ks[_ks.length-1]; var a=pick[k].a;
+  var rev=a.cData?a.cData.total:0, mat=a.aData?a.aData.totalCost:0, comm=a.bData?a.bData.totalCommission:0;
+  var fixed=getFixedTotal(), fixedExCard=getFixedExCard();
+  var cardv=(window._cfCard&&window._cfCard[k])||0, bk=(window._cfBank&&window._cfBank[k])||{op:0,noself:0,capex:0};
+  var won=function(n){return cfManwon(n)+'만';};
+  function block(bg,lc,label,parts,result){
+    var p=rev>0?' <span style="font-size:13px;color:#94a3b8;font-weight:400;">('+(result/rev*100).toFixed(1)+'%)</span>':'';
+    var h='<div style="background:'+bg+';border-radius:10px;padding:14px;margin-bottom:10px;">';
+    h+='<div style="font-size:11px;color:'+lc+';font-weight:700;letter-spacing:1px;margin-bottom:8px;">'+label+'</div>';
+    h+='<div style="font-size:14px;font-weight:800;color:'+(result>=0?'#10b981':'#ef4444')+';margin-bottom:8px;">= '+won(result)+p+'</div>';
+    h+='<div style="font-size:12px;color:#94a3b8;padding:8px 10px;background:#fff;border-radius:7px;line-height:1.6;">'+parts+'</div></div>';
+    return h;
+  }
+  var h='<div class="sdiv">🧮 '+k+' 계산식 (실측 기준)</div><div class="card">';
+  var _noncard=bk.op-(bk.cardpay||0); h+=block('#f8fafc','#0369a1','④ 카드 승인 기준','총수납 '+won(rev)+' − 카드승인(정상) '+won(cardv)+' − 비카드통장지출(통장운영−카드대금) '+won(_noncard)+' − 수수료(매출×내원경로비율) '+won(comm)+' = <b>'+won(rev-cardv-_noncard-comm)+'</b>', rev-cardv-_noncard-comm);
+  h+=block('#f0f9ff','#0369a1','⑤ 통장 운영 기준','총수납 '+won(rev)+' − 통장출금(운영: 자전·에이전시·일회성 제외) '+won(bk.op)+' − 수수료(매출×내원경로비율) '+won(comm)+' = <b>'+won(rev-bk.op-comm)+'</b>', rev-bk.op-comm);
+  h+=block('#eff6ff','#1d4ed8','⑥ 통장 전체 기준','총수납 '+won(rev)+' − 통장출금 전체(자전거래만 제외) '+won(bk.noself)+' = <b>'+won(rev-bk.noself)+'</b>', rev-bk.noself);
+  h+='<div style="background:#fffbeb;border-radius:10px;padding:14px;border-left:3px solid #f59e0b;"><div style="font-size:11px;color:#b45309;font-weight:700;letter-spacing:1px;margin-bottom:6px;">※ 일회성 시설·장비 투자 (capex · 별도)</div><div style="font-size:18px;font-weight:800;color:#b45309;">'+won(bk.capex)+'</div><div style="font-size:11px;color:#94a3b8;margin-top:4px;">운영 순이익과 분리 — 인테리어·장비구매 등 일회성. 위 ⑤⑥ 운영지표에서 제외됨.</div></div>';
+  h+='</div>';
+  return h;
+}
+async function cfFill(){
+  var box=document.getElementById('cf-section'); if(!box)return;
+  box.innerHTML='<div class="card" style="color:#94a3b8;font-size:13px;">💵 현금흐름 데이터 불러오는 중…</div>';
+  await cfLoad();
+  try{box.innerHTML=cfBuildTable()+cfFormulaBlocks();}catch(e){box.innerHTML='<div class="card" style="color:#ef4444;">현금흐름 렌더 오류: '+e.message+'</div>';}
+}
+
 /* ═══ 종합 분석 탭 ═══ */
 function renderTrendTab(){
   var el=document.getElementById('trend-content');
@@ -1771,7 +1870,7 @@ function renderTrendTab(){
   var h='';
 
   // ── 월별 수납 총액 추이 ──
-  h+='<div class="sdiv">월별 총 수납 추이</div>';
+  h+='<div id="cf-section" style="margin-bottom:14px;"></div>';h+='<div class="sdiv">월별 총 수납 추이</div>';
   h+='<div class="card" style="overflow-x:auto;">';
   var fixedTotal=getFixedTotal(); // 현재 설정 고정비 (매월 동일)
   h+='<table style="font-size:13px;"><thead><tr><th>월</th><th class="r">총 수납</th><th class="r">재료비</th><th class="r">수수료</th><th class="r">고정비</th><th class="r">추정 순매출</th><th class="r">순이익률</th><th class="r">내원 건수</th></tr></thead><tbody>';
@@ -1830,6 +1929,7 @@ function renderTrendTab(){
   }
 
   el.innerHTML=h;
+  try{cfFill();}catch(e){console.warn('cfFill',e);}
 }
 
 function K(l,v,c){return'<div class="kpi" style="border-top-color:'+c+'"><div class="kpi-l">'+l+'</div><div class="kpi-v">'+v+'</div></div>'}
