@@ -1742,6 +1742,22 @@ function distributePrices(treatments, total, rawText){
   let __p=_distributePricesRaw(treatments, total, rawText);
   try{ __p=_meltDiscountDeduct(__p); }catch(e){ console.warn('meltDiscount err',e); }
   try{ __intRoundRegex(__p, rawText); }catch(e){ console.warn('intRound err',e); }
+  // 이벤트 번들의 피부관리 → 0 (2026-06-25): 이벤트 표기 + 다른 실제시술 동반 시 피부관리=0, 금액은 최고가 시술에 흡수
+  try{
+    const __isEvt = /(?:\d+월?|[가-힣]+)[eE](?:\s|\))/.test(rawText||'') || /이벤트/.test(rawText||'');
+    if(__isEvt){
+      const __skIdx = __p.findIndex(t=>t.item==='피부관리' && (t.price||0)>0);
+      if(__skIdx>=0){
+        const __others = __p.map((t,i)=>({t,i})).filter(o=> o.t.item!=='피부관리' && (CHARGE_PRICE[o.t.item]??0)>0 && (o.t.price||0)>0);
+        if(__others.length>0){
+          const __amt = __p[__skIdx].price;
+          const __tgt = __others.reduce((a,b)=> b.t.price>a.t.price?b:a);
+          __p[__tgt.i] = {...__p[__tgt.i], price: Math.round((__p[__tgt.i].price+__amt)*100)/100};
+          __p[__skIdx] = {...__p[__skIdx], price:0};
+        }
+      }
+    }
+  }catch(e){ console.warn('evt skincare0 err',e); }
   // 피부관리 최종가격 0원 → 라인 자체 제거 (2026-06-25, regex/AI 공통 후처리)
   try{ __p = __p.filter(t => !(t.item==='피부관리' && Math.round((t.price||0)*100)/100 === 0)); }catch(e){ console.warn('skincare0 drop err',e); }
   // 미라젯 중복 통합: 한 결제건에 미라젯이 2개 이상이면 1줄로 합침 (qty=1 고정, 금액 합산) (2026-06-25, regex/AI 공통 후처리)
@@ -2115,6 +2131,7 @@ VIP할인혜택(별도 필드)
 인텐스,인텐스울트라 → 인텐스울트라
 진정관리,진정팩,커스텀케어 → 피부관리
 피부관리 최종가격이 0(할인차감/sv 등)이면 → 항목 자체를 출력하지 마세요 (0원 피부관리 라인 제거)
+이벤트(N월e/이벤트) 번들에 포함된 피부관리는 0원 처리(자동 제거)됩니다 → 피부관리 가격배분에서 제외하고 그 몫을 다른 시술에 배분하세요
 미라젯이 한 결제건에 2번 이상 나오면 → 미라젯 한 줄로 합치세요 (qty=1 고정, 금액은 합산)
 폭탄수액,백옥슈팅,비타민수액,리커버리수액,리바이탈수액 → 수액
 백옥(단독) → 백옥 (수액과 별도 항목!)
