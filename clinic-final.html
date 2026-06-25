@@ -1204,7 +1204,7 @@ async function loadFromConsultations(){
         var cat1=(it.cat1||'').trim();
         var amt=(parseFloat(it.amount)||0)*10000;
         smMap[sk].comm+=calcCommission(cat1,amt,cfgM,true);
-        smMap[sk].mat+=calcMaterialCost(it.treatments,cfgM);
+        smMap[sk].mat+=calcMaterialCost(it.treatments,cfgM,it.date);
       });
       G.cData.byStaff.forEach(function(s){
         var m=smMap[s.name];
@@ -2794,7 +2794,7 @@ function renderDailyTotals(){
     var amt=(parseFloat(it.amount)||0)*10000;
     var cat1=normRoute(it.cat1);
     var comm=calcCommission(cat1,amt,cfg2,true); // percent만
-    var mat=calcMaterialCost(it.treatments,cfg2);
+    var mat=calcMaterialCost(it.treatments,cfg2,it.date);
     tAmt+=amt; tComm+=comm; tMat+=mat;
     var sk=it.staff||'미지정';
     if(!byStaff[sk]) byStaff[sk]={amt:0,comm:0,mat:0,cnt:0};
@@ -3174,23 +3174,23 @@ function procPriceAt(p, dateStr){
 }
 function getUnitPrice(name, cfg2, dateStr){
   if(cfg2.procedures[name]) return procPriceAt(cfg2.procedures[name], dateStr);
-  if(/울쎄라/i.test(name)) return parseFloat((cfg2.procedures['울쎄라(100샷)']||{}).price)||125000;
-  if(/소프웨이브|소프/i.test(name)) return parseFloat((cfg2.procedures['소프웨이브(50샷)']||{}).price)||70000;
-  if(/써마지.*?900/i.test(name)) return parseFloat((cfg2.procedures['써마지900샷']||{}).price)||883000;
-  if(/써마지.*?600/i.test(name)) return parseFloat((cfg2.procedures['써마지600']||{}).price)||804000;
-  if(/써마지.*?300/i.test(name)) return parseFloat((cfg2.procedures['써마지300']||{}).price)||549000;
-  if(/아이써마지.*?450/i.test(name)) return parseFloat((cfg2.procedures['아이써마지450샷']||{}).price)||462000;
-  if(/아이써마지.*?225/i.test(name)) return parseFloat((cfg2.procedures['아이써마지225']||{}).price)||360000;
-  if(/보톡스.*?국/i.test(name)) return parseFloat((cfg2.procedures['보톡스(국산)']||{}).price)||10000;
-  if(/보톡스.*?수입/i.test(name)) return parseFloat((cfg2.procedures['보톡스(수입)']||{}).price)||50000;
-  if(/필러.*?수입/i.test(name)) return parseFloat((cfg2.procedures['필러(수입)']||{}).price)||130000;
-  if(/포텐자.*?모공/i.test(name)) return parseFloat((cfg2.procedures['포텐자(모공)']||{}).price)||33000;
-  if(/포텐자.*?기미/i.test(name)) return parseFloat((cfg2.procedures['포텐자(기미)']||{}).price)||33000;
-  if(/포텐자.*?펌핑|펌핑팁/i.test(name)) return parseFloat((cfg2.procedures['포텐자(펌핑)']||{}).price)||55000;
-  if(/줄기세포.*?240/i.test(name)) return parseFloat((cfg2.procedures['줄기세포240cc']||{}).price)||765000;
-  if(/줄기세포.*?120/i.test(name)) return parseFloat((cfg2.procedures['줄기세포120cc']||{}).price)||510000;
-  if(/줄기세포.*?60/i.test(name)) return parseFloat((cfg2.procedures['줄기세포 60cc']||{}).price)||297500;
-  if(/줄기세포.*?30/i.test(name)) return parseFloat((cfg2.procedures['줄기세포30cc']||{}).price)||145000;
+  if(/울쎄라/i.test(name)) return (cfg2.procedures['울쎄라(100샷)']?procPriceAt(cfg2.procedures['울쎄라(100샷)'],dateStr):0)||125000;
+  if(/소프웨이브|소프/i.test(name)) return (cfg2.procedures['소프웨이브(50샷)']?procPriceAt(cfg2.procedures['소프웨이브(50샷)'],dateStr):0)||70000;
+  if(/써마지.*?900/i.test(name)) return (cfg2.procedures['써마지900샷']?procPriceAt(cfg2.procedures['써마지900샷'],dateStr):0)||883000;
+  if(/써마지.*?600/i.test(name)) return (cfg2.procedures['써마지600']?procPriceAt(cfg2.procedures['써마지600'],dateStr):0)||804000;
+  if(/써마지.*?300/i.test(name)) return (cfg2.procedures['써마지300']?procPriceAt(cfg2.procedures['써마지300'],dateStr):0)||549000;
+  if(/아이써마지.*?450/i.test(name)) return (cfg2.procedures['아이써마지450샷']?procPriceAt(cfg2.procedures['아이써마지450샷'],dateStr):0)||462000;
+  if(/아이써마지.*?225/i.test(name)) return (cfg2.procedures['아이써마지225']?procPriceAt(cfg2.procedures['아이써마지225'],dateStr):0)||360000;
+  if(/보톡스.*?국/i.test(name)) return (cfg2.procedures['보톡스(국산)']?procPriceAt(cfg2.procedures['보톡스(국산)'],dateStr):0)||10000;
+  if(/보톡스.*?수입/i.test(name)) return (cfg2.procedures['보톡스(수입)']?procPriceAt(cfg2.procedures['보톡스(수입)'],dateStr):0)||50000;
+  if(/필러.*?수입/i.test(name)) return (cfg2.procedures['필러(수입)']?procPriceAt(cfg2.procedures['필러(수입)'],dateStr):0)||130000;
+  if(/포텐자.*?모공/i.test(name)) return (cfg2.procedures['포텐자(모공)']?procPriceAt(cfg2.procedures['포텐자(모공)'],dateStr):0)||33000;
+  if(/포텐자.*?기미/i.test(name)) return (cfg2.procedures['포텐자(기미)']?procPriceAt(cfg2.procedures['포텐자(기미)'],dateStr):0)||33000;
+  if(/포텐자.*?펌핑|펌핑팁/i.test(name)) return (cfg2.procedures['포텐자(펌핑)']?procPriceAt(cfg2.procedures['포텐자(펌핑)'],dateStr):0)||55000;
+  if(/줄기세포.*?240/i.test(name)) return (cfg2.procedures['줄기세포240cc']?procPriceAt(cfg2.procedures['줄기세포240cc'],dateStr):0)||765000;
+  if(/줄기세포.*?120/i.test(name)) return (cfg2.procedures['줄기세포120cc']?procPriceAt(cfg2.procedures['줄기세포120cc'],dateStr):0)||510000;
+  if(/줄기세포.*?60/i.test(name)) return (cfg2.procedures['줄기세포 60cc']?procPriceAt(cfg2.procedures['줄기세포 60cc'],dateStr):0)||297500;
+  if(/줄기세포.*?30/i.test(name)) return (cfg2.procedures['줄기세포30cc']?procPriceAt(cfg2.procedures['줄기세포30cc'],dateStr):0)||145000;
   return 0;
 }
 
@@ -3272,15 +3272,16 @@ function buildTreatmentTop15(cfg2){
       var nm=(t.item||'').trim();
       if(!nm) return;
       var qty=parseFloat(t.qty)||1;
-      if(!tMap[nm]) tMap[nm]={qty:0, cnt:0};
+      if(!tMap[nm]) tMap[nm]={qty:0, cnt:0, mat:0};
       tMap[nm].qty+=qty;
       tMap[nm].cnt++;
+      tMap[nm].mat+=getUnitPrice(nm, cfg2, (it.date||''))*qty;   // 거래일 기준 재료비
     });
   });
   var items=Object.keys(tMap).map(function(nm){
     var d=tMap[nm];
-    var up=getUnitPrice(nm, cfg2);
-    return {name:nm, qty:d.qty, cnt:d.cnt, unitPrice:up, totalCost:up*d.qty};
+    var up=getUnitPrice(nm, cfg2);                 // 현재가 (단가 표시용)
+    return {name:nm, qty:d.qty, cnt:d.cnt, unitPrice:up, totalCost:d.mat};
   });
   // 정렬 상태 관리
   if(!window._subtotalSort) window._subtotalSort={};
@@ -3645,13 +3646,13 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
       var cat1=normRoute(it.cat1);
       var comm=calcCommission(cat1,amt,cfg2,true);
       var txs=(it.treatments||[]).filter(function(t){return t && t.item;});
-      var mat=calcMaterialCost(txs,cfg2);
+      var mat=calcMaterialCost(txs,cfg2,it.date);
       s.cnt++; s.amt+=amt; s.comm+=comm; s.mat+=mat;
       // 시술별 재료비 집계 (건수·qty·재료비 모두 정확)
       txs.forEach(function(t){
         var name=t.item||''; var qty=parseFloat(t.qty)||1;
         var up=0;
-        if(cfg2.procedures[name]) up=parseFloat(cfg2.procedures[name].price)||0;
+        if(cfg2.procedures[name]) up=procPriceAt(cfg2.procedures[name], (it.date||''));
         if(!s.txMat[name]) s.txMat[name]={qty:0,mat:0,cnt:0};
         s.txMat[name].qty+=qty; s.txMat[name].mat+=up*qty; s.txMat[name].cnt++;
       });
@@ -3766,7 +3767,7 @@ function downloadDailyCSV(){
     var amt=(parseFloat(it.amount)||0)*10000;
     var cat1=normRoute(it.cat1);
     var comm=calcCommission(cat1,amt,cfg2,true);
-    var mat=calcMaterialCost(it.treatments,cfg2);
+    var mat=calcMaterialCost(it.treatments,cfg2,it.date);
     var net=amt-comm-mat;
     var rate=amt>0?(net/amt*100):0;
     var txs=(it.treatments||[]).map(function(t){return (t.item||'')+(t.qty&&t.qty>1?'×'+t.qty:'');}).filter(Boolean);
@@ -3812,41 +3813,12 @@ function classifyTx(name){
   return '기타';
 }
 
-function calcMaterialCost(treatments, cfg2){
+function calcMaterialCost(treatments, cfg2, dateStr){
   var total=0;
   (treatments||[]).forEach(function(t){
     var name=t.item||'';
     var qty=parseFloat(t.qty)||0;
-    // 단가 매칭: 정확히 일치 → 부분 매칭
-    var unitPrice=0;
-    if(cfg2.procedures[name]){
-      unitPrice=parseFloat(cfg2.procedures[name].price)||0;
-    } else {
-      // 울쎄라 샷 수 기반 매칭
-      if(/울쎄라/i.test(name)){
-        unitPrice=parseFloat((cfg2.procedures['울쎄라(100샷)']||{}).price)||125000;
-        // qty는 이미 샷 수 기반이면 그대로
-      }
-      else if(/소프웨이브|소프/i.test(name)){
-        unitPrice=parseFloat((cfg2.procedures['소프웨이브(50샷)']||{}).price)||70000;
-      }
-      else if(/써마지.*?900/i.test(name)) unitPrice=parseFloat((cfg2.procedures['써마지900샷']||{}).price)||883000;
-      else if(/써마지.*?600/i.test(name)) unitPrice=parseFloat((cfg2.procedures['써마지600']||{}).price)||804000;
-      else if(/써마지.*?300/i.test(name)) unitPrice=parseFloat((cfg2.procedures['써마지300']||{}).price)||549000;
-      else if(/아이써마지.*?450/i.test(name)) unitPrice=parseFloat((cfg2.procedures['아이써마지450샷']||{}).price)||462000;
-      else if(/아이써마지.*?225/i.test(name)) unitPrice=parseFloat((cfg2.procedures['아이써마지225']||{}).price)||360000;
-      else if(/보톡스.*?국/i.test(name)) unitPrice=parseFloat((cfg2.procedures['보톡스(국산)']||{}).price)||10000;
-      else if(/보톡스.*?수입/i.test(name)) unitPrice=parseFloat((cfg2.procedures['보톡스(수입)']||{}).price)||50000;
-      else if(/필러.*?수입/i.test(name)) unitPrice=parseFloat((cfg2.procedures['필러(수입)']||{}).price)||130000;
-      else if(/포텐자.*?모공/i.test(name)) unitPrice=parseFloat((cfg2.procedures['포텐자(모공)']||{}).price)||33000;
-      else if(/포텐자.*?기미/i.test(name)) unitPrice=parseFloat((cfg2.procedures['포텐자(기미)']||{}).price)||33000;
-      else if(/포텐자.*?펌핑|펌핑팁/i.test(name)) unitPrice=parseFloat((cfg2.procedures['포텐자(펌핑)']||{}).price)||55000;
-      else if(/줄기세포.*?240/i.test(name)) unitPrice=parseFloat((cfg2.procedures['줄기세포240cc']||{}).price)||765000;
-      else if(/줄기세포.*?120/i.test(name)) unitPrice=parseFloat((cfg2.procedures['줄기세포120cc']||{}).price)||510000;
-      else if(/줄기세포.*?60/i.test(name)) unitPrice=parseFloat((cfg2.procedures['줄기세포 60cc']||{}).price)||297500;
-      else if(/줄기세포.*?30/i.test(name)) unitPrice=parseFloat((cfg2.procedures['줄기세포30cc']||{}).price)||145000;
-    }
-    total+=unitPrice*qty;
+    total+=getUnitPrice(name, cfg2, dateStr)*qty;   // 거래일 기준 단가
   });
   return total;
 }
@@ -3922,7 +3894,7 @@ function renderDailyPage(){
   pageItems.forEach(function(it,idx){
     var amt=(parseFloat(it.amount)||0)*10000;
     var comm=calcCommission(it.cat1||'',amt,cfg2,true);
-    var mat=calcMaterialCost(it.treatments,cfg2);
+    var mat=calcMaterialCost(it.treatments,cfg2,it.date);
     var net=amt-comm-mat;
     var treats=(it.treatments||[]).map(function(t){return t.item+'x'+t.qty}).join(', ')||'-';
     var d=it.date||'-';
