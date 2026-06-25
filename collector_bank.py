@@ -34,6 +34,7 @@ SKIP_ACCT = ("퇴직연금","irp","ira","isa","신탁","펀드","적금","정기
 SCOPE = os.environ.get("BANK_SCOPE", "b")
 PATH_ACCOUNTS = f"/v1/kr/bank/{SCOPE}/account/account-list"
 PATH_TRANS    = f"/v1/kr/bank/{SCOPE}/account/transaction-list"
+_LIMIT_HIT = []  # CF-00012(일일 호출한도) 도달 여부 기록
 
 OUT_VENDOR = {
  "카드대금출금":["kb국민카드","국민카드","현대카드","삼성카드","롯데카드","하나카드","비씨","bc카드","신한카드","우리카드","카드대금","카드결제"],
@@ -133,6 +134,7 @@ def fetch_trans(codef, org, account_no, acctpw_enc):
         code = (r.get("result") or {}).get("code")
         if code != "CF-00000":
             print(f"  [{ORG_NAME.get(org,org)} {account_no[-4:] if account_no else ''}] {ws}~{we} {code}: {(r.get('result') or {}).get('message')}", flush=True)
+            if code == "CF-00012": _LIMIT_HIT.append(1)
         data = r.get("data") or {}
         if DEBUG and rows == []:
             print("  [DEBUG transaction-list]", json.dumps(data, ensure_ascii=False)[:1000], flush=True)
@@ -188,6 +190,7 @@ def main():
     codef = make_codef()
     col = db.collection(COLLECTION)
     total = 0
+    stats = {}   # 계좌명 -> {min, max, cnt}
     batch = db.batch(); n = 0
     for org in ORG_NAME:
         print("수집:", ORG_NAME[org], flush=True)
@@ -199,18 +202,36 @@ def main():
             continue
         for a in accts:
             print(f"  계좌 {a['no']} ({a['name']})", flush=True)
+            acnt = 0
             for t in fetch_trans(codef, org, a["no"], acctpw_enc):
                 did, doc = to_doc(org, a["no"], a["name"], t)
                 batch.set(col.document(did), doc, merge=True)
-                total += 1; n += 1
+                total += 1; n += 1; acnt += 1
+                d = doc.get("date", "")
+                if d:
+                    nm = doc.get("account", "")
+                    st = stats.setdefault(nm, {"min": d, "max": d, "cnt": 0})
+                    if d < st["min"]: st["min"] = d
+                    if d > st["max"]: st["max"] = d
+                    st["cnt"] += 1
                 if n >= 400:
                     batch.commit(); batch = db.batch(); n = 0
+            print(f"    -> {acnt}건 수집", flush=True)
     if n: batch.commit()
     db.collection("bank_sync_log").add({
         "ranAt": firestore.SERVER_TIMESTAMP, "env": ENV,
-        "lookbackDays": LOOKBACK, "upserted": total,
+        "lookbackDays": LOOKBACK, "upserted": total, "limitHit": bool(_LIMIT_HIT),
     })
     print(f"\n완료: {total}건 upsert (collection={COLLECTION})", flush=True)
+    print("── 계좌별 수집범위(가장 과거 ~ 최근) ──", flush=True)
+    for nm in sorted(stats):
+        st = stats[nm]
+        print(f"  {nm}: {st['min']} ~ {st['max']}  ({st['cnt']}건)", flush=True)
+    if _LIMIT_HIT:
+        print("\n⚠️ CODEF 일일 호출한도(100)에 도달 — 일부 과거기간이 빠졌을 수 있습니다.", flush=True)
+        print("   내일(한도 리셋 후) lookback 600 으로 한 번 더 실행하면 나머지가 채워집니다. (이미 있는 건 중복 안 쌓임)", flush=True)
+    else:
+        print(f"\n✅ 한도 여유 — 요청 기간({LOOKBACK}일) 전체 조회 완료. 추가 실행 불필요.", flush=True)
 
 if __name__ == "__main__":
     main()
