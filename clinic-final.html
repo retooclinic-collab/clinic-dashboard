@@ -961,7 +961,8 @@ var DEFAULT_PROCEDURES={
   '쥬브아셀V':{price:132000},
   '자가엑소좀':{price:380000},
   '힐로웨이브':{price:110000},
-  '써마지 아이450':{price:462000}
+  '써마지 아이450':{price:462000},
+  '물광':{price:0}
 };
 var DEFAULT_ROUTES={
   '중국(기타)':{type:'percent',value:22},
@@ -978,7 +979,7 @@ var NON_MATERIAL_ITEMS=new Set(['예약금','예약금제외','수면비제외',
 var PROC_CATEGORIES=[
  {g:'리프팅·타이트닝', items:['울쎄라(100샷)','소프웨이브(50샷)','슈링크(100샷)','슈링크','써마지300','써마지600','써마지900샷','아이써마지225','아이써마지450샷','써마지 아이450','티타늄','온다','온다(바디)','온다리프트','티타튠','티타튠max','튠페이스','튠라이너','튠바디','엠페이스','오푸스','인텐스울트라','힐로웨이브','코레지셀핏','아이리프팅','릴리이드','리투오']},
  {g:'레이저·토닝·IPL', items:['듀얼피코','피코슈어','피코웨이','제네시스','제네시스+PTT','BBL','BBL(여드름)','BBL(색소)','BBL(홍조)','BBL(스킨타이트닝)','BBL(포에버영)','BBL(바디)','LDM','CO2','moxi','MOXI','클라리티','플라즈마','라라필','밀크필','튠라이트IPL','힐라이트','문신제거']},
- {g:'주사·스킨부스터', items:['리쥬란','리쥬란HB','리쥬란아이','쥬베룩','쥬베룩볼륨','쥬베룩아이','쥬베룩스킨','쥬브아셀','쥬브아셀3%','쥬브아셀8%','쥬브아셀V','쥬브아셀(추가분)','스킨바이브','멀티스킨부스터','미라젯','미라젯쥬베룩','새살주사','리투핏주사','리투핏주사(바디)','조각주사','스컬트라']},
+ {g:'주사·스킨부스터', items:['리쥬란','리쥬란HB','리쥬란아이','쥬베룩','쥬베룩볼륨','쥬베룩아이','쥬베룩스킨','쥬브아셀','쥬브아셀3%','쥬브아셀8%','쥬브아셀V','쥬브아셀(추가분)','스킨바이브','물광','멀티스킨부스터','미라젯','미라젯쥬베룩','새살주사','리투핏주사','리투핏주사(바디)','조각주사','스컬트라']},
  {g:'보톡스·필러', items:['보톡스(국산)','보톡스(수입)','필러(수입)','필러(국산)','히알라제']},
  {g:'포텐자·모공·재생', items:['포텐자(펌핑)','포텐자(모공)','포텐자(기미)','펌핑팁','아그네스','아쿠아필']},
  {g:'IV·수액·영양', items:['수액','백옥','NAD','TA','PDRN','비타민','고압산소']},
@@ -2445,41 +2446,43 @@ document.getElementById('col-mdl').addEventListener('click',function(e){if(e.tar
 /* ═══ NAV ═══ */
 /* ═══════════ 재고자산 탭 ═══════════ */
 // 재고 품목 → 시술 재료비 매핑 기본값. {proc:'시술명', factor:재고1단위당 시술재료비 배수}
+// ★ 키 = 라이브 시트 '3.재고현황(자동)' 품목명 그대로(미러 후에도 일치). (2026-06-26 라이브 반영)
 var DEFAULT_INV_MAP={
- '리쥬란힐러':{proc:'리쥬란',factor:2}, '리투오':{proc:'리투오',factor:1},
- '쥬브아셀8%':{proc:'쥬브아셀8%',factor:1}, '쥬브아셀V':{proc:'쥬브아셀V',factor:1}, '쥬브아셀3%':{proc:'쥬브아셀3%',factor:1},
- '제오민':{proc:'보톡스(수입)',factor:1}, '리쥬란아이':{proc:'리쥬란아이',factor:1}, '리쥬란HB':{proc:'리쥬란HB',factor:1},
- '힐로웨이브':{proc:'힐로웨이브',factor:1}, '줄기세포240':{proc:'줄기세포240cc',factor:1},
- '쥬베룩':{proc:'쥬베룩',factor:1}, '쥬베룩볼륨':{proc:'쥬베룩볼륨',factor:1}, '쥬베룩아이':{proc:'쥬베룩아이',factor:1}, '쥬베룩스킨':{proc:'쥬베룩스킨',factor:1},
- '써마지300':{proc:'써마지300',factor:1}, '써마지600':{proc:'써마지600',factor:1}, '써마지900':{proc:'써마지900샷',factor:1},
- '아이써마지225':{proc:'아이써마지225',factor:1}, '아이써마지450':{proc:'아이써마지450샷',factor:1},
- '울쎄라4.5':{proc:'울쎄라(100샷)',factor:1}, '울쎄라3.0':{proc:'울쎄라(100샷)',factor:1}, '울쎄라1.5':{proc:'울쎄라(100샷)',factor:1},
- '엠페이스':{proc:'엠페이스',factor:1}, '스킨바이브':{proc:'스킨바이브',factor:2},
- '줄기세포30':{proc:'줄기세포30cc',factor:1}, '줄기세포60':{proc:'줄기세포 60cc',factor:1}, '줄기세포120':{proc:'줄기세포120cc',factor:1},
- '스컬트라':{proc:'스컬트라',factor:1}, '브이트리':{proc:'NAD',factor:1}
+ '울쎼라 4.5mm':{proc:'울쎄라(100샷)',factor:1}, '울쎼라 3.0mm':{proc:'울쎄라(100샷)',factor:1}, '울쎼라 아이 1.5mm':{proc:'울쎄라(100샷)',factor:1},
+ '써마지 600샷':{proc:'써마지600',factor:1}, '써마지 300샷':{proc:'써마지300',factor:1}, '써마지 900샷':{proc:'써마지900샷',factor:1},
+ '아이써마지 225샷':{proc:'아이써마지225',factor:1}, '아이써마지 450샷':{proc:'아이써마지450샷',factor:1},
+ '엠페이스 카드기준(횟수)-(카드숫자/1회당 2씩차감됨)':{proc:'엠페이스',factor:1}, '스컬트라':{proc:'스컬트라',factor:1},
+ '리쥬란힐러 (박스 개수)-2개입':{proc:'리쥬란',factor:1}, '리쥬란HB':{proc:'리쥬란HB',factor:1}, '리쥬란아이':{proc:'리쥬란아이',factor:1},
+ '쥬베룩 일반 -50mg':{proc:'쥬베룩',factor:1}, '쥬베룩 스킨(30mg)':{proc:'쥬베룩스킨',factor:1}, '쥬베룩 아이':{proc:'쥬베룩아이',factor:1}, '쥬베룩 볼륨':{proc:'쥬베룩볼륨',factor:1},
+ '미라젯 팁 (새거기준)':{proc:'미라젯',factor:1},
+ '벨로테로 소프트(노랑)':{proc:'필러(수입)',factor:1}, '쥬비덤 볼리프트':{proc:'필러(수입)',factor:1}, '쥬비덤 볼루마':{proc:'필러(수입)',factor:1},
+ '제오민':{proc:'보톡스(수입)',factor:1}, '보툴렉스 (국산b)':{proc:'보톡스(국산)',factor:1},
+ '쥬브아셀 8%':{proc:'쥬브아셀8%',factor:1}, '쥬브아셀 3%':{proc:'쥬브아셀3%',factor:1}, '쥬브아셀 V':{proc:'쥬브아셀V',factor:1},
+ '리투오':{proc:'리투오',factor:1}, '힐로웨이브':{proc:'힐로웨이브',factor:1},
+ '엘라비에 물광':{proc:'물광',factor:1}, '하이쥬 물광':{proc:'물광',factor:1}, '리즈네 / 비타란 / 필로드':{proc:'물광',factor:1},
+ '아띠에르 인텐시브 (국산F)':{proc:'필러(국산)',factor:1},
+ '줄기세포 (30cc)':{proc:'줄기세포30cc',factor:1}, '줄기세포 (60cc)':{proc:'줄기세포 60cc',factor:1}, '줄기세포 (120cc)':{proc:'줄기세포120cc',factor:1}, '줄기세포 (240cc)':{proc:'줄기세포240cc',factor:1},
+ '엑소스마트 (자가엑소좀 키트)':{proc:'자가엑소좀',factor:1}, '브이트리 (NAD+)':{proc:'NAD',factor:1},
+ '스킨바이브 낱개기준 (1박스2개)':{proc:'스킨바이브',factor:1}
+ // 민트 쁘띠 (Petit) · 고압산소 산소통 = 비움(직접입력)
 };
-// 시트 미연동 시 폴백용 내장 현재고 스냅샷 (간호, 2026-06-26 기준)
-var INV_STOCK_SEED={team:'간호',updatedAt:'2026-06-26(내장)',items:[
- {name:'리쥬란힐러',unit:'박스',cur:54,safe:20},{name:'리투오',unit:'개',cur:49,safe:20},
- {name:'쥬브아셀8%',unit:'개',cur:55,safe:20},{name:'쥬브아셀V',unit:'개',cur:102,safe:30},
- {name:'제오민',unit:'개',cur:93,safe:30},{name:'리쥬란아이',unit:'박스',cur:40,safe:10},
- {name:'리쥬란HB',unit:'박스',cur:23,safe:10},{name:'힐로웨이브',unit:'개',cur:8,safe:5},
- {name:'줄기세포240',unit:'박스',cur:2,safe:1},{name:'쥬브아셀3%',unit:'개',cur:0,safe:0},
- {name:'쥬베룩',unit:'개',cur:0,safe:0},{name:'쥬베룩볼륨',unit:'개',cur:0,safe:0},
- {name:'쥬베룩아이',unit:'개',cur:0,safe:0},{name:'쥬베룩스킨',unit:'개',cur:0,safe:0},
- {name:'써마지300',unit:'개',cur:9,safe:3},{name:'써마지600',unit:'개',cur:11,safe:4},
- {name:'써마지900',unit:'개',cur:3,safe:2},{name:'아이써마지225',unit:'개',cur:8,safe:3},
- {name:'아이써마지450',unit:'개',cur:1,safe:2},{name:'울쎄라4.5',unit:'개',cur:5,safe:2},
- {name:'울쎄라3.0',unit:'개',cur:5,safe:2},{name:'울쎄라1.5',unit:'개',cur:0,safe:1},
- {name:'엠페이스',unit:'개',cur:27,safe:8},{name:'볼리프트',unit:'박스',cur:6,safe:4},
- {name:'볼루마',unit:'박스',cur:8,safe:3},{name:'벨로테로',unit:'박스',cur:5,safe:3},
- {name:'벨로테로소프트',unit:'박스',cur:3,safe:2},{name:'스킨바이브',unit:'박스',cur:4,safe:2},
- {name:'아띠에르',unit:'박스',cur:3,safe:2},{name:'엑소브이',unit:'개',cur:3,safe:2},
- {name:'엑소필터',unit:'박스',cur:20,safe:5},{name:'줄기세포30',unit:'박스',cur:5,safe:1},
- {name:'줄기세포60',unit:'박스',cur:2,safe:1},{name:'줄기세포120',unit:'박스',cur:4,safe:1},
- {name:'스컬트라',unit:'개',cur:2,safe:2},{name:'리즈네',unit:'박스',cur:24,safe:5},
- {name:'벨치온',unit:'개',cur:5,safe:2},{name:'브이트리',unit:'개',cur:0,safe:0},
- {name:'엘라비에',unit:'박스',cur:0,safe:2},{name:'민트프티',unit:'박스',cur:5,safe:1}
+// 시트 미연동 시 폴백용 내장 현재고 스냅샷 = 라이브 '3.재고현황(자동)' 2026-06-26 읽음
+var INV_STOCK_SEED={team:'간호',updatedAt:'2026-06-26(라이브 스냅샷)',items:[
+ {name:'울쎼라 4.5mm',unit:'개',cur:4,safe:2},{name:'울쎼라 3.0mm',unit:'개',cur:5,safe:2},{name:'울쎼라 아이 1.5mm',unit:'개',cur:0,safe:0},
+ {name:'써마지 600샷',unit:'개',cur:13,safe:3},{name:'써마지 300샷',unit:'개',cur:7,safe:3},{name:'써마지 900샷',unit:'개',cur:3,safe:2},
+ {name:'아이써마지 225샷',unit:'개',cur:7,safe:3},{name:'아이써마지 450샷',unit:'개',cur:0,safe:2},
+ {name:'엠페이스 카드기준(횟수)-(카드숫자/1회당 2씩차감됨)',unit:'회',cur:110,safe:25},{name:'스컬트라',unit:'개',cur:5,safe:2},
+ {name:'리쥬란힐러 (박스 개수)-2개입',unit:'개',cur:173,safe:15},{name:'리쥬란HB',unit:'박스',cur:25,safe:12},{name:'리쥬란아이',unit:'박스',cur:53,safe:12},
+ {name:'쥬베룩 일반 -50mg',unit:'개',cur:27,safe:15},{name:'쥬베룩 스킨(30mg)',unit:'개',cur:30,safe:15},{name:'쥬베룩 아이',unit:'개',cur:22,safe:10},{name:'쥬베룩 볼륨',unit:'개',cur:32,safe:20},
+ {name:'미라젯 팁 (새거기준)',unit:'개',cur:28,safe:8},
+ {name:'벨로테로 소프트(노랑)',unit:'박스',cur:14,safe:3},{name:'쥬비덤 볼리프트',unit:'박스',cur:12,safe:6},{name:'쥬비덤 볼루마',unit:'개',cur:15,safe:5},
+ {name:'제오민',unit:'개',cur:72,safe:20},{name:'보툴렉스 (국산b)',unit:'개',cur:133,safe:30},
+ {name:'쥬브아셀 8%',unit:'개',cur:52,safe:15},{name:'쥬브아셀 3%',unit:'개',cur:10,safe:3},{name:'쥬브아셀 V',unit:'개',cur:136,safe:25},
+ {name:'리투오',unit:'개',cur:31,safe:20},{name:'엘라비에 물광',unit:'개',cur:1,safe:0},{name:'하이쥬 물광',unit:'개',cur:14,safe:10},
+ {name:'아띠에르 인텐시브 (국산F)',unit:'박스',cur:1,safe:0},{name:'힐로웨이브',unit:'개',cur:59,safe:10},{name:'리즈네 / 비타란 / 필로드',unit:'개',cur:9,safe:5},
+ {name:'줄기세포 (30cc)',unit:'개',cur:5,safe:3},{name:'줄기세포 (60cc)',unit:'개',cur:5,safe:2},{name:'줄기세포 (120cc)',unit:'개',cur:6,safe:2},{name:'줄기세포 (240cc)',unit:'개',cur:6,safe:3},
+ {name:'엑소스마트 (자가엑소좀 키트)',unit:'박스',cur:20,safe:5},{name:'브이트리 (NAD+)',unit:'개',cur:8,safe:3},
+ {name:'스킨바이브 낱개기준 (1박스2개)',unit:'개',cur:0,safe:0},{name:'민트 쁘띠 (Petit)',unit:'박스',cur:5,safe:2}
 ]};
 var _invStock=null, _invChart=null, _invSnapDone=false, _invPrevTotal=null, _invRows=[], _invToday=0;
 
@@ -5392,4 +5395,3 @@ async function loadAuditLog(){
 </script>
 </body>
 </html>
-                      
