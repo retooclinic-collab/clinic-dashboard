@@ -2652,6 +2652,7 @@ function invRecalc(){
     var ref=document.getElementById('inv-ref-'+idx);
     if(ref) ref.textContent = proc?('참고 '+_won(def)+(ovr&&Math.round(def)!==Math.round(price)?' · 수정됨':'')):(price>0?'직접입력':'');
     if(price<=0) missing++;
+    prcI.style.borderColor=(price<=0)?'#ef4444':'#334155';   // 단가 0 → 빨간 테두리
     var vc=document.getElementById('inv-val-'+idx); if(vc)vc.textContent=_won(val);
     total+=val; if(_invSel.has(nm)) selSum+=val;
     var ck=co||'(미지정)'; if(!perCo[ck])perCo[ck]={cnt:0,val:0}; perCo[ck].cnt++; perCo[ck].val+=val;
@@ -2678,7 +2679,7 @@ function renderInvKpi(total,missing,count,selSum,filtTotal){
     +card('총 재고자산 평가액', _won(total)+'원', count+'개 품목', '#38bdf8')
     +card('선택 합계', _won(selSum||0)+'원', '체크한 항목', '#a78bfa')
     +third
-    +card('단가 미설정', missing+'개', missing>0?'빨강=0, 매핑/직접입력':'모두 설정됨', missing>0?'#f59e0b':'#16a34a')
+    +card('단가 미설정', missing+'개', missing>0?'단가 0 (빨간 테두리 칸) — 매핑/직접입력':'모두 설정됨', missing>0?'#f59e0b':'#16a34a')
     +'</div>';
   document.getElementById('inv-kpi').innerHTML=h;
 }
