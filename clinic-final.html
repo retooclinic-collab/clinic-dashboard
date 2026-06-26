@@ -2485,6 +2485,35 @@ var INV_STOCK_SEED={team:'간호',updatedAt:'2026-06-26(라이브 스냅샷)',it
  {name:'스킨바이브 낱개기준 (1박스2개)',unit:'개',cur:0,safe:0},{name:'민트 쁘띠 (Petit)',unit:'박스',cur:5,safe:2}
 ]};
 var _invStock=null, _invChart=null, _invSnapDone=false, _invPrevTotal=null, _invRows=[], _invToday=0;
+var _invList=[], _invSel=null, _invCoFilter='전체';
+// 품목 기본 회사(공급처) — 시트 품목마스터 발주방식 기준. 탭에서 수정 가능.
+var DEFAULT_INV_COMPANY={
+ '울쎼라 4.5mm':'최원호','울쎼라 3.0mm':'최원호','울쎼라 아이 1.5mm':'최원호',
+ '써마지 600샷':'지오영','써마지 300샷':'지오영','써마지 900샷':'지오영','아이써마지 225샷':'지오영','아이써마지 450샷':'지오영',
+ '엠페이스 카드기준(횟수)-(카드숫자/1회당 2씩차감됨)':'이현수','스컬트라':'김원장',
+ '리쥬란힐러 (박스 개수)-2개입':'전슬아','리쥬란HB':'전슬아','리쥬란아이':'전슬아',
+ '쥬베룩 일반 -50mg':'성승우','쥬베룩 스킨(30mg)':'성승우','쥬베룩 아이':'성승우','쥬베룩 볼륨':'성승우',
+ '미라젯 팁 (새거기준)':'미라젯몰','벨로테로 소프트(노랑)':'멀츠','쥬비덤 볼리프트':'김원장','쥬비덤 볼루마':'김원장',
+ '제오민':'멀츠','보툴렉스 (국산b)':'휴젤','쥬브아셀 8%':'성승우','쥬브아셀 3%':'성승우','쥬브아셀 V':'성승우',
+ '리투오':'김원장','아띠에르 인텐시브 (국산F)':'메디톡스','힐로웨이브':'네오팜','리즈네 / 비타란 / 필로드':'김',
+ '줄기세포 (30cc)':'박진혁','줄기세포 (60cc)':'박진혁','줄기세포 (120cc)':'박진혁','줄기세포 (240cc)':'박진혁',
+ '엑소스마트 (자가엑소좀 키트)':'김태홍','브이트리 (NAD+)':'파비오스'
+};
+function _invCompanyFor(name,cfg){
+  cfg=cfg||loadCfg();
+  var m=(cfg.invMap&&cfg.invMap[name])||{};
+  if(m.company!==undefined&&m.company!==null) return m.company;
+  return DEFAULT_INV_COMPANY[name]||'';
+}
+function _invSelLoad(){ if(_invSel)return _invSel; try{_invSel=new Set(JSON.parse(localStorage.getItem('cl_invSel')||'[]'));}catch(e){_invSel=new Set();} return _invSel; }
+function _invSelSave(){ try{localStorage.setItem('cl_invSel',JSON.stringify(Array.from(_invSelLoad())));}catch(e){} }
+// 시트 현재고 + 사용자 추가 커스텀 항목을 합친 통합 목록
+function _invCombined(cfg){
+  cfg=cfg||loadCfg();
+  var a=((_invStock&&_invStock.items)||[]).map(function(it){return {name:it.name,unit:it.unit||'',cur:Number(it.cur)||0,safe:Number(it.safe)||0,custom:false};});
+  (cfg.invCustom||[]).forEach(function(c){ a.push({name:c.name,unit:c.unit||'',cur:Number(c.cur)||0,safe:Number(c.safe)||0,custom:true}); });
+  return a;
+}
 
 function _invMapFor(name,cfg){
   cfg=cfg||loadCfg();
@@ -2534,103 +2563,149 @@ async function renderInvTab(){
   }
 }
 
+function _invDefPrice(proc,fac,cfg){
+  if(!proc||!cfg.procedures||!cfg.procedures[proc]) return 0;
+  return (procPriceAt(cfg.procedures[proc], new Date().toISOString().slice(0,10))||0)*(parseFloat(fac)||1);
+}
 function buildInvTable(cfg){
-  cfg=cfg||loadCfg();
+  cfg=cfg||loadCfg(); _invSelLoad();
   var procKeys=Object.keys(cfg.procedures||{}).sort();
-  var items=(_invStock.items||[]).slice();
-  var optsBase='<option value="">(직접입력)</option>'+procKeys.map(function(k){return '<option value="'+esc(k)+'">'+esc(k)+'</option>';}).join('');
-  var h='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+  var optsBase='<option value="">(매핑없음)</option>'+procKeys.map(function(k){return '<option value="'+esc(k)+'">'+esc(k)+'</option>';}).join('');
+  _invList=_invCombined(cfg);
+  var cos={}; _invList.forEach(function(it){ cos[_invCompanyFor(it.name,cfg)||'(미지정)']=true; });
+  var coOpts='<option value="전체">회사 전체</option>'+Object.keys(cos).sort().map(function(c){return '<option value="'+esc(c)+'"'+(_invCoFilter===c?' selected':'')+'>'+esc(c)+'</option>';}).join('');
+  var ctrl='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">'
+    +'<button class="btn btn-o btn-sm" onclick="addCustomItem()">➕ 항목 추가</button>'
+    +'<label style="font-size:12px;color:#94a3b8;">회사 <select id="inv-cofilter" onchange="invCoFilterChange()" style="padding:3px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;">'+coOpts+'</select></label>'
+    +'<button class="btn btn-o btn-sm" onclick="invSelAll(true)">전체선택</button>'
+    +'<button class="btn btn-o btn-sm" onclick="invSelAll(false)">선택해제</button>'
+    +'<span style="font-size:11px;color:#64748b;">체크 → \'선택 합계\'. 재고단가는 직접 수정 가능(시술 재료비는 안 바뀜).</span>'
+    +'</div>';
+  var ip='background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;';
+  var h=ctrl+'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
   h+='<thead><tr style="background:#0f172a;color:#cbd5e1;text-align:left;">'
-    +'<th style="padding:8px;">품목</th><th style="padding:8px;">단위</th><th style="padding:8px;text-align:right;">현재고</th>'
-    +'<th style="padding:8px;">매핑 시술(재료비)</th><th style="padding:8px;text-align:right;">계수</th>'
-    +'<th style="padding:8px;text-align:right;">단가(원)</th><th style="padding:8px;text-align:right;">평가액(원)</th>'
-    +'<th style="padding:8px;text-align:center;">발주</th></tr></thead><tbody>';
-  items.forEach(function(it,idx){
+    +'<th style="padding:6px;text-align:center;">✓</th><th style="padding:8px;">품목</th><th style="padding:8px;">회사</th>'
+    +'<th style="padding:8px;">단위</th><th style="padding:8px;text-align:right;">현재고</th>'
+    +'<th style="padding:8px;">매핑 시술(참고)</th><th style="padding:8px;text-align:right;">계수</th>'
+    +'<th style="padding:8px;text-align:right;">재고단가(원)</th><th style="padding:8px;text-align:right;">평가액(원)</th>'
+    +'<th style="padding:8px;text-align:center;">발주/삭제</th></tr></thead><tbody>';
+  _invList.forEach(function(it,idx){
     var m=_invMapFor(it.name,cfg);
-    var hasOverride=(m.override!==undefined&&m.override!==null&&m.override!=='');
-    var proc=hasOverride?'':(m.proc||'');
-    var fac=parseFloat(m.factor)||1;
-    var up=invUnitPrice(it.name,cfg);
-    var sel='<select id="inv-proc-'+idx+'" data-idx="'+idx+'" onchange="invRecalc()" style="max-width:170px;padding:3px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;">'+optsBase+'</select>';
-    var safe=parseFloat(it.safe)||0, cur=parseFloat(it.cur)||0;
-    var order=(safe>0&&cur<=safe)?'<span style="color:#ef4444;font-weight:700;">⚠ 발주</span>':'';
-    h+='<tr data-idx="'+idx+'" style="border-bottom:1px solid #1e293b;">'
-      +'<td style="padding:7px;font-weight:600;">'+esc(it.name)+'</td>'
-      +'<td style="padding:7px;color:#94a3b8;">'+esc(it.unit||'')+'</td>'
-      +'<td style="padding:7px;text-align:right;">'+cur+'</td>'
+    var hasOv=(m.override!==undefined&&m.override!==null&&m.override!=='');
+    var proc=m.proc||'', fac=parseFloat(m.factor)||1;
+    var price=hasOv?parseFloat(m.override):_invDefPrice(proc,fac,cfg);
+    var company=_invCompanyFor(it.name,cfg);
+    var nameCell=it.custom?'<input id="inv-nm-'+idx+'" value="'+esc(it.name)+'" oninput="invRecalc()" style="width:148px;padding:3px;'+ip+'">':'<span style="font-weight:600;">'+esc(it.name)+'</span>';
+    var unitCell=it.custom?'<input id="inv-un-'+idx+'" value="'+esc(it.unit)+'" style="width:44px;padding:3px;'+ip+'">':'<span style="color:#94a3b8;">'+esc(it.unit||'')+'</span>';
+    var curCell=it.custom?'<input id="inv-cur-'+idx+'" type="number" min="0" value="'+it.cur+'" oninput="invRecalc()" style="width:60px;text-align:right;padding:3px;'+ip+'">':it.cur;
+    var sel='<select id="inv-proc-'+idx+'" onchange="invProcChange('+idx+')" style="max-width:148px;padding:3px;'+ip+'">'+optsBase+'</select>';
+    var order=it.custom?'<button onclick="delCustomItem('+idx+')" title="삭제" style="cursor:pointer;color:#ef4444;border:1px solid #7f1d1d;background:transparent;border-radius:4px;padding:2px 6px;">🗑</button>':((it.safe>0&&it.cur<=it.safe)?'<span style="color:#ef4444;font-weight:700;">⚠ 발주</span>':'');
+    var checked=_invSel.has(it.name)?' checked':'';
+    h+='<tr id="inv-row-'+idx+'" style="border-bottom:1px solid #1e293b;">'
+      +'<td style="padding:6px;text-align:center;"><input type="checkbox" id="inv-sel-'+idx+'"'+checked+' onchange="invToggleSel('+idx+')"></td>'
+      +'<td style="padding:7px;">'+nameCell+'</td>'
+      +'<td style="padding:7px;"><input id="inv-co-'+idx+'" value="'+esc(company)+'" oninput="invRecalc()" style="width:82px;padding:3px;'+ip+'"></td>'
+      +'<td style="padding:7px;">'+unitCell+'</td>'
+      +'<td style="padding:7px;text-align:right;">'+curCell+'</td>'
       +'<td style="padding:7px;">'+sel+'</td>'
-      +'<td style="padding:7px;text-align:right;"><input id="inv-fac-'+idx+'" type="number" min="0" step="0.5" value="'+fac+'" oninput="invRecalc()" style="width:54px;text-align:right;padding:3px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;"></td>'
-      +'<td style="padding:7px;text-align:right;"><input id="inv-prc-'+idx+'" type="number" min="0" step="1000" value="'+(hasOverride?parseFloat(m.override):Math.round(up.price))+'" oninput="invRecalc(true)" style="width:90px;text-align:right;padding:3px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;"></td>'
+      +'<td style="padding:7px;text-align:right;"><input id="inv-fac-'+idx+'" type="number" min="0" step="0.5" value="'+fac+'" oninput="invProcChange('+idx+')" style="width:48px;text-align:right;padding:3px;'+ip+'"></td>'
+      +'<td style="padding:7px;text-align:right;"><input id="inv-prc-'+idx+'" type="number" min="0" step="1000" value="'+Math.round(price)+'" data-ovr="'+(hasOv?'1':'0')+'" oninput="invPriceEdit('+idx+')" style="width:88px;text-align:right;padding:3px;'+ip+'"><div id="inv-ref-'+idx+'" style="font-size:10px;color:#64748b;"></div></td>'
       +'<td id="inv-val-'+idx+'" style="padding:7px;text-align:right;font-weight:700;">0</td>'
       +'<td style="padding:7px;text-align:center;">'+order+'</td></tr>';
   });
-  h+='</tbody></table></div>';
+  h+='</tbody></table></div><div id="inv-cosum" style="margin-top:14px;"></div>';
   document.getElementById('inv-table').innerHTML=h;
-  // 저장된 매핑/직접입력 select 값 반영
-  items.forEach(function(it,idx){
-    var m=_invMapFor(it.name,cfg);
-    var hasOverride=(m.override!==undefined&&m.override!==null&&m.override!=='');
-    var s=document.getElementById('inv-proc-'+idx);
-    if(s) s.value=hasOverride?'':(m.proc||'');
-  });
+  _invList.forEach(function(it,idx){ var s=document.getElementById('inv-proc-'+idx); if(s)s.value=(_invMapFor(it.name,cfg).proc||''); });
 }
 
-// fromPrice: 단가 입력란을 직접 수정한 경우(true) → 그 값 유지, 아니면 매핑시술×계수로 단가 재계산
-function invRecalc(fromPrice){
-  if(!_invStock) return;
-  var cfg=loadCfg(), today=new Date().toISOString().slice(0,10);
-  var items=_invStock.items||[]; _invRows=[]; var total=0, missing=0;
-  items.forEach(function(it,idx){
-    var sel=document.getElementById('inv-proc-'+idx), facI=document.getElementById('inv-fac-'+idx), prcI=document.getElementById('inv-prc-'+idx), valC=document.getElementById('inv-val-'+idx);
-    if(!sel||!prcI) return;
-    var proc=sel.value, fac=parseFloat(facI.value)||1, price;
-    if(proc){
-      facI.disabled=false; prcI.disabled=true; prcI.style.opacity=.6;
-      var pp=(cfg.procedures&&cfg.procedures[proc])?(procPriceAt(cfg.procedures[proc],today)||0):0;
-      price=pp*fac; if(!fromPrice) prcI.value=Math.round(price);
-    } else {
-      facI.disabled=true; prcI.disabled=false; prcI.style.opacity=1;
-      price=parseFloat(prcI.value)||0;
-    }
-    var cur=parseFloat(it.cur)||0, val=cur*price;
+// 매핑 시술/계수 변경 → override 안 된 단가는 참고기본값으로 갱신 (시술 재료비는 그대로)
+function invProcChange(idx){
+  var cfg=loadCfg(), sel=document.getElementById('inv-proc-'+idx), facI=document.getElementById('inv-fac-'+idx), prcI=document.getElementById('inv-prc-'+idx);
+  if(!prcI)return;
+  var def=_invDefPrice(sel?sel.value:'', facI?facI.value:1, cfg);
+  if(prcI.getAttribute('data-ovr')!=='1') prcI.value=Math.round(def);
+  invRecalc();
+}
+// 재고단가 직접 수정 → override 표시 (cfg.procedures 절대 안 건드림)
+function invPriceEdit(idx){ var p=document.getElementById('inv-prc-'+idx); if(p)p.setAttribute('data-ovr','1'); invRecalc(); }
+function invToggleSel(idx){ var it=_invList[idx]; if(!it)return; _invSelLoad(); var cb=document.getElementById('inv-sel-'+idx); if(cb.checked)_invSel.add(it.name); else _invSel.delete(it.name); _invSelSave(); invRecalc(); }
+function invSelAll(on){ _invSelLoad(); _invList.forEach(function(it,idx){ var cb=document.getElementById('inv-sel-'+idx); if(cb){cb.checked=on;} if(on)_invSel.add(it.name); else _invSel.delete(it.name); }); _invSelSave(); invRecalc(); }
+function invCoFilterChange(){ var s=document.getElementById('inv-cofilter'); _invCoFilter=s?s.value:'전체'; invRecalc(); }
+function invCoFilterSet(c){ _invCoFilter=c; var s=document.getElementById('inv-cofilter'); if(s)s.value=c; invRecalc(); }
+function addCustomItem(){ var nm=prompt('추가할 항목명을 입력하세요'); if(!nm)return; nm=nm.trim(); if(!nm)return; var cfg=loadCfg(); cfg.invCustom=cfg.invCustom||[]; if(cfg.invCustom.some(function(c){return c.name===nm;})){alert('이미 있는 항목명이에요');return;} cfg.invCustom.push({name:nm,unit:'개',cur:0,safe:0}); saveCfg(cfg); buildInvTable(cfg); invRecalc(); }
+function delCustomItem(idx){ var it=_invList[idx]; if(!it||!it.custom)return; if(!confirm('"'+it.name+'" 항목을 삭제할까요?'))return; var cfg=loadCfg(); cfg.invCustom=(cfg.invCustom||[]).filter(function(c){return c.name!==it.name;}); if(cfg.invMap)delete cfg.invMap[it.name]; saveCfg(cfg); buildInvTable(cfg); invRecalc(); }
+
+function invRecalc(){
+  if(!_invList.length) return;
+  var cfg=loadCfg(), today=new Date().toISOString().slice(0,10); _invSelLoad();
+  _invRows=[]; var total=0, missing=0, selSum=0, filtTotal=0, perCo={};
+  _invList.forEach(function(it,idx){
+    var prcI=document.getElementById('inv-prc-'+idx); if(!prcI)return;
+    var nm=it.custom?((document.getElementById('inv-nm-'+idx)||{}).value||it.name):it.name;
+    var cur=it.custom?(parseFloat((document.getElementById('inv-cur-'+idx)||{}).value)||0):it.cur;
+    var co=(document.getElementById('inv-co-'+idx)||{}).value||'';
+    var sel=document.getElementById('inv-proc-'+idx), facI=document.getElementById('inv-fac-'+idx);
+    var proc=sel?sel.value:'', fac=facI?(parseFloat(facI.value)||1):1;
+    var price=parseFloat(prcI.value)||0, val=cur*price;
+    var def=_invDefPrice(proc,fac,cfg), ovr=prcI.getAttribute('data-ovr')==='1';
+    var ref=document.getElementById('inv-ref-'+idx);
+    if(ref) ref.textContent = proc?('참고 '+_won(def)+(ovr&&Math.round(def)!==Math.round(price)?' · 수정됨':'')):(price>0?'직접입력':'');
     if(price<=0) missing++;
-    if(valC) valC.textContent=_won(val);
-    total+=val;
-    _invRows.push({name:it.name,unit:it.unit,cur:cur,price:Math.round(price),value:Math.round(val),proc:proc,factor:fac});
+    var vc=document.getElementById('inv-val-'+idx); if(vc)vc.textContent=_won(val);
+    total+=val; if(_invSel.has(nm)) selSum+=val;
+    var ck=co||'(미지정)'; if(!perCo[ck])perCo[ck]={cnt:0,val:0}; perCo[ck].cnt++; perCo[ck].val+=val;
+    var row=document.getElementById('inv-row-'+idx), show=(_invCoFilter==='전체')||(ck===_invCoFilter);
+    if(row)row.style.display=show?'':'none'; if(show)filtTotal+=val;
+    _invRows.push({name:nm,unit:it.unit,cur:cur,price:Math.round(price),value:Math.round(val),company:co});
   });
   _invToday=total;
-  renderInvKpi(total,missing,items.length);
+  renderInvKpi(total,missing,_invList.length,selSum,filtTotal);
+  renderInvCoSum(perCo);
 }
 
-function renderInvKpi(total,missing,count){
+function renderInvKpi(total,missing,count,selSum,filtTotal){
   function card(label,val,sub,color){
     return '<div class="card" style="flex:1;min-width:150px;"><div style="font-size:12px;color:#94a3b8;">'+label+'</div>'
       +'<div style="font-size:22px;font-weight:800;color:'+(color||'#e2e8f0')+';margin-top:2px;">'+val+'</div>'
       +(sub?'<div style="font-size:11px;color:#64748b;margin-top:2px;">'+sub+'</div>':'')+'</div>';
   }
-  var diff='', dcolor='#94a3b8';
-  if(_invPrevTotal!==null){ var d=total-_invPrevTotal; dcolor=d>0?'#16a34a':(d<0?'#ef4444':'#94a3b8'); diff=(d>0?'▲ +':d<0?'▼ ':'±')+_won(Math.abs(d))+'원 (전일 '+_won(_invPrevTotal)+')'; }
+  var third;
+  if(_invCoFilter!=='전체'){ third=card('['+esc(_invCoFilter)+'] 합계', _won(filtTotal)+'원', '회사 필터', '#22d3ee'); }
+  else { var diff='',dc='#94a3b8'; if(_invPrevTotal!==null){var d=total-_invPrevTotal;dc=d>0?'#16a34a':(d<0?'#ef4444':'#94a3b8');diff=(d>=0?'+':'')+_won(d)+'원';} third=card('전일 대비', _invPrevTotal!==null?diff:'—', _invPrevTotal!==null?('전일 '+_won(_invPrevTotal)):'스냅샷 누적 후', dc); }
   var h='<div style="display:flex;gap:12px;flex-wrap:wrap;">'
-    +card('총 재고자산 평가액', _won(total)+'원', diff, '#38bdf8')
-    +card('전일 대비', _invPrevTotal!==null?((total-_invPrevTotal>=0?'+':'')+_won(total-_invPrevTotal)+'원'):'—', _invPrevTotal!==null?'':'스냅샷 누적 후 표시', dcolor)
-    +card('품목 수', count+'개','', '#e2e8f0')
-    +card('단가 미설정', missing+'개', missing>0?'빨강 단가=0, 매핑/직접입력 필요':'모두 설정됨', missing>0?'#f59e0b':'#16a34a')
+    +card('총 재고자산 평가액', _won(total)+'원', count+'개 품목', '#38bdf8')
+    +card('선택 합계', _won(selSum||0)+'원', '체크한 항목', '#a78bfa')
+    +third
+    +card('단가 미설정', missing+'개', missing>0?'빨강=0, 매핑/직접입력':'모두 설정됨', missing>0?'#f59e0b':'#16a34a')
     +'</div>';
   document.getElementById('inv-kpi').innerHTML=h;
 }
 
+function renderInvCoSum(perCo){
+  var el=document.getElementById('inv-cosum'); if(!el)return;
+  var arr=Object.keys(perCo).map(function(k){return [k,perCo[k]];}).sort(function(a,b){return b[1].val-a[1].val;});
+  var h='<div style="font-weight:700;margin:6px 0;">🏢 회사별 요약 <span style="font-size:11px;color:#64748b;font-weight:400;">(행 클릭 → 그 회사만 보기)</span></div>'
+    +'<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:12px;min-width:300px;">'
+    +'<thead><tr style="background:#0f172a;color:#cbd5e1;"><th style="padding:6px;text-align:left;">회사</th><th style="padding:6px;text-align:right;">품목수</th><th style="padding:6px;text-align:right;">평가액(원)</th></tr></thead><tbody>';
+  arr.forEach(function(x){ h+='<tr style="border-bottom:1px solid #1e293b;cursor:pointer;" onclick="invCoFilterSet(\''+String(x[0]).replace(/\\/g,"\\\\").replace(/'/g,"\\'")+'\')"><td style="padding:6px;">'+esc(x[0])+'</td><td style="padding:6px;text-align:right;">'+x[1].cnt+'</td><td style="padding:6px;text-align:right;font-weight:600;">'+_won(x[1].val)+'</td></tr>'; });
+  h+='</tbody></table></div>';
+  el.innerHTML=h;
+}
+
 function saveInvMap(){
-  if(!_invStock) return;
-  var cfg=loadCfg(); cfg.invMap=cfg.invMap||{};
-  (_invStock.items||[]).forEach(function(it,idx){
-    var sel=document.getElementById('inv-proc-'+idx), facI=document.getElementById('inv-fac-'+idx), prcI=document.getElementById('inv-prc-'+idx);
-    if(!sel) return;
-    var proc=sel.value, fac=parseFloat(facI.value)||1;
-    if(proc){ cfg.invMap[it.name]={proc:proc,factor:fac}; }
-    else { cfg.invMap[it.name]={proc:'',factor:1,override:parseFloat(prcI.value)||0}; }
+  var cfg=loadCfg(); cfg.invMap=cfg.invMap||{}; var custom=[];
+  _invList.forEach(function(it,idx){
+    var sel=document.getElementById('inv-proc-'+idx), facI=document.getElementById('inv-fac-'+idx), prcI=document.getElementById('inv-prc-'+idx), coI=document.getElementById('inv-co-'+idx);
+    if(!prcI)return;
+    var nm=(it.custom?((document.getElementById('inv-nm-'+idx)||{}).value||it.name):it.name).trim();
+    var proc=sel?sel.value:'', fac=parseFloat(facI.value)||1, ovr=prcI.getAttribute('data-ovr')==='1', price=parseFloat(prcI.value)||0, co=coI?coI.value:'';
+    var entry={proc:proc,factor:fac,company:co};
+    if(!proc||ovr) entry.override=price;   // 매핑 없거나 직접 수정 → 재고단가 별도 저장(시술 재료비 불변)
+    cfg.invMap[nm]=entry;
+    if(it.custom){ custom.push({name:nm,unit:(document.getElementById('inv-un-'+idx)||{}).value||'개',cur:parseFloat((document.getElementById('inv-cur-'+idx)||{}).value)||0,safe:0}); }
   });
-  saveCfg(cfg);
-  flashSaved('inv-saved');
+  cfg.invCustom=custom;
+  saveCfg(cfg); flashSaved('inv-saved'); buildInvTable(cfg); invRecalc();
 }
 
 function drawInvChart(hist){
