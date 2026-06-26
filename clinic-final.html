@@ -2597,7 +2597,7 @@ function buildInvTable(cfg){
     var price=hasOv?parseFloat(m.override):_invDefPrice(proc,fac,cfg);
     var company=_invCompanyFor(it.name,cfg);
     var nameCell=it.custom?'<input id="inv-nm-'+idx+'" value="'+esc(it.name)+'" oninput="invRecalc()" style="width:148px;padding:3px;'+ip+'">':'<span style="font-weight:600;">'+esc(it.name)+'</span>';
-    var unitCell=it.custom?'<input id="inv-un-'+idx+'" value="'+esc(it.unit)+'" style="width:44px;padding:3px;'+ip+'">':'<span style="color:#94a3b8;">'+esc(it.unit||'')+'</span>';
+    var unitCell=it.custom?'<input id="inv-un-'+idx+'" value="'+esc(it.unit)+'" oninput="invRecalc()" style="width:44px;padding:3px;'+ip+'">':'<span style="color:#94a3b8;">'+esc(it.unit||'')+'</span>';
     var curCell=it.custom?'<input id="inv-cur-'+idx+'" type="number" min="0" value="'+it.cur+'" oninput="invRecalc()" style="width:60px;text-align:right;padding:3px;'+ip+'">':it.cur;
     var sel='<select id="inv-proc-'+idx+'" onchange="invProcChange('+idx+')" style="max-width:148px;padding:3px;'+ip+'">'+optsBase+'</select>';
     var order=it.custom?'<button onclick="delCustomItem('+idx+')" title="삭제" style="cursor:pointer;color:#ef4444;border:1px solid #7f1d1d;background:transparent;border-radius:4px;padding:2px 6px;">🗑</button>':((it.safe>0&&it.cur<=it.safe)?'<span style="color:#ef4444;font-weight:700;">⚠ 발주</span>':'');
