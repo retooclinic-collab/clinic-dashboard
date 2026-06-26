@@ -1032,6 +1032,7 @@ function loadCfg(){
   return c;
 }
 function saveCfg(c){
+  c._cfgTs=Date.now();
   localStorage.setItem(SKEY,JSON.stringify(c));
   if(window.fbSaveSettings) window.fbSaveSettings(c);
 }
@@ -2713,11 +2714,15 @@ function _invCollect(cfg){
 var _invSaveTimer=null;
 function invPersist(){
   if(!_invList.length) return;
+  // ★ localStorage 즉시 저장 — 새로고침/표 재빌드에도 입력값 안 날아가게
+  var cfg=loadCfg(); _invCollect(cfg); cfg._cfgTs=Date.now();
+  try{ localStorage.setItem(SKEY,JSON.stringify(cfg)); }catch(e){}
+  // Firestore 동기화만 디바운스(쓰기 빈도 줄이기)
   if(_invSaveTimer) clearTimeout(_invSaveTimer);
   _invSaveTimer=setTimeout(function(){
-    var cfg=loadCfg(); _invCollect(cfg); saveCfg(cfg);
-    var s=document.getElementById('inv-saved'); if(s){ s.textContent='✓ 자동저장됨'; s.classList.add('show'); setTimeout(function(){s.classList.remove('show');},1500); }
-  },700);
+    if(window.fbSaveSettings) window.fbSaveSettings(loadCfg());
+    var s=document.getElementById('inv-saved'); if(s){ s.textContent='✓ 자동저장됨'; s.classList.add('show'); setTimeout(function(){s.classList.remove('show');},1200); }
+  },600);
 }
 function saveInvMap(){
   var cfg=loadCfg(); _invCollect(cfg); saveCfg(cfg);
@@ -5101,6 +5106,14 @@ window.onFbReady = function(){
     if(window.fbLoadSettings){
     window.fbLoadSettings().then(function(cfg){
       if(!cfg) cfg={};
+      // ★ 재고자산 매핑/단가/추가항목: 로컬이 더 최신(미동기화 입력)이면 서버값으로 덮어쓰지 않고 보존
+      try{
+        var _loc=JSON.parse(localStorage.getItem(SKEY)||'null');
+        if(_loc && (_loc._cfgTs||0) > (cfg._cfgTs||0)){
+          if(_loc.invMap) cfg.invMap=_loc.invMap;
+          if(_loc.invCustom) cfg.invCustom=_loc.invCustom;
+        }
+      }catch(e){}
       if(!cfg.procedures||!Object.keys(cfg.procedures).length)cfg.procedures=Object.assign({},DEFAULT_PROCEDURES);
       Object.keys(DEFAULT_PROCEDURES).forEach(function(k){
         if(!cfg.procedures[k]||!(cfg.procedures[k].price>0))cfg.procedures[k]={price:DEFAULT_PROCEDURES[k].price};
