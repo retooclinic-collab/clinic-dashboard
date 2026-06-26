@@ -2579,7 +2579,7 @@ function buildInvTable(cfg){
     +'<label style="font-size:12px;color:#94a3b8;">회사 <select id="inv-cofilter" onchange="invCoFilterChange()" style="padding:3px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;">'+coOpts+'</select></label>'
     +'<button class="btn btn-o btn-sm" onclick="invSelAll(true)">전체선택</button>'
     +'<button class="btn btn-o btn-sm" onclick="invSelAll(false)">선택해제</button>'
-    +'<span style="font-size:11px;color:#64748b;">체크 → \'선택 합계\'. 재고단가는 직접 수정 가능(시술 재료비는 안 바뀜).</span>'
+    +'<span style="font-size:11px;color:#64748b;">체크 → \'선택 합계\'. 재고단가 직접수정 가능(시술 재료비 불변) · 변경사항 자동저장</span>'
     +'</div>';
   var ip='background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;';
   var h=ctrl+'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
@@ -2661,6 +2661,7 @@ function invRecalc(){
   _invToday=total;
   renderInvKpi(total,missing,_invList.length,selSum,filtTotal);
   renderInvCoSum(perCo);
+  invPersist();
 }
 
 function renderInvKpi(total,missing,count,selSum,filtTotal){
@@ -2692,8 +2693,9 @@ function renderInvCoSum(perCo){
   el.innerHTML=h;
 }
 
-function saveInvMap(){
-  var cfg=loadCfg(); cfg.invMap=cfg.invMap||{}; var custom=[];
+// DOM의 현재 입력값 → cfg.invMap / cfg.invCustom 로 수집(저장은 호출측에서)
+function _invCollect(cfg){
+  cfg.invMap=cfg.invMap||{}; var custom=[];
   _invList.forEach(function(it,idx){
     var sel=document.getElementById('inv-proc-'+idx), facI=document.getElementById('inv-fac-'+idx), prcI=document.getElementById('inv-prc-'+idx), coI=document.getElementById('inv-co-'+idx);
     if(!prcI)return;
@@ -2705,7 +2707,22 @@ function saveInvMap(){
     if(it.custom){ custom.push({name:nm,unit:(document.getElementById('inv-un-'+idx)||{}).value||'개',cur:parseFloat((document.getElementById('inv-cur-'+idx)||{}).value)||0,safe:0}); }
   });
   cfg.invCustom=custom;
-  saveCfg(cfg); flashSaved('inv-saved'); buildInvTable(cfg); invRecalc();
+  return cfg;
+}
+// 자동 저장(디바운스) — 입력 변경 시 버튼 없이도 저장됨. DOM 재빌드 안 함(포커스 유지)
+var _invSaveTimer=null;
+function invPersist(){
+  if(!_invList.length) return;
+  if(_invSaveTimer) clearTimeout(_invSaveTimer);
+  _invSaveTimer=setTimeout(function(){
+    var cfg=loadCfg(); _invCollect(cfg); saveCfg(cfg);
+    var s=document.getElementById('inv-saved'); if(s){ s.textContent='✓ 자동저장됨'; s.classList.add('show'); setTimeout(function(){s.classList.remove('show');},1500); }
+  },700);
+}
+function saveInvMap(){
+  var cfg=loadCfg(); _invCollect(cfg); saveCfg(cfg);
+  var s=document.getElementById('inv-saved'); if(s)s.textContent='✓ 저장됨';
+  flashSaved('inv-saved'); buildInvTable(cfg); invRecalc();
 }
 
 function drawInvChart(hist){
