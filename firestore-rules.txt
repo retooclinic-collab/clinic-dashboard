@@ -1,6 +1,6 @@
 // ===== Firestore Security Rules for clinic-dashboard =====
 // Firebase Console > Firestore > Rules 에 붙여넣기
-// 2026-06-26 업데이트 (★ draft_imports 블록 복구 추가 — 카드/은행/재고 연동 때 재작성되며 누락됐던 것)
+// 2026-06-27 업데이트 (card_vendor_checks 추가 — 거래처 미확인 메모/확인상태)
 
 rules_version = '2';
 service cloud.firestore {
@@ -93,4 +93,22 @@ service cloud.firestore {
     // ===== 은행 입출금내역 (CODEF 자동수집, 서버=서비스계정만 쓰기) =====
     match /bank_transactions/{doc} {
       allow read: if isAuthenticated();   // 로그인한 직원만 조회
-      allow write: if false;              // 쓰기는 서버(서비스
+      allow write: if false;              // 쓰기는 서버(서비스계정)만 → 외부 쓰기 차단
+    }
+    match /bank_sync_log/{doc} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // ===== 재고자산: 현재고 미러 (Apps Script가 소유자 OAuth로 씀 → 규칙 우회) =====
+    match /inventory_stock/{doc} {
+      allow read: if isAuthenticated();   // 로그인한 직원/원장 조회
+      allow write: if false;              // 클라이언트 쓰기 차단(미러는 IAM 권한으로)
+    }
+    // ===== 재고자산: 일별 평가 스냅샷 (원장 브라우저가 기록) =====
+    match /inventory_value_daily/{doc} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+  }
+}
