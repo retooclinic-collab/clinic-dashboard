@@ -356,6 +356,8 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
       <button class="btn btn-o btn-sm no-print" onclick="loadCardRows(true)">↻ 새로고침</button>
     </div>
     <div id="card-coverage" style="margin-bottom:12px;"></div>
+
+    <div id="card-unknown-banner" style="margin-bottom:12px;"></div>
     <div class="no-print" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;">
       <span style="font-size:12px;color:#475569;font-weight:600;">빠른기간</span>
       <div id="card-preset-btns" style="display:flex;gap:4px;flex-wrap:wrap;">
@@ -760,6 +762,16 @@ try {
     const snap = await getDocs(collection(db, 'card_expenses'));
     const arr = []; snap.forEach(function(d){ arr.push(d.data()); });
     return arr;
+  };
+
+  // ── 거래처 미확인(PG 뭉뚱그림) 확인상태/메모 저장 ──
+  window.fbGetVendorChecks = async function() {
+    const snap = await getDocs(collection(db, 'card_vendor_checks'));
+    const map = {}; snap.forEach(function(d){ map[d.id]=d.data(); }); return map;
+  };
+  window.fbSaveVendorCheck = async function(key, data) {
+    data = data || {}; data.key = key; data.updatedAt = new Date().toISOString();
+    await setDoc(doc(db, 'card_vendor_checks', key), data, { merge:true }); return true;
   };
 
   window.fbGetBankTransactions = async function() {
@@ -2760,6 +2772,75 @@ function goTab(t){
 
 /* === 카드 지출 탭 === */
 var _cardCharts={}, _cardRows=null, _cardGran='month';
+
+/* === 거래처 미확인(PG 뭉뚱그림) 감지·배너·메모 === */
+var _vendorChecks={};            // key -> {resolved, memo}
+var _showResolvedUnknown=false;
+var _PG_CORP={'2208155597':'KG이니시스','4118601799':'토스페이먼츠','1138521083':'NHN KCP','2178114493':'스마트로','2208115770':'PG(미확인)','1208197322':'KSNET','1168119948':'한국정보통신(KICC)'};
+function _cardVendorUnknown(r){
+  var m=String(r.merchant||'').trim();
+  if(/^의약품결제(\(제휴\))?$/.test(m)) return true;
+  if(/^제약.*결제/.test(m)) return true;
+  if(/^전화결제$/.test(m)) return true;
+  if(/^KCP_\d+$/.test(m)) return true;
+  if(/^이니시스\(빌링\)$/.test(m)) return true;
+  return false;
+}
+function _cardPgName(r){ var c=String(r.corpNo||''); return _PG_CORP[c]||(c?('PG:'+c):''); }
+function _vkey(r){ return [r.card||'',r.date||'',r.approvalNo||'',r.amount||0].join('__').replace(/[\/\.#$\[\]]/g,'-'); }
+function _vendorUnknownRows(){ return (_cardRows||[]).filter(function(r){ return r.cancelYN==='정상' && _cardVendorUnknown(r); }); }
+async function toggleVendorResolved(key, cb){
+  var r=(_cardRows||[]).find(function(x){return _vkey(x)===key;})||{};
+  var memo=(document.getElementById('memo_'+key)||{}).value||'';
+  _vendorChecks[key]=_vendorChecks[key]||{}; _vendorChecks[key].resolved=cb.checked; _vendorChecks[key].memo=memo;
+  try{ await window.fbSaveVendorCheck(key, {resolved:cb.checked, memo:memo, card:r.card, date:r.date, amount:r.amount, merchant:r.merchant, approvalNo:r.approvalNo}); }catch(e){ alert('저장 실패: '+e.message); }
+  renderVendorBanner(); renderCardTx();
+}
+async function saveVendorMemo(key){
+  var memo=(document.getElementById('memo_'+key)||{}).value||'';
+  var r=(_cardRows||[]).find(function(x){return _vkey(x)===key;})||{};
+  _vendorChecks[key]=_vendorChecks[key]||{}; _vendorChecks[key].memo=memo;
+  try{ await window.fbSaveVendorCheck(key, {memo:memo, resolved:!!_vendorChecks[key].resolved, card:r.card, date:r.date, amount:r.amount, merchant:r.merchant, approvalNo:r.approvalNo}); var s=document.getElementById('memostat_'+key); if(s){ s.textContent='저장됨'; setTimeout(function(){s.textContent='';},1500);} renderCardTx(); }catch(e){ alert('저장 실패: '+e.message); }
+}
+function toggleShowResolved(){ _showResolvedUnknown=!_showResolvedUnknown; renderVendorBanner(); }
+function renderVendorBanner(){
+  var el=document.getElementById('card-unknown-banner'); if(!el) return;
+  var won=function(n){return (n||0).toLocaleString('ko-KR')+'원';};
+  var rows=_vendorUnknownRows().sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
+  if(!rows.length){ el.innerHTML=''; return; }
+  var unresolved=rows.filter(function(r){ return !(_vendorChecks[_vkey(r)]||{}).resolved; });
+  var shown=_showResolvedUnknown?rows:unresolved;
+  var bg=unresolved.length?'#fff7ed':'#f0fdf4', bd=unresolved.length?'#fdba74':'#86efac', fg=unresolved.length?'#c2410c':'#15803d';
+  var head='<div style="background:'+bg+';border:1px solid '+bd+';border-radius:10px;padding:12px 14px;">'
+    +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+    +'<span style="font-size:14px;font-weight:800;color:'+fg+';">'+(unresolved.length?('⚠️ 거래처 미확인 '+unresolved.length+'건 — 확인 필요'):'✅ 거래처 미확인 0건 (모두 확인됨)')+'</span>'
+    +'<span style="font-size:12px;color:#64748b;">전체 '+rows.length+'건 · 미확인분 합계 '+won(unresolved.reduce(function(s,r){return s+(r.amount||0);},0))+'</span>'
+    +'<button class="btn btn-o btn-sm no-print" style="margin-left:auto;" onclick="toggleShowResolved()">'+(_showResolvedUnknown?'미확인만 보기':'확인완료 포함 보기')+'</button>'
+    +'<button class="btn btn-o btn-sm no-print" onclick="exportVendorUnknownCsv()">⬇ CSV</button></div>';
+  var body='<div style="margin-top:10px;max-height:340px;overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="position:sticky;top:0;background:'+bg+';color:#64748b;text-align:left;"><th style="padding:5px 6px;">날짜</th><th style="padding:5px 6px;">카드</th><th style="padding:5px 6px;">라벨</th><th style="padding:5px 6px;text-align:right;">금액</th><th style="padding:5px 6px;">PG사</th><th style="padding:5px 6px;">승인번호</th><th style="padding:5px 6px;">메모(세무팀 전달용)</th><th style="padding:5px 6px;text-align:center;">확인완료</th></tr></thead><tbody>';
+  shown.forEach(function(r){ var k=_vkey(r); var vc=_vendorChecks[k]||{};
+    body+='<tr style="border-bottom:1px solid #f1f5f9;'+(vc.resolved?'opacity:.5;':'')+'">'
+      +'<td style="padding:5px 6px;white-space:nowrap;">'+(r.date||'')+'</td>'
+      +'<td style="padding:5px 6px;white-space:nowrap;">'+(r.card||'')+'</td>'
+      +'<td style="padding:5px 6px;white-space:nowrap;">'+(r.merchant||'')+'</td>'
+      +'<td style="padding:5px 6px;text-align:right;font-weight:600;white-space:nowrap;">'+won(r.amount)+'</td>'
+      +'<td style="padding:5px 6px;white-space:nowrap;color:#64748b;">'+_cardPgName(r)+'</td>'
+      +'<td style="padding:5px 6px;white-space:nowrap;color:#64748b;">'+(r.approvalNo||'')+'</td>'
+      +'<td style="padding:5px 6px;"><input id="memo_'+k+'" value="'+String(vc.memo||'').replace(/"/g,'&quot;')+'" placeholder="실제 거래처/내용" style="width:150px;padding:3px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;"><button class="btn btn-o btn-sm" style="margin-left:4px;" onclick="saveVendorMemo(\''+k+'\')">저장</button><span id="memostat_'+k+'" style="font-size:11px;color:#16a34a;margin-left:4px;"></span></td>'
+      +'<td style="padding:5px 6px;text-align:center;"><input type="checkbox" '+(vc.resolved?'checked':'')+' onchange="toggleVendorResolved(\''+k+'\',this)"></td></tr>';
+  });
+  body+='</tbody></table></div>';
+  var note='<div style="margin-top:8px;font-size:11px;color:#94a3b8;line-height:1.7;">PG(결제대행)만 찍혀 실제 거래처가 특정 안 되는 건입니다. 홈택스 매입세금계산서(날짜·금액 매칭) 또는 카드사 매출전표(승인번호)로 확인 → 메모에 기록하고 확인완료 체크하면 다음부터 숨겨집니다.</div>';
+  el.innerHTML=head+body+note+'</div>';
+}
+function exportVendorUnknownCsv(){
+  var rows=_vendorUnknownRows().sort(function(a,b){return (a.date||'').localeCompare(b.date||'');});
+  var esc=function(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+  var lines=[['날짜','카드','라벨','금액','PG사','PG사업자번호','승인번호','메모','확인완료'].join(',')];
+  rows.forEach(function(r){ var vc=_vendorChecks[_vkey(r)]||{}; lines.push([r.date,r.card,r.merchant,r.amount,_cardPgName(r),r.corpNo,r.approvalNo,vc.memo||'',vc.resolved?'Y':''].map(esc).join(',')); });
+  var blob=new Blob(['﻿'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob), a=document.createElement('a'); a.href=url; a.download='거래처미확인_목록.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
 /* 같은 결제가 VAN/PG명 + 실가맹점명 두 줄로 들어오는 카드사 중복 제거.
    같은 카드·날짜·시각·금액·승인번호면 1건으로 합치고, 더 구체적(긴) 가맹점명을 유지. 승인번호 없으면 합치지 않음(안전). */
 function _dedupeCard(rows){
@@ -2783,6 +2864,8 @@ async function loadCardRows(force){
     try{ _cardRows=_dedupeCard(await window.fbGetCardExpenses()); }
     catch(e){ kpi.innerHTML='<div style="color:#ef4444;">조회 실패: '+e.message+'</div>'; return; }
   }
+  try{ _vendorChecks = (window.fbGetVendorChecks? await window.fbGetVendorChecks(): {}) || {}; }catch(e){ _vendorChecks={}; }
+  renderVendorBanner();
   setGranActive();
   cardPreset('month');
   cardTxPreset('month');
@@ -2906,7 +2989,7 @@ function renderCardTx(){
     h+='<tr style="border-bottom:1px solid #f1f5f9;">'
       +'<td style="padding:5px 6px;white-space:nowrap;">'+(r.date||'')+'</td>'
       +'<td style="padding:5px 6px;white-space:nowrap;">'+(r.card||'')+'</td>'
-      +'<td style="padding:5px 6px;">'+(r.merchant||'')+'</td>'
+      +'<td style="padding:5px 6px;">'+(r.merchant||'')+(_cardVendorUnknown(r)?(' <span style="font-size:10px;color:#c2410c;background:#fff7ed;border:1px solid #fdba74;border-radius:4px;padding:0 4px;white-space:nowrap;">⚠미확인'+((_vendorChecks[_vkey(r)]||{}).resolved?'✓':'')+'</span>'+(((_vendorChecks[_vkey(r)]||{}).memo)?(' <span style="font-size:10px;color:#16a34a;">['+(_vendorChecks[_vkey(r)].memo)+']</span>'):'')):'')+'</td>'
       +'<td style="padding:5px 6px;text-align:right;font-weight:600;white-space:nowrap;">'+won(r.amount)+'</td>'
       +'<td style="padding:5px 6px;white-space:nowrap;color:#64748b;">'+pay+'</td>'
       +'<td style="padding:5px 6px;white-space:nowrap;color:#64748b;">'+(r.category||'')+'</td></tr>';
@@ -2969,21 +3052,26 @@ function applyBankFilter(){
   var ok=_bankRows.filter(function(r){ if(from&&(r.date||'')<from) return false; if(to&&(r.date||'')>to) return false; return true; });
   var kpi=document.getElementById('bank-kpi');
   if(!ok.length){ kpi.innerHTML='<div style="color:#64748b;">선택 기간에 데이터가 없습니다.</div>'; try{if(_bankCharts.cat)_bankCharts.cat.destroy();if(_bankCharts.mon)_bankCharts.mon.destroy();}catch(e){} ['bank-cat-table','bank-cp-table','bank-acct-table'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';}); return; }
-  var inSum=ok.filter(function(r){return r.inout==='입금';}).reduce(function(s,r){return s+(r.amount||0);},0);
-  var outSum=ok.filter(function(r){return r.inout==='출금';}).reduce(function(s,r){return s+(r.amount||0);},0);
+  // ── 자전거래(대표 자금이동) 제외 ── cfSelf=김재림 송금 전부 + 청담리투의원 타행송금. 경영분석 ⑤⑥와 동일기준으로 통일 (2026-06-27)
+  var _selfRows=ok.filter(cfSelf), okNS=ok.filter(function(r){return !cfSelf(r);});
+  var _selfOutRows=_selfRows.filter(function(r){return r.inout==='출금';}), _selfInRows=_selfRows.filter(function(r){return r.inout==='입금';});
+  var _selfOut=_selfOutRows.reduce(function(s,r){return s+(r.amount||0);},0), _selfIn=_selfInRows.reduce(function(s,r){return s+(r.amount||0);},0);
+  var inSum=okNS.filter(function(r){return r.inout==='입금';}).reduce(function(s,r){return s+(r.amount||0);},0);
+  var outSum=okNS.filter(function(r){return r.inout==='출금';}).reduce(function(s,r){return s+(r.amount||0);},0);
   var net=inSum-outSum;
   // 기말잔액: 계좌별 최신 거래의 balanceAfter 합 (전체 데이터 기준)
   var latest={}; _bankRows.forEach(function(r){ var a=r.account||r.bank||'?'; var k=(r.date||'')+(r.time||''); if(!latest[a]||k>latest[a].k) latest[a]={k:k,bal:(r.balanceAfter||0)}; });
   var endBal=Object.keys(latest).reduce(function(s,a){return s+(latest[a].bal||0);},0);
   function kc(t,v,col){return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:120px;"><div style="font-size:11px;color:#64748b;">'+t+'</div><div style="font-size:18px;font-weight:800;margin-top:2px;'+(col?'color:'+col+';':'')+'">'+v+'</div></div>';}
-  kpi.innerHTML=kc('총수입(입금)',won(inSum),'#16a34a')+kc('총지출(출금)',won(outSum),'#dc2626')+kc('순현금흐름',(net<0?'-':'')+won(Math.abs(net)),net<0?'#dc2626':'#16a34a')+kc('기말잔액',won(endBal))+kc('건수',ok.length.toLocaleString());
+  var _selfNote=_selfRows.length?('<div style="flex-basis:100%;width:100%;font-size:11px;color:#94a3b8;margin-top:6px;line-height:1.5;">※ <b>자전거래 제외됨</b> — 총지출·총수입·TOP15·카테고리·계좌·차트 모든 집계에서 빠짐. 판정기준 cfSelf(<b>김재림 송금 전부</b> + <b>청담리투의원 타행송금</b>). 제외 출금 '+_selfOutRows.length+'건 '+won(_selfOut)+(_selfIn?(' · 제외 입금 '+_selfInRows.length+'건 '+won(_selfIn)):'')+'. (경영분석 ⑤⑥ 기준과 동일 · ⚠️ "대체" 덩어리 속 카드대금 등 실지출은 제외 안 됨)</div>'):'';
+  kpi.innerHTML=kc('총수입(입금)',won(inSum),'#16a34a')+kc('총지출(출금)',won(outSum),'#dc2626')+kc('순현금흐름',(net<0?'-':'')+won(Math.abs(net)),net<0?'#dc2626':'#16a34a')+kc('기말잔액',won(endBal))+kc('건수',okNS.length.toLocaleString())+_selfNote;
   function agg(rows,keyFn){var m={};rows.forEach(function(r){var k=keyFn(r)||'(기타)';if(!m[k])m[k]={sum:0,cnt:0};m[k].sum+=(r.amount||0);m[k].cnt++;});return m;}
-  var outRows=ok.filter(function(r){return r.inout==='출금';});
+  var outRows=okNS.filter(function(r){return r.inout==='출금';});
   var byCat=agg(outRows,function(r){return r.category;});
   var byCp=agg(outRows,function(r){return r.counterparty||r.desc;});
-  var byAcct=agg(ok,function(r){return r.account||r.bank;});
+  var byAcct=agg(okNS,function(r){return r.account||r.bank;});
   var gran=_bankGran;
-  var byTin=agg(ok.filter(function(r){return r.inout==='입금';}),function(r){ var d=r.date||''; if(!d) return ''; if(gran==='month') return d.slice(0,7); if(gran==='day') return d; return bankWeekKey(d); });
+  var byTin=agg(okNS.filter(function(r){return r.inout==='입금';}),function(r){ var d=r.date||''; if(!d) return ''; if(gran==='month') return d.slice(0,7); if(gran==='day') return d; return bankWeekKey(d); });
   var byTout=agg(outRows,function(r){ var d=r.date||''; if(!d) return ''; if(gran==='month') return d.slice(0,7); if(gran==='day') return d; return bankWeekKey(d); });
   var tKeys={}; Object.keys(byTin).forEach(function(k){if(k)tKeys[k]=1;}); Object.keys(byTout).forEach(function(k){if(k)tKeys[k]=1;}); tKeys=Object.keys(tKeys).sort();
   var catArr=Object.keys(byCat).map(function(k){return [k,byCat[k].sum,byCat[k].cnt];}).sort(function(a,b){return b[1]-a[1];});

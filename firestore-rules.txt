@@ -1,6 +1,6 @@
 // ===== Firestore Security Rules for clinic-dashboard =====
 // Firebase Console > Firestore > Rules 에 붙여넣기
-// 2026-04-06 업데이트
+// 2026-06-26 업데이트 (★ draft_imports 블록 복구 추가 — 카드/은행/재고 연동 때 재작성되며 누락됐던 것)
 
 rules_version = '2';
 service cloud.firestore {
@@ -30,6 +30,13 @@ service cloud.firestore {
 
       // 하드삭제: 관리자만
       allow delete: if isAdmin();
+    }
+
+    // draft_imports 컬렉션 (파싱 초안 — 확정 전 임시 데이터)
+    // ★ 2026-06-26 복구: 카드/은행/재고 규칙 재작성 때 누락돼 초안 탭이 권한오류 났던 것
+    match /draft_imports/{docId} {
+      // 읽기/쓰기: 로그인한 사용자 (초안 파싱 워크플로우)
+      allow read, write: if isAuthenticated();
     }
 
     // audit_log 컬렉션 (감사 로그)
@@ -68,5 +75,22 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (request.auth.uid == uid || isAdmin());
       allow write: if isAdmin();
     }
-  }
-}
+
+    // ===== 카드 결제내역 (CODEF 자동수집, 서버=서비스계정만 쓰기) =====
+    match /card_expenses/{doc} {
+      allow read: if isAuthenticated();   // 로그인한 직원만 조회
+      allow write: if false;              // 쓰기는 서버(서비스계정)만 → 외부 쓰기 차단
+    }
+    match /card_sync_log/{doc} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+    // 거래처 미확인(PG 뭉뚱그림) 확인상태/메모 — 로그인 사용자 읽기/쓰기 (메모만 저장)
+    match /card_vendor_checks/{doc} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // ===== 은행 입출금내역 (CODEF 자동수집, 서버=서비스계정만 쓰기) =====
+    match /bank_transactions/{doc} {
+      allow read: if isAuthenticated();   // 로그인한 직원만 조회
+      allow write: if false;              // 쓰기는 서버(서비스
