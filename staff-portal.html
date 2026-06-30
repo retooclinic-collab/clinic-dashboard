@@ -359,7 +359,7 @@ body{background:var(--bg);color:var(--text);font-family:'Pretendard',sans-serif;
             <option value="중국(강)">중국(강)</option>
             <option value="중국(따)">중국(따)</option>
             <option value="중국(기타)">중국(기타)</option>
-            <option value="중국원내">중국원내</option>
+            <option value="중국(원내)">중국(원내)</option>
             <option value="일본(통)">일본(통)</option>
             <option value="외국인">외국인</option>
             <option value="예약금">예약금</option>
@@ -985,10 +985,22 @@ const CAT2_MAP = {
   '중국(강)':[],
   '중국(따)':[],
   '중국(기타)':['편화','미원','동호','기타(직접입력)'],
-  '중국원내':[],
+  '중국(원내)':[],
   '일본(통)':[],
   '외국인':['인터넷','유튜브','인스타그램','구환소개','워크인','원장님지인','기타(직접입력)'],
 };
+
+/* 내원경로(cat1) 별칭 통일 — 같은 경로의 다른 표기를 표준형으로 정규화 (2026-06-30) */
+const ROUTE_ALIAS = {
+  '중국원내':'중국(원내)',   // 괄호 없는 변형 → 표준 괄호형
+  '중국(미원)':'중국(기타)'  // 오타/소수 변형 → 중국(기타)로 흡수
+};
+function normalizeCat1(s){
+  if(s==null) return '';
+  const v = String(s).replace(/[​-‍﻿]/g,'').replace(/（/g,'(').replace(/）/g,')').trim();
+  return ROUTE_ALIAS[v] || v;
+}
+window.normalizeCat1 = normalizeCat1;
 
 function updateCat2(){
   const cat1 = document.getElementById('f-cat1').value;
@@ -5248,7 +5260,7 @@ function processImportText(text){
       date,
       chart: chart.trim(),
       name:  name.trim(),
-      cat1:  cat1.trim(),
+      cat1:  normalizeCat1(cat1),
       cat2:  cat2.trim(),
       payText,
       amount: finalAmt,
@@ -5480,7 +5492,7 @@ function processBackupCSV(text){
     const date    = get('date');
     const chart   = get('chart');
     const name    = get('name');
-    const cat1    = get('cat1');
+    const cat1    = normalizeCat1(get('cat1'));
     const cat2    = get('cat2');
     const payText = get('payText');
     const amount  = parseFloat(get('amount').replace(/^[,，]+/,''))||0;
@@ -5908,7 +5920,7 @@ function openImportEditModal(idx){
 
   const STAFF_LIST = ((window.NAMES && window.NAMES.staffList && window.NAMES.staffList.length) ? window.NAMES.staffList : ((window.NAMES && window.NAMES.staffSelect) || []));
   const STAFF_ALL = [...STAFF_LIST, ...((window.NAMES && window.NAMES.staffAllExtra) || [])];
-  const CAT1_LIST = ['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국원내','일본(통)','외국인','예약금'];
+  const CAT1_LIST = ['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국(원내)','일본(통)','외국인','예약금'];
   const DOCTORS = ((window.NAMES && window.NAMES.doctors && window.NAMES.doctors.length) ? window.NAMES.doctors : ((window.NAMES && window.NAMES.doctorSelect) || []));
 
   modal.innerHTML = `
@@ -6122,7 +6134,7 @@ function saveImportRow(idx){
   r.chart   = document.getElementById('ie-chart').value.trim();
   r.name    = document.getElementById('ie-name').value.trim();
   r.doctor  = document.getElementById('ie-doctor').value;
-  r.cat1    = document.getElementById('ie-cat1').value;
+  r.cat1    = normalizeCat1(document.getElementById('ie-cat1').value);
   r.cat2    = document.getElementById('ie-cat2').value.trim();
   r.staff   = document.getElementById('ie-staff').value;
   r.payText = document.getElementById('ie-paytext').value.trim();
@@ -6227,7 +6239,7 @@ async function confirmImport(){
         date: r.date,
         chart: r.chart || r.chartNo || '',
         name: r.name,
-        cat1: r.cat1 || r.category1 || '',
+        cat1: normalizeCat1(r.cat1 || r.category1 || ''),
         cat2: r.cat2 || r.category2 || '',
         staff: mapStaff(r.staff || r.consultant || '') || r.staff || '',
         doctor: r.doctor||'',
@@ -7413,7 +7425,7 @@ function openEditModal(id){
         <div>
           <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류1</div>
           <select id="edit-cat1" class="form-select">
-            ${['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국원내','일본(통)','외국인'].map(o=>`<option value="${o}" ${item.cat1===o?'selected':''}>${o}</option>`).join('')}
+            ${['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국(원내)','일본(통)','외국인'].map(o=>`<option value="${o}" ${item.cat1===o?'selected':''}>${o}</option>`).join('')}
           </select>
         </div>
         <div>
