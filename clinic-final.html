@@ -3124,12 +3124,18 @@ async function loadAllDaily(){
 }
 
 /* 내원경로 정규화: 공백/전각괄호/제로폭 문자 차이로 갈라진 변형을 하나로 합침 */
+/* 경로 별칭(canonical) 통일 맵 — 같은 내원경로의 다른 표기를 하나로 합침 (2026-06-30) */
+var ROUTE_ALIAS={
+  '중국원내':'중국(원내)',   // 괄호 없는 변형 → 표준 괄호형
+  '중국(미원)':'중국(기타)'  // 오타/소수 변형 → 중국(기타)로 흡수
+};
 function normRoute(s){
   if(s==null) return '';
-  return String(s)
+  var v=String(s)
     .replace(/[​-‍﻿]/g,'')
     .replace(/（/g,'(').replace(/）/g,')')
     .replace(/[\s 　]+/g,'');
+  return ROUTE_ALIAS[v]||v;
 }
 function populateDailyFilters(){
   var staffs={}, cats={}, doctors={};
