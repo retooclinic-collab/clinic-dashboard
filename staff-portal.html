@@ -5945,11 +5945,11 @@ function openImportEditModal(idx){
           </select></div>
         <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류1</div>
           <select id="ie-cat1" class="form-select" onchange="window._ieUpdateCat2()">
-            ${CAT1_LIST.map(o=>`<option value="${o}" ${r.cat1===o?'selected':''}>${o}</option>`).join('')}
+            ${(function(){var c1=normalizeCat1(r.cat1||'');var opts=CAT1_LIST.map(o=>`<option value="${o}" ${c1===o?'selected':''}>${o}</option>`).join('');if(c1&&CAT1_LIST.indexOf(c1)<0){opts=`<option value="${c1}" selected>${c1} (비표준)</option>`+opts;}else if(!c1){opts=`<option value="" selected>(미지정)</option>`+opts;}return opts;})()}
           </select></div>
-        <div id="ie-cat2-wrap" style="${(CAT2_MAP[r.cat1]||[]).length?'':'display:none'}"><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류2</div>
+        <div id="ie-cat2-wrap" style="${(CAT2_MAP[normalizeCat1(r.cat1||'')]||[]).length?'':'display:none'}"><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류2</div>
           <input id="ie-cat2" type="text" class="form-input" value="${r.cat2||''}" list="ie-cat2-datalist" autocomplete="off">
-          <datalist id="ie-cat2-datalist">${(CAT2_MAP[r.cat1]||[]).map(o=>'<option value="'+o+'">').join('')}</datalist></div>
+          <datalist id="ie-cat2-datalist">${(CAT2_MAP[normalizeCat1(r.cat1||'')]||[]).map(o=>'<option value="'+o+'">').join('')}</datalist></div>
         <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">결제금액(만)</div>
           <input id="ie-amount" type="number" step="0.1" class="form-input" value="${r.amount||''}"></div>
         <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">상담직원</div>
@@ -7426,7 +7426,7 @@ function openEditModal(id){
         <div>
           <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류1</div>
           <select id="edit-cat1" class="form-select">
-            ${['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국(원내)','일본(통)','외국인'].map(o=>`<option value="${o}" ${item.cat1===o?'selected':''}>${o}</option>`).join('')}
+            ${(function(){var L=['국내신환','국내구환','중국(마)','중국(강)','중국(따)','중국(기타)','중국(원내)','일본(통)','외국인','예약금'];var c1=normalizeCat1(item.cat1||'');var opts=L.map(o=>`<option value="${o}" ${c1===o?'selected':''}>${o}</option>`).join('');if(c1&&L.indexOf(c1)<0){opts=`<option value="${c1}" selected>${c1} (비표준)</option>`+opts;}else if(!c1){opts=`<option value="" selected>(미지정)</option>`+opts;}return opts;})()}
           </select>
         </div>
         <div>
