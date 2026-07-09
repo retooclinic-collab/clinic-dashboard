@@ -5941,7 +5941,8 @@ function openImportEditModal(idx){
         <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">진료의사</div>
           <select id="ie-doctor" class="form-select">
             ${DOCTORS.map(d=>`<option value="${d}" ${r.doctor===d?'selected':''}>${d}</option>`).join('')}
-            <option value="">기록없음</option>
+            ${((r.doctor||'').trim()&&DOCTORS.indexOf(r.doctor)<0)?`<option value="${r.doctor}" selected>${r.doctor} (비표준)</option>`:''}
+            <option value="" ${!(r.doctor||'').trim()?'selected':''}>기록없음</option>
           </select></div>
         <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">분류1</div>
           <select id="ie-cat1" class="form-select" onchange="window._ieUpdateCat2()">
@@ -5954,6 +5955,7 @@ function openImportEditModal(idx){
           <input id="ie-amount" type="number" step="0.1" class="form-input" value="${r.amount||''}"></div>
         <div><div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">상담직원</div>
           <select id="ie-staff" class="form-select">
+            ${(function(){var st=(r.staff||'').trim();if(!st)return `<option value="" selected>(미지정)</option>`;if(STAFF_ALL.indexOf(st)<0)return `<option value="${st}" selected>${st} (비표준)</option><option value="">(미지정)</option>`;return `<option value="">(미지정)</option>`;})()}
             <optgroup label="현직">
               ${STAFF_LIST.map(s=>`<option value="${s}" ${r.staff===s?'selected':''}>${s}</option>`).join('')}
             </optgroup>
@@ -7440,6 +7442,7 @@ function openEditModal(id){
         <div>
           <div class="form-label" style="font-size:11px;color:var(--muted);margin-bottom:4px">상담직원</div>
           <select id="edit-staff" class="form-select">
+            ${(function(){var st=(item.staff||'').trim();var L=(((window.NAMES&&window.NAMES.staffList&&window.NAMES.staffList.length)?window.NAMES.staffList:((window.NAMES&&window.NAMES.staffSelect)||[]))).concat((window.NAMES&&window.NAMES.staffAllExtra)||[]);if(!st)return `<option value="" selected>(미지정)</option>`;if(L.indexOf(st)<0)return `<option value="${st}" selected>${st} (비표준)</option><option value="">(미지정)</option>`;return `<option value="">(미지정)</option>`;})()}
             <optgroup label="현직">
               ${(((window.NAMES&&window.NAMES.staffList&&window.NAMES.staffList.length)?window.NAMES.staffList:((window.NAMES&&window.NAMES.staffSelect)||[]))).map(s=>`<option value="${s}" ${(item.staff||'')==s?'selected':''}>${s}</option>`).join('')}
             </optgroup>
