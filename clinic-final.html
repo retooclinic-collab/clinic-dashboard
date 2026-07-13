@@ -1871,7 +1871,7 @@ async function refreshTrendFromDB(){
 var CF_AGENCY=['비주얼제이','박선하','비요네즈','JIN TAIGEN','목금미여','에스큐뷰티','아이메이그룹','HAN DAN','신화월드투어'];
 var CF_CAPEX=['아베크디자','제이알케이','올포메디홀딩스','애거슨','메디컬노바','아이벡스메디칼','서울시스템에어','이원오엠에스','골지어스'];
 function cfHit(r,arr){var s=(r.counterparty||'')+' '+(r.desc||'');return arr.some(function(a){return s.indexOf(a)>=0;});}
-function cfSelf(r){var cp=(r.counterparty||'');var s=cp+' '+(r.desc||'');return cp.indexOf('김재림')>=0||(cp==='청담리투의원'&&s.indexOf('타행송금')>=0);}
+function cfSelf(r){var cp=(r.counterparty||'');var s=cp+' '+(r.desc||'');return cp.indexOf('김재림')>=0||(cp==='청담리투의원'&&s.indexOf('타행송금')>=0)||(s.indexOf('제이알케이')>=0&&(r.amount||0)>=50000000);}
 function cfMonthKey(lbl){var m=String(lbl||'').match(/(\d{4})\D*?(\d{1,2})\s*월/);if(!m)return null;return m[1]+'-'+('0'+m[2]).slice(-2);}
 function getFixedExCard(){var t=getFixedTotal();var list=(typeof getFixedList==='function')?getFixedList():[];var ci=0;list.forEach(function(f){if(f&&!f.isSep&&/삼성카드/.test(f.name||''))ci+=(f.amount||0);});return t-ci;}
 async function cfLoad(force){
@@ -3052,7 +3052,7 @@ function applyBankFilter(){
   var ok=_bankRows.filter(function(r){ if(from&&(r.date||'')<from) return false; if(to&&(r.date||'')>to) return false; return true; });
   var kpi=document.getElementById('bank-kpi');
   if(!ok.length){ kpi.innerHTML='<div style="color:#64748b;">선택 기간에 데이터가 없습니다.</div>'; try{if(_bankCharts.cat)_bankCharts.cat.destroy();if(_bankCharts.mon)_bankCharts.mon.destroy();}catch(e){} ['bank-cat-table','bank-cp-table','bank-acct-table'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';}); return; }
-  // ── 자전거래(대표 자금이동) 제외 ── cfSelf=김재림 송금 전부 + 청담리투의원 타행송금. 경영분석 ⑤⑥와 동일기준으로 통일 (2026-06-27)
+  // ── 자전거래(대표 자금이동) 제외 ── cfSelf=김재림 송금 전부 + 청담리투의원 타행송금 + 제이알케이 5천만원 이상 이체(2026-07-13 추가). 경영분석 ⑤⑥와 동일기준으로 통일 (2026-06-27)
   var _selfRows=ok.filter(cfSelf), okNS=ok.filter(function(r){return !cfSelf(r);});
   var _selfOutRows=_selfRows.filter(function(r){return r.inout==='출금';}), _selfInRows=_selfRows.filter(function(r){return r.inout==='입금';});
   var _selfOut=_selfOutRows.reduce(function(s,r){return s+(r.amount||0);},0), _selfIn=_selfInRows.reduce(function(s,r){return s+(r.amount||0);},0);
@@ -3063,7 +3063,7 @@ function applyBankFilter(){
   var latest={}; _bankRows.forEach(function(r){ var a=r.account||r.bank||'?'; var k=(r.date||'')+(r.time||''); if(!latest[a]||k>latest[a].k) latest[a]={k:k,bal:(r.balanceAfter||0)}; });
   var endBal=Object.keys(latest).reduce(function(s,a){return s+(latest[a].bal||0);},0);
   function kc(t,v,col){return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:120px;"><div style="font-size:11px;color:#64748b;">'+t+'</div><div style="font-size:18px;font-weight:800;margin-top:2px;'+(col?'color:'+col+';':'')+'">'+v+'</div></div>';}
-  var _selfNote=_selfRows.length?('<div style="flex-basis:100%;width:100%;font-size:11px;color:#94a3b8;margin-top:6px;line-height:1.5;">※ <b>자전거래 제외됨</b> — 총지출·총수입·TOP15·카테고리·계좌·차트 모든 집계에서 빠짐. 판정기준 cfSelf(<b>김재림 송금 전부</b> + <b>청담리투의원 타행송금</b>). 제외 출금 '+_selfOutRows.length+'건 '+won(_selfOut)+(_selfIn?(' · 제외 입금 '+_selfInRows.length+'건 '+won(_selfIn)):'')+'. (경영분석 ⑤⑥ 기준과 동일 · ⚠️ "대체" 덩어리 속 카드대금 등 실지출은 제외 안 됨)</div>'):'';
+  var _selfNote=_selfRows.length?('<div style="flex-basis:100%;width:100%;font-size:11px;color:#94a3b8;margin-top:6px;line-height:1.5;">※ <b>자전거래 제외됨</b> — 총지출·총수입·TOP15·카테고리·계좌·차트 모든 집계에서 빠짐. 판정기준 cfSelf(<b>김재림 송금 전부</b> + <b>청담리투의원 타행송금</b> + <b>제이알케이 5천만원↑ 이체</b>). 제외 출금 '+_selfOutRows.length+'건 '+won(_selfOut)+(_selfIn?(' · 제외 입금 '+_selfInRows.length+'건 '+won(_selfIn)):'')+'. (경영분석 ⑤⑥ 기준과 동일 · ⚠️ "대체" 덩어리 속 카드대금 등 실지출은 제외 안 됨)</div>'):'';
   kpi.innerHTML=kc('총수입(입금)',won(inSum),'#16a34a')+kc('총지출(출금)',won(outSum),'#dc2626')+kc('순현금흐름',(net<0?'-':'')+won(Math.abs(net)),net<0?'#dc2626':'#16a34a')+kc('기말잔액',won(endBal))+kc('건수',okNS.length.toLocaleString())+_selfNote;
   function agg(rows,keyFn){var m={};rows.forEach(function(r){var k=keyFn(r)||'(기타)';if(!m[k])m[k]={sum:0,cnt:0};m[k].sum+=(r.amount||0);m[k].cnt++;});return m;}
   var outRows=okNS.filter(function(r){return r.inout==='출금';});
