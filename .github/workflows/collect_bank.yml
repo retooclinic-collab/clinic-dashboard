@@ -1,0 +1,43 @@
+# 저장소의 .github/workflows/collect_bank.yml 위치에 두세요.
+# (collector_bank.py / requirements.txt 는 카드와 동일하게 저장소 루트에 둡니다)
+name: bank-collect-daily
+
+on:
+  schedule:
+    - cron: "20 21 * * *"   # 매일 06:20 KST (카드 06:00 이후). UTC 21:20
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "조회 일수 (평소 14, 과거 전체 백필은 600)"
+        default: "14"
+        required: false
+      debug:
+        description: "원본 응답 덤프(필드명 확인, 1=on)"
+        default: "0"
+        required: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install
+        run: pip install -r requirements.txt
+      - name: run bank collector
+        env:
+          CODEF_ENV:          "demo"
+          CODEF_CLIENT_ID:    ${{ secrets.CODEF_CLIENT_ID }}
+          CODEF_CLIENT_SECRET: ${{ secrets.CODEF_CLIENT_SECRET }}
+          CODEF_PUBLIC_KEY:   ${{ secrets.CODEF_PUBLIC_KEY }}
+          CODEF_CONNECTED_ID: ${{ secrets.CODEF_CONNECTED_ID }}
+          CODEF_BIRTHDATE:    ${{ secrets.CODEF_BIRTHDATE }}
+          BANK_HANA_ACCTPW:   ${{ secrets.BANK_HANA_ACCTPW }}
+          BANK_BUSAN_ACCTPW:  ${{ secrets.BANK_BUSAN_ACCTPW }}
+          FIREBASE_SA_JSON:   ${{ secrets.FIREBASE_SA_JSON }}
+          LOOKBACK_DAYS:      ${{ github.event.inputs.lookback_days || '14' }}
+          BANK_DEBUG:         ${{ github.event.inputs.debug || '0' }}
+          FIRESTORE_COLLECTION: "bank_transactions"
+        run: python collector_bank.py
