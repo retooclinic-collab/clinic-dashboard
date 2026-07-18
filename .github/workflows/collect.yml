@@ -1,0 +1,42 @@
+# 이 파일을 깃허브 저장소의 .github/workflows/collect.yml 위치에 두세요.
+name: card-collect-daily
+
+on:
+  schedule:
+    - cron: "0 21 * * *"   # 매일 06:00 KST (UTC 21:00)
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "조회 일수 (평소 14, 과거 전체 백필은 600, 현대2년은 730)"
+        default: "14"
+        required: false
+      hd_confirmed:
+        description: "현대 2년 결제확정 모드 (백필=1, 평소=0)"
+        default: "0"
+        required: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install
+        run: pip install -r requirements.txt
+      - name: run collector
+        env:
+          CODEF_ENV:         "demo"
+          CODEF_CLIENT_ID:   ${{ secrets.CODEF_CLIENT_ID }}
+          CODEF_CLIENT_SECRET: ${{ secrets.CODEF_CLIENT_SECRET }}
+          CODEF_PUBLIC_KEY:  ${{ secrets.CODEF_PUBLIC_KEY }}
+          CODEF_CONNECTED_ID: ${{ secrets.CODEF_CONNECTED_ID }}
+          CODEF_BIRTHDATE:   ${{ secrets.CODEF_BIRTHDATE }}
+          HD_CARDNO:         ${{ secrets.HD_CARDNO }}
+          HD_CARDPW:         ${{ secrets.HD_CARDPW }}
+          FIREBASE_SA_JSON:  ${{ secrets.FIREBASE_SA_JSON }}
+          LOOKBACK_DAYS:     ${{ github.event.inputs.lookback_days || '14' }}
+          HD_CONFIRMED:      ${{ github.event.inputs.hd_confirmed || '0' }}
+          FIRESTORE_COLLECTION: "card_expenses"
+        run: python collector.py
