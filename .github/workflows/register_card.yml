@@ -1,0 +1,24 @@
+name: register-card-0305
+on:
+  workflow_dispatch:
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install easycodefpy
+      - name: Register/update BC(0305) and test approval-list
+        env:
+          CODEF_ENV: demo
+          CODEF_CLIENT_ID: ${{ secrets.CODEF_CLIENT_ID }}
+          CODEF_CLIENT_SECRET: ${{ secrets.CODEF_CLIENT_SECRET }}
+          CODEF_PUBLIC_KEY: ${{ secrets.CODEF_PUBLIC_KEY }}
+          CODEF_CONNECTED_ID: ${{ secrets.CODEF_CONNECTED_ID }}
+          CODEF_BIRTHDATE: ${{ secrets.CODEF_BIRTHDATE }}
+          BC_ID: ${{ secrets.BC_ID }}
+          BC_PW: ${{ secrets.BC_PW }}
+        run: python register_card_0305.py
