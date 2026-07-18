@@ -1,0 +1,40 @@
+# 저장소의 .github/workflows/register_bank.yml 위치에 두세요.
+# 하나·부산 기업뱅킹 계좌를 CODEF에 1회 등록 (공동인증서 방식). 수동 실행 전용.
+name: bank-register
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install
+        run: pip install -r requirements.txt
+      - name: register bank accounts
+        env:
+          CODEF_ENV:          "demo"
+          CODEF_CLIENT_ID:    ${{ secrets.CODEF_CLIENT_ID }}
+          CODEF_CLIENT_SECRET: ${{ secrets.CODEF_CLIENT_SECRET }}
+          CODEF_PUBLIC_KEY:   ${{ secrets.CODEF_PUBLIC_KEY }}
+          CODEF_CONNECTED_ID: ${{ secrets.CODEF_CONNECTED_ID }}
+          CODEF_BIRTHDATE:    ${{ secrets.CODEF_BIRTHDATE }}
+          # 공유 인증서(한 인증서로 두 은행) — 권장
+          BANK_CERT:          ${{ secrets.BANK_CERT }}
+          BANK_KEY:           ${{ secrets.BANK_KEY }}
+          BANK_CERTPW:        ${{ secrets.BANK_CERTPW }}
+          # (선택) 은행별 인증서가 다를 때만
+          BANK_HANA_CERT:     ${{ secrets.BANK_HANA_CERT }}
+          BANK_HANA_KEY:      ${{ secrets.BANK_HANA_KEY }}
+          BANK_HANA_CERTPW:   ${{ secrets.BANK_HANA_CERTPW }}
+          BANK_BUSAN_CERT:    ${{ secrets.BANK_BUSAN_CERT }}
+          BANK_BUSAN_KEY:     ${{ secrets.BANK_BUSAN_KEY }}
+          BANK_BUSAN_CERTPW:  ${{ secrets.BANK_BUSAN_CERTPW }}
+          # (선택) 기업뱅킹이 인증서+아이디 함께 요구할 때만
+          BANK_HANA_ID:       ${{ secrets.BANK_HANA_ID }}
+          BANK_BUSAN_ID:      ${{ secrets.BANK_BUSAN_ID }}
+        run: python register_bank.py
