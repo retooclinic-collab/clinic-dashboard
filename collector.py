@@ -26,8 +26,8 @@ HD_CONFIRMED = os.environ.get("HD_CONFIRMED", "0")  # "1"이면 현대카드를 
 COLLECTION   = os.environ.get("FIRESTORE_COLLECTION", "card_expenses")
 
 SVC = ServiceType.PRODUCT if ENV in ("api","prod","product") else ServiceType.DEMO
-ORG_NAME = {"0301":"KB국민","0302":"현대","0303":"삼성","0311":"롯데","0313":"하나"}
-MAX_MONTHS = {"0301":12,"0303":12,"0313":18,"0311":6,"0302":3}
+ORG_NAME = {"0301":"KB국민","0302":"현대","0303":"삼성","0305":"IBK기업(비씨)","0311":"롯데","0313":"하나"}
+MAX_MONTHS = {"0301":12,"0303":12,"0313":18,"0311":6,"0302":3,"0305":9}
 PATH = "/v1/kr/card/p/account/approval-list"
 
 # ---------- 분류 규칙 ----------
