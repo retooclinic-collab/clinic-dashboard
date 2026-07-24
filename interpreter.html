@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 자동 통역 자막 — 청담리투의원</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#181c24; --border:#2a303c;
+    --txt:#f3f5f8; --sub:#8b93a3; --accent:#4da3ff; --green:#38d47a; --danger:#ff5d5d;
+    --trans-size:44px; --orig-size:22px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--txt);
+    font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  /* ── 상단 컨트롤바 ── */
+  #bar{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--border);
+    transition:opacity .3s; z-index:10;
+  }
+  #bar.dim{opacity:.15;}
+  #bar:hover{opacity:1;}
+  button,select,input{
+    background:#232936; color:var(--txt); border:1px solid var(--border);
+    border-radius:8px; padding:8px 14px; font-size:15px; cursor:pointer;
+    font-family:inherit;
+  }
+  input{cursor:text;}
+  button:hover,select:hover{border-color:var(--accent);}
+  #btnStart{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; min-width:110px;}
+  #btnStart.on{background:var(--danger); border-color:var(--danger);}
+  .seg{display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden;}
+  .seg button{border:none; border-radius:0; background:#232936;}
+  .seg button.sel{background:var(--accent); color:#fff;}
+  #status{font-size:13px; color:var(--sub); margin-left:auto; white-space:nowrap;}
+  #status .dot{display:inline-block; width:9px; height:9px; border-radius:50%; background:#555; margin-right:5px;}
+  #status.live .dot{background:var(--green); animation:blink 1.2s infinite;}
+  @keyframes blink{50%{opacity:.3;}}
+  /* ── 자막 영역 ── */
+  #feed{
+    flex:1; overflow-y:auto; padding:26px 5vw 120px;
+    display:flex; flex-direction:column; gap:26px;
+    scroll-behavior:smooth;
+  }
+  .entry{border-left:4px solid var(--accent); padding-left:18px; animation:fadein .25s; max-width:85%;}
+  @keyframes fadein{from{opacity:0; transform:translateY(8px);} to{opacity:1;}}
+  .entry.them{
+    margin-left:auto; border-left:none; border-right:4px solid var(--green);
+    padding-left:0; padding-right:18px; text-align:right;
+  }
+  .entry .trans{font-size:var(--trans-size); font-weight:700; line-height:1.35; word-break:keep-all;}
+  .entry .trans.pending{color:var(--sub); font-weight:400; font-size:calc(var(--orig-size)*1.1); font-style:italic;}
+  .entry .orig{font-size:var(--orig-size); color:var(--sub); margin-top:8px; line-height:1.4; word-break:keep-all;}
+  body.noorig .entry .orig{display:none;}
+  body.consult{--trans-size:60px; --orig-size:28px;}
+  body.consult #feed{gap:38px;}
+  /* ── 하단 마이크 상태줄 ── */
+  #micline{
+    position:fixed; left:0; right:0; bottom:0;
+    padding:14px 5vw 20px; font-size:20px; color:#cfd6e4;
+    background:linear-gradient(transparent, var(--bg) 30%);
+    min-height:58px; z-index:4; visibility:hidden;
+  }
+  #micline.on{visibility:visible;}
+  #micline .pulse{display:inline-block; animation:blink 1s infinite;}
+  #meter{display:inline-block; position:relative; width:150px; height:12px; background:#232936;
+    border:1px solid var(--border); border-radius:6px; margin-left:12px; vertical-align:middle; overflow:hidden;}
+  #meterFill{display:block; height:100%; width:0; background:var(--green);}
+  #meterTick{position:absolute; top:0; bottom:0; width:2px; background:var(--accent);}
+  #hint{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    text-align:center; color:var(--sub); font-size:21px; line-height:1.9; width:92%;
+  }
+  /* ── 키 설정 패널 ── */
+  #setup{
+    position:fixed; inset:0; background:rgba(10,12,16,.92); z-index:50;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #setup.hide{display:none;}
+  #setupBox{
+    background:var(--panel); border:1px solid var(--border); border-radius:16px;
+    padding:34px 38px; max-width:560px; width:92%; line-height:1.75; font-size:16px;
+  }
+  #setupBox h2{margin-bottom:14px; font-size:22px;}
+  #setupBox ol{margin:10px 0 18px 22px;}
+  #setupBox a{color:var(--accent);}
+  #setupBox input{width:100%; margin:6px 0 14px; font-size:16px; padding:11px;}
+  #setupBox .row{display:flex; gap:10px;}
+  #setupBox button{font-size:16px; padding:10px 20px;}
+  #btnSaveKey{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700;}
+  #keyMsg{color:var(--danger); font-size:14px; min-height:20px;}
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <button id="btnStart">▶ 시작</button>
+  <select id="selMic" title="마이크 선택" style="max-width:190px">
+    <option value="">🎤 기본 마이크</option>
+  </select>
+  <select id="selLang" title="한국어를 번역할 언어 (외국어는 항상 한국어로 자동 번역)">
+    <option value="zh-CN">중국어 간체 (中文)</option>
+    <option value="zh-TW">중국어 번체 (繁體)</option>
+    <option value="en">영어 (English)</option>
+    <option value="ja">일본어 (日本語)</option>
+    <option value="vi">베트남어 (Tiếng Việt)</option>
+    <option value="th">태국어 (ไทย)</option>
+    <option value="ru">러시아어 (Русский)</option>
+    <option value="mn">몽골어 (Монгол)</option>
+    <option value="ko">번역 안 함 (받아쓰기만)</option>
+  </select>
+  <div class="seg" title="화면 모드">
+    <button id="mConsult" class="sel">상담</button>
+    <button id="mLecture">강의</button>
+  </div>
+  <div class="seg" title="글자 크기">
+    <button id="fMinus">A−</button>
+    <button id="fPlus">A＋</button>
+  </div>
+  <button id="btnSens" title="마이크 감지 감도">감도: 민감</button>
+  <button id="btnOrig" title="원문 표시 켜기/끄기">원문 표시</button>
+  <button id="btnClear">지우기</button>
+  <button id="btnFull">전체화면</button>
+  <button id="btnKey" title="API 키 설정">⚙ 키</button>
+  <button id="btnDiag" title="AI 연결 테스트">진단</button>
+  <span id="status"><span class="dot"></span><span id="statusTxt">대기 중</span></span>
+</div>
+
+<div id="feed">
+  <div id="hint">
+    <b>AI 자동 통역 자막</b><br>
+    ▶ 시작을 누르면 마이크가 계속 듣고 있다가, 말이 끝날 때마다<br>
+    AI가 <b>언어를 자동으로 알아채서</b> 한국어는 선택한 언어로,<br>
+    외국어는 한국어로 번역해 화면에 쌓아줍니다. 버튼 전환이 필요 없습니다.<br>
+    <small>크롬(Chrome) + 인터넷 연결 필요 · 왼쪽 파란 줄=한국어 발화, 오른쪽 초록 줄=외국어 발화</small>
+  </div>
+</div>
+
+<div id="micline"><span class="pulse">🎙</span> <span id="micTxt">듣는 중…</span>
+  <span id="meter"><i id="meterFill"></i><i id="meterTick"></i></span><span id="cnt"></span></div>
+
+<!-- API 키 설정 -->
+<div id="setup" class="hide">
+  <div id="setupBox">
+    <h2>Google Gemini 무료 API 키 설정</h2>
+    <div>처음 한 번만 설정하면 됩니다. 신용카드 없이 무료로 발급됩니다.</div>
+    <ol>
+      <li><a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a> 접속 (구글 로그인)</li>
+      <li><b>API 키 만들기(Create API key)</b> 클릭</li>
+      <li>생성된 키를 복사(📋 아이콘)해서 아래에 붙여넣기</li>
+    </ol>
+    <input id="inpKey" type="password" placeholder="발급받은 API 키 붙여넣기" autocomplete="off">
+    <div id="keyMsg"></div>
+    <div class="row">
+      <button id="btnSaveKey">저장하고 시작</button>
+      <button id="btnCloseSetup">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const feed=$('feed');
+  let running=false, fontScale=1, showOrig=true, mode='consult';
+
+  /* ── API 키 (이 파일을 연 브라우저에만 저장됨) ── */
+  let API_KEY='';
+  try{ API_KEY=localStorage.getItem('gemKey')||''; }catch(_){}
+  function saveKey(k){ API_KEY=k; try{localStorage.setItem('gemKey',k);}catch(_){} }
+
+  const MODELS=['gemini-flash-lite-latest','gemini-flash-latest',
+                'gemini-3.1-flash-lite','gemini-3.5-flash','gemini-2.5-flash'];
+  let modelIdx=0;
+  try{ const mi=parseInt(localStorage.getItem('gemModelIdx')); if(mi>=0&&mi<MODELS.length) modelIdx=mi; }catch(_){}
+  function saveModelIdx(){ try{localStorage.setItem('gemModelIdx',String(modelIdx));}catch(_){} }
+
+  const LANG_NAMES={en:'English','zh-CN':'Simplified Chinese','zh-TW':'Traditional Chinese',
+    ja:'Japanese',vi:'Vietnamese',th:'Thai',ru:'Russian',mn:'Mongolian',ko:'Korean'};
+
+  /* ══════════ 오디오 캡처 + 문장 단위 자르기(VAD) ══════════ */
+  let audioCtx=null, micStream=null, procNode=null, srcNode=null;
+  const TARGET_RATE=16000;
+  const SILENCE_END_MS=800;    /* 이만큼 조용하면 문장 종료 */
+  const MIN_SPEECH_MS=250;     /* 이보다 짧으면 잡음으로 무시 */
+  const MAX_UTTER_MS=15000;    /* 최대 문장 길이(강제 분할) */
+  /* 감도 단계: 고정 문턱값 (작을수록 민감) */
+  const SENS=[{name:'보통',th:0.010},
+              {name:'민감',th:0.005},
+              {name:'최대',th:0.0018}];
+  let sensIdx=1;               /* 기본: 민감 */
+  function curThresh(){ return SENS[sensIdx].th; }
+  /* 자동 증폭: 약한 마이크 입력을 정상 크기로 키움 */
+  let runningPeak=0.002;
+  let micLabel='';
+  function liveStatus(){ setStatus('듣는 중 — '+(micLabel||'언어 자동 감지'),true); }
+  let speaking=false, silenceMs=0, speechMs=0, utterMs=0, utterPeakAmp=0;
+  let utterFrames=[], preRing=[];
+  let sentN=0, okN=0;
+  function updCnt(){ $('cnt').textContent=sentN?(' · 전송 '+sentN+' / 인식 '+okN):''; }
+
+  function rms(f){ let s=0; for(let i=0;i<f.length;i++) s+=f[i]*f[i]; return Math.sqrt(s/f.length); }
+  function downsample(f32,from){
+    const ratio=from/TARGET_RATE, len=Math.floor(f32.length/ratio);
+    const out=new Float32Array(len);
+    for(let i=0;i<len;i++){
+      const a=Math.floor(i*ratio), b=Math.floor((i+1)*ratio);
+      let sum=0,c=0;
+      for(let j=a;j<b&&j<f32.length;j++){sum+=f32[j];c++;}
+      out[i]=c?sum/c:0;
+    }
+    return out;
+  }
+  function encodeWAV(frames){
+    let n=0; frames.forEach(f=>n+=f.length);
+    const samples=new Float32Array(n); let o=0;
+    frames.forEach(f=>{samples.set(f,o); o+=f.length;});
+    const buf=new ArrayBuffer(44+n*2), v=new DataView(buf);
+    const ws=(off,s)=>{for(let i=0;i<s.length;i++)v.setUint8(off+i,s.charCodeAt(i));};
+    ws(0,'RIFF'); v.setUint32(4,36+n*2,true); ws(8,'WAVE'); ws(12,'fmt ');
+    v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
+    v.setUint32(24,TARGET_RATE,true); v.setUint32(28,TARGET_RATE*2,true);
+    v.setUint16(32,2,true); v.setUint16(34,16,true); ws(36,'data'); v.setUint32(40,n*2,true);
+    for(let i=0;i<n;i++){const s=Math.max(-1,Math.min(1,samples[i])); v.setInt16(44+i*2, s<0?s*0x8000:s*0x7FFF, true);}
+    return buf;
+  }
+  function toB64(buf){
+    let s=''; const u=new Uint8Array(buf);
+    for(let i=0;i<u.length;i+=0x8000) s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));
+    return btoa(s);
+  }
+
+  async function fillMics(){
+    try{
+      const devs=await navigator.mediaDevices.enumerateDevices();
+      const mics=devs.filter(d=>d.kind==='audioinput'&&d.deviceId!=='default'&&d.deviceId!=='communications');
+      const sel=$('selMic'), cur=sel.value;
+      sel.innerHTML='<option value="">🎤 기본 마이크</option>';
+      mics.forEach((d,i)=>{
+        const o=document.createElement('option');
+        o.value=d.deviceId; o.textContent='🎤 '+(d.label||('마이크 '+(i+1)));
+        sel.appendChild(o);
+      });
+      sel.value=cur; if(sel.selectedIndex<0) sel.selectedIndex=0;
+    }catch(_){}
+  }
+  async function startMic(){
+    const base={echoCancellation:true,noiseSuppression:true,autoGainControl:true};
+    const id=$('selMic').value;
+    if(id) base.deviceId={exact:id};
+    micStream=await navigator.mediaDevices.getUserMedia({audio:base});
+    fillMics();   /* 권한 허용 후에야 마이크 이름 목록을 채울 수 있음 */
+    micLabel=(micStream.getAudioTracks()[0]||{}).label||'';
+    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    try{ await audioCtx.resume(); }catch(_){}
+    srcNode=audioCtx.createMediaStreamSource(micStream);
+    procNode=audioCtx.createScriptProcessor(4096,1,1);
+    const frameMs=4096/audioCtx.sampleRate*1000;
+    let gotAudio=false, framesSeen=0, maxAbsSeen=0;
+    procNode.onaudioprocess=e=>{
+      if(!running) return;
+      gotAudio=true;
+      const raw=e.inputBuffer.getChannelData(0);
+      /* 무음 장치 감지: 3초 이상 완전 무음이면 경고 */
+      let pk=0; for(let i=0;i<raw.length;i+=16){const a=Math.abs(raw[i]); if(a>pk)pk=a;}
+      if(pk>maxAbsSeen) maxAbsSeen=pk;
+      framesSeen++;
+      if(framesSeen===40){
+        if(maxAbsSeen<0.0001) setStatus('이 마이크는 무음입니다 — 🎤 목록에서 다른 마이크를 선택해 보세요');
+      }
+      const level=rms(raw);
+      /* 최근 최대 소리를 기억해 두고, 그걸 기준으로 자동 증폭 배율 계산 */
+      if(level>runningPeak) runningPeak=level;
+      else runningPeak=Math.max(runningPeak*0.9995, 0.0004);
+      const gain=Math.min(80, 0.035/runningPeak);
+      const ampLevel=Math.min(0.2, level*gain);
+      const TH=curThresh();
+      updateMeter(ampLevel,TH);
+      const frame=downsample(raw,audioCtx.sampleRate);
+      for(let i=0;i<frame.length;i++) frame[i]*=gain;   /* 전송 음성도 같이 증폭 */
+      /* 직전 소리 300ms 정도를 항상 보관(문장 앞부분 잘림 방지) */
+      preRing.push(frame); if(preRing.length>4) preRing.shift();
+      if(!speaking && ampLevel>TH){
+        speaking=true; utterFrames=preRing.slice();
+        utterMs=0; speechMs=0; silenceMs=0; utterPeakAmp=ampLevel; micOn(true);
+      }
+      if(speaking){
+        if(ampLevel>utterPeakAmp) utterPeakAmp=ampLevel;
+        /* 문장 끝 판정: 이번 문장의 최대 소리 대비 조용해졌는지로 판단(소음에 강함) */
+        const exitTH=Math.max(TH*0.5, utterPeakAmp*0.12);
+        utterFrames.push(frame); utterMs+=frameMs;
+        if(ampLevel>exitTH){
+          silenceMs=0;
+          if(ampLevel>TH) speechMs+=frameMs;
+        }else{
+          silenceMs+=frameMs;
+          if(silenceMs>=SILENCE_END_MS){ endUtterance(); }
+        }
+        if(speaking && utterMs>=MAX_UTTER_MS){ endUtterance(); }
+      }
+    };
+    srcNode.connect(procNode); procNode.connect(audioCtx.destination);
+    /* 3초 안에 오디오가 전혀 안 들어오면 안내 */
+    setTimeout(()=>{
+      if(running&&!gotAudio){
+        setStatus('마이크 신호 없음 — 윈도우 소리 설정에서 입력 장치를 확인해 주세요');
+      }
+    },3000);
+  }
+  /* 레벨 게이지: 초록 막대=현재 소리, 파란 선=감지 기준 (작은 소리도 보이게 제곱근 스케일) */
+  function updateMeter(level,th){
+    const pct=v=>Math.min(100, Math.sqrt(v/0.05)*100);
+    $('meterFill').style.width=pct(level)+'%';
+    $('meterTick').style.left=pct(th)+'%';
+  }
+  function stopMic(){
+    try{procNode&&procNode.disconnect();}catch(_){}
+    try{srcNode&&srcNode.disconnect();}catch(_){}
+    try{micStream&&micStream.getTracks().forEach(t=>t.stop());}catch(_){}
+    try{audioCtx&&audioCtx.close();}catch(_){}
+    audioCtx=micStream=procNode=srcNode=null;
+    speaking=false; micOn(false);
+  }
+  function endUtterance(){
+    const frames=utterFrames, sMs=speechMs;
+    speaking=false; utterFrames=[]; micOn(false);
+    if(sMs<MIN_SPEECH_MS) return;              /* 짧은 잡음 무시 */
+    sentN++; updCnt();
+    const wav=encodeWAV(frames);
+    enqueue(wav);
+  }
+  function micOn(on){
+    $('micline').classList.toggle('on', running);
+    $('micTxt').textContent= on ? '말소리 감지 — 듣는 중…' : '대기 중 — 말하면 초록 막대가 파란 선을 넘어야 인식됩니다';
+  }
+
+  /* ══════════ Gemini 호출 (순차 큐) ══════════ */
+  /* 시스템 안내 메시지를 자막 영역에 회색으로 표시 */
+  function sysMsg(t){
+    const d=document.createElement('div');
+    d.className='entry'; d.style.borderColor='#777';
+    const x=document.createElement('div'); x.className='orig'; x.textContent='ⓘ '+t;
+    d.appendChild(x); feed.appendChild(d); scrollBottom(true);
+  }
+  /* 타임아웃 있는 fetch: 응답이 아예 안 오면 무한 대기하는 문제 방지 */
+  function fetchT(url,opts,ms){
+    const c=new AbortController();
+    const t=setTimeout(()=>c.abort(),ms||15000);
+    return fetch(url,Object.assign({},opts,{signal:c.signal})).finally(()=>clearTimeout(t));
+  }
+  const queue=[]; let busy=false;
+  function enqueue(wavBuf){
+    const entry=addPending();
+    queue.push({wavBuf,entry});
+    pump();
+  }
+  async function pump(){
+    if(busy||!queue.length) return;
+    busy=true;
+    const job=queue.shift();
+    try{ await processJob(job); }
+    catch(_){ }
+    busy=false; pump();
+  }
+  async function processJob(job){
+    const tl=$('selLang').value;
+    const targetName=LANG_NAMES[tl]||'English';
+    let prompt='This audio is from a Korean clinic consultation or lecture. '
+      +'1) Transcribe the speech exactly, in its original language and script. '
+      +'2) Detect the spoken language and set "lang" to its BCP-47 code (e.g. "ko", "zh-CN", "en"). ';
+    if(tl==='ko'){
+      prompt+='3) If the speech is Korean, set "translation" to an empty string. '
+        +'If it is any other language, set "translation" to a natural Korean translation. ';
+    }else{
+      prompt+='3) If the speech is Korean, set "translation" to a natural '+targetName+' translation. '
+        +'If it is any other language, set "translation" to a natural Korean translation. ';
+    }
+    prompt+='Respond with ONLY this JSON, nothing else: {"lang":"..","text":"..","translation":".."}. '
+      +'If there is no clear human speech (silence, noise, music), respond {"lang":"none","text":"","translation":""}.';
+    const body=JSON.stringify({
+      contents:[{parts:[
+        {inlineData:{mimeType:'audio/wav', data:toB64(job.wavBuf)}},
+        {text:prompt}
+      ]}],
+      generationConfig:{temperature:0, responseMimeType:'application/json'}
+    });
+    let lastErr=null;
+    for(let attempt=0; attempt<3+MODELS.length; attempt++){
+      const model=MODELS[Math.min(modelIdx,MODELS.length-1)];
+      try{
+        const res=await fetchT('https://generativelanguage.googleapis.com/v1beta/models/'
+          +model+':generateContent?key='+encodeURIComponent(API_KEY),
+          {method:'POST', headers:{'Content-Type':'application/json'}, body},20000);
+        if(res.status===404 && modelIdx<MODELS.length-1){ modelIdx++; saveModelIdx(); continue; }
+        if(res.status===429){ setStatus('무료 사용량 잠시 초과 — 잠시 후 재시도'); await sleep(5000); continue; }
+        if(res.status===400||res.status===401||res.status===403){
+          const b=await res.text().catch(()=>'');
+          setStatus('API 키/요청 오류');
+          sysMsg('API 오류 HTTP '+res.status+' ('+model+'): '+b.replace(/\s+/g,' ').slice(0,180));
+          fillEntry(job.entry,null); return;
+        }
+        if(!res.ok){
+          const b=await res.text().catch(()=>'');
+          throw new Error('HTTP '+res.status+' '+b.replace(/\s+/g,' ').slice(0,140));
+        }
+        const data=await res.json();
+        let txt=((data.candidates||[])[0]?.content?.parts||[]).map(p=>p.text||'').join('');
+        txt=txt.replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
+        const out=JSON.parse(txt);
+        fillEntry(job.entry,out);
+        if(running) liveStatus();
+        return;
+      }catch(err){ lastErr=err; await sleep(1200); }
+    }
+    sysMsg('전송 실패: '+String(lastErr&&lastErr.message||lastErr).slice(0,180));
+    fillEntry(job.entry,{lang:'err'});
+  }
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+  /* ══════════ 자막 표시 ══════════ */
+  const MAX_ENTRIES=300;
+  function addPending(){
+    const h=$('hint'); if(h) h.remove();
+    const div=document.createElement('div');
+    div.className='entry';
+    const trans=document.createElement('div');
+    trans.className='trans pending'; trans.textContent='… 인식 중';
+    div.appendChild(trans);
+    feed.appendChild(div);
+    while(feed.children.length>MAX_ENTRIES) feed.removeChild(feed.firstChild);
+    scrollBottom(true);
+    return div;
+  }
+  function fillEntry(div,out){
+    if(!out || out.lang==='none' || (!out.text&&!out.translation)){
+      div.remove();
+      if(out&&out.lang==='none') setStatus('전송됐지만 말소리로 인식 안 됨 — 마이크를 더 가까이 해보세요');
+      return;
+    }
+    okN++; updCnt();
+    if(out.lang==='err'){
+      div.querySelector('.trans').textContent='(인식 실패 — 인터넷/키 확인)';
+      div.querySelector('.trans').classList.remove('pending');
+      return;
+    }
+    const isKo=(out.lang||'').toLowerCase().startsWith('ko');
+    div.className='entry'+(isKo?'':' them');
+    div.innerHTML='';
+    const trans=document.createElement('div'); trans.className='trans';
+    const orig=document.createElement('div'); orig.className='orig';
+    if(out.translation){
+      trans.textContent=out.translation;
+      orig.textContent=out.text;
+      div.appendChild(trans); div.appendChild(orig);
+    }else{
+      trans.textContent=out.text;      /* 받아쓰기 전용 */
+      div.appendChild(trans);
+    }
+    scrollBottom();
+  }
+  function scrollBottom(force){
+    const nearBottom=feed.scrollHeight-feed.scrollTop-feed.clientHeight<240;
+    if(nearBottom||force) feed.scrollTop=feed.scrollHeight;
+  }
+
+  /* ══════════ UI ══════════ */
+  const statusEl=$('status'), statusTxt=$('statusTxt');
+  function setStatus(t,live){ statusTxt.textContent=t; statusEl.classList.toggle('live',!!live); }
+
+  $('btnStart').onclick=async ()=>{
+    if(running){
+      running=false; stopMic();
+      $('btnStart').textContent='▶ 시작'; $('btnStart').classList.remove('on');
+      setStatus('대기 중');
+      return;
+    }
+    if(!API_KEY){ openSetup(); return; }
+    try{
+      running=true;
+      await startMic();
+      $('btnStart').textContent='■ 정지'; $('btnStart').classList.add('on');
+      liveStatus();
+      micOn(false);
+    }catch(err){
+      running=false;
+      setStatus('마이크를 열 수 없음 — 권한을 허용해 주세요');
+    }
+  };
+
+  /* AI 연결 진단 */
+  $('btnDiag').onclick=async ()=>{
+    if(!API_KEY){ sysMsg('API 키가 없습니다 — ⚙ 키 버튼에서 먼저 설정하세요'); return; }
+    sysMsg('AI 연결 테스트 중…');
+    for(let i=0;i<MODELS.length;i++){
+      const model=MODELS[Math.min(modelIdx,MODELS.length-1)];
+      try{
+        const res=await fetchT('https://generativelanguage.googleapis.com/v1beta/models/'
+          +model+':generateContent?key='+encodeURIComponent(API_KEY),
+          {method:'POST', headers:{'Content-Type':'application/json'},
+           body:JSON.stringify({contents:[{parts:[{text:'Reply with exactly: OK'}]}]})},15000);
+        const b=await res.text().catch(()=>'');
+        if(res.ok){ sysMsg('✓ AI 연결 정상 ('+model+') — 키와 인터넷 모두 문제 없음'); return; }
+        if(res.status===404 && modelIdx<MODELS.length-1){
+          modelIdx++; saveModelIdx();
+          sysMsg('모델 '+model+' 사용 불가 — 다음 모델로 넘어감…');
+          continue;
+        }
+        sysMsg('✗ 연결 실패 HTTP '+res.status+' ('+model+'): '+b.replace(/\s+/g,' ').slice(0,200));
+        return;
+      }catch(e){
+        sysMsg('✗ 연결 자체가 안 됨: '+String(e).slice(0,150)+' — 인터넷/방화벽 확인');
+        return;
+      }
+    }
+    sysMsg('✗ 사용 가능한 모델을 찾지 못함 — 알려주시면 모델 목록을 갱신해 드릴게요');
+  };
+
+  /* 마이크 변경 시 즉시 재시작 */
+  $('selMic').onchange=async ()=>{
+    if(!running) return;
+    stopMic();
+    try{ await startMic(); liveStatus(); micOn(false); }
+    catch(_){ running=false; setStatus('선택한 마이크를 열 수 없음'); }
+  };
+
+  /* 키 설정 패널 */
+  function openSetup(){ $('setup').classList.remove('hide'); $('inpKey').value=API_KEY; }
+  $('btnKey').onclick=openSetup;
+  $('btnCloseSetup').onclick=()=>$('setup').classList.add('hide');
+  $('btnSaveKey').onclick=()=>{
+    const k=$('inpKey').value.trim();
+    if(!k||k.length<20||/\s/.test(k)){ $('keyMsg').textContent='키가 너무 짧거나 공백이 포함돼 있습니다. 발급된 키 전체를 복사해 붙여넣어 주세요.'; return; }
+    saveKey(k); $('keyMsg').textContent='';
+    $('setup').classList.add('hide');
+    if(!running) $('btnStart').click();
+  };
+
+  /* 모드/크기/기타 */
+  function applyFont(){
+    const base= mode==='consult' ? [60,28] : [44,22];
+    document.documentElement.style.setProperty('--trans-size',(base[0]*fontScale)+'px');
+    document.documentElement.style.setProperty('--orig-size',(base[1]*fontScale)+'px');
+  }
+  $('mConsult').onclick=()=>{ mode='consult'; document.body.classList.add('consult');
+    $('mConsult').classList.add('sel'); $('mLecture').classList.remove('sel'); applyFont(); };
+  $('mLecture').onclick=()=>{ mode='lecture'; document.body.classList.remove('consult');
+    $('mLecture').classList.add('sel'); $('mConsult').classList.remove('sel'); applyFont(); };
+  $('fPlus').onclick=()=>{ fontScale=Math.min(2.2,fontScale+0.15); applyFont(); };
+  $('fMinus').onclick=()=>{ fontScale=Math.max(0.5,fontScale-0.15); applyFont(); };
+  $('btnSens').onclick=()=>{
+    sensIdx=(sensIdx+1)%SENS.length;
+    $('btnSens').textContent='감도: '+SENS[sensIdx].name;
+  };
+  $('btnOrig').onclick=()=>{
+    showOrig=!showOrig;
+    document.body.classList.toggle('noorig',!showOrig);
+    $('btnOrig').style.borderColor=showOrig?'':'var(--accent)';
+  };
+  $('btnClear').onclick=()=>{ feed.innerHTML=''; };
+  $('btnFull').onclick=()=>{
+    if(document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  };
+  let dimTimer;
+  function scheduleDim(){
+    clearTimeout(dimTimer); $('bar').classList.remove('dim');
+    dimTimer=setTimeout(()=>{ if(running) $('bar').classList.add('dim'); },5000);
+  }
+  document.addEventListener('mousemove',scheduleDim);
+  scheduleDim();
+  document.body.classList.add('consult'); applyFont();
+})();
+</script>
+</body>
+</html>

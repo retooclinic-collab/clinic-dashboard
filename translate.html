@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>실시간 자막 번역 — 청담리투의원</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#181c24; --border:#2a303c;
+    --txt:#f3f5f8; --sub:#8b93a3; --accent:#4da3ff; --green:#38d47a; --danger:#ff5d5d;
+    --trans-size:44px; --orig-size:22px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--txt);
+    font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+    display:flex; flex-direction:column; overflow:hidden;
+  }
+  /* ── 상단 컨트롤바 ── */
+  #bar{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--border);
+    transition:opacity .3s;
+  }
+  #bar.dim{opacity:.15;}
+  #bar:hover{opacity:1;}
+  button,select{
+    background:#232936; color:var(--txt); border:1px solid var(--border);
+    border-radius:8px; padding:8px 14px; font-size:15px; cursor:pointer;
+    font-family:inherit;
+  }
+  button:hover,select:hover{border-color:var(--accent);}
+  #btnStart{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; min-width:110px;}
+  #btnStart.on{background:var(--danger); border-color:var(--danger);}
+  .seg{display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden;}
+  .seg button{border:none; border-radius:0; background:#232936;}
+  .seg button.sel{background:var(--accent); color:#fff;}
+  #status{font-size:13px; color:var(--sub); margin-left:auto; white-space:nowrap;}
+  #status .dot{display:inline-block; width:9px; height:9px; border-radius:50%; background:#555; margin-right:5px;}
+  #status.live .dot{background:var(--green); animation:blink 1.2s infinite;}
+  @keyframes blink{50%{opacity:.3;}}
+  /* ── 자막 영역 ── */
+  #feed{
+    flex:1; overflow-y:auto; padding:26px 5vw 190px;
+    display:flex; flex-direction:column; gap:26px;
+    scroll-behavior:smooth;
+  }
+  .entry{border-left:4px solid var(--accent); padding-left:18px; animation:fadein .25s; max-width:100%;}
+  @keyframes fadein{from{opacity:0; transform:translateY(8px);} to{opacity:1;}}
+  .entry .trans{font-size:var(--trans-size); font-weight:700; line-height:1.35; word-break:keep-all;}
+  .entry .trans.pending{color:var(--sub); font-weight:400;}
+  .entry .orig{font-size:var(--orig-size); color:var(--sub); margin-top:8px; line-height:1.4; word-break:keep-all;}
+  body.noorig .entry .orig{display:none;}
+  body.konly .entry .trans{display:none;}
+  body.konly .entry .orig{color:var(--txt); font-size:var(--trans-size); font-weight:700; margin-top:0;}
+  /* 상담 모드: 더 크게 */
+  body.consult{--trans-size:60px; --orig-size:28px;}
+  body.consult #feed{gap:38px;}
+  /* 대화 모드: 채팅형 좌우 정렬 */
+  body.convo .entry{max-width:82%;}
+  body.convo .entry.them{
+    margin-left:auto; border-left:none; border-right:4px solid var(--green);
+    padding-left:0; padding-right:18px; text-align:right;
+  }
+  /* ── 화자 전환 바 (대화 모드) ── */
+  #speakerBar{
+    display:none; position:fixed; left:0; right:0; bottom:78px;
+    justify-content:center; gap:14px; padding:0 5vw; z-index:5;
+  }
+  body.convo #speakerBar{display:flex;}
+  #speakerBar button{
+    flex:1; max-width:340px; font-size:20px; font-weight:700; padding:16px 10px;
+    border-radius:14px; border:2px solid var(--border); background:#1c212c; color:var(--sub);
+  }
+  #spkMe.sel{border-color:var(--accent); background:#16283d; color:#fff;}
+  #spkThem.sel{border-color:var(--green); background:#143224; color:#fff;}
+  #speakerHint{
+    display:none; position:fixed; left:0; right:0; bottom:52px; text-align:center;
+    font-size:13px; color:var(--sub); z-index:5;
+  }
+  body.convo #speakerHint{display:block;}
+  /* ── 하단 실시간 인식줄 ── */
+  #interim{
+    position:fixed; left:0; right:0; bottom:0;
+    padding:16px 5vw 22px; font-size:26px; color:#cfd6e4;
+    background:linear-gradient(transparent, var(--bg) 30%);
+    min-height:70px; font-style:italic; z-index:4;
+  }
+  #interim::before{content:"🎙 "; font-style:normal;}
+  #interim.empty{visibility:hidden;}
+  #hint{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    text-align:center; color:var(--sub); font-size:22px; line-height:1.8; width:90%;
+  }
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <button id="btnStart">▶ 시작</button>
+  <select id="selLang" title="번역/상대방 언어">
+    <option value="en">영어 (English)</option>
+    <option value="zh-CN">중국어 간체 (中文)</option>
+    <option value="zh-TW">중국어 번체 (繁體)</option>
+    <option value="ja">일본어 (日本語)</option>
+    <option value="vi">베트남어 (Tiếng Việt)</option>
+    <option value="th">태국어 (ไทย)</option>
+    <option value="ru">러시아어 (Русский)</option>
+    <option value="mn">몽골어 (Монгол)</option>
+    <option value="ko">번역 안 함 (한국어만)</option>
+  </select>
+  <div class="seg" title="모드">
+    <button id="mConsult" class="sel">상담</button>
+    <button id="mLecture">강의</button>
+    <button id="mConvo">대화</button>
+  </div>
+  <div class="seg" title="글자 크기">
+    <button id="fMinus">A−</button>
+    <button id="fPlus">A＋</button>
+  </div>
+  <button id="btnOrig" title="원문 표시 켜기/끄기">원문 표시</button>
+  <button id="btnClear">지우기</button>
+  <button id="btnFull">전체화면</button>
+  <span id="status"><span class="dot"></span><span id="statusTxt">대기 중</span></span>
+</div>
+
+<div id="feed">
+  <div id="hint">▶ 시작을 누르고 마이크를 허용하세요.<br>
+  말하는 내용이 인식되어 번역 자막으로 이 화면에 쌓입니다.<br>
+  <b>대화 모드</b>에서는 아래 버튼(또는 스페이스바)으로 말하는 사람을 전환하면<br>
+  한국어 ↔ 상대 언어 양방향으로 통역됩니다.<br>
+  <small>크롬(Chrome) 브라우저 + 인터넷 연결 필요</small></div>
+</div>
+
+<div id="speakerBar">
+  <button id="spkMe" class="sel">🇰🇷 한국어 (나)</button>
+  <button id="spkThem">🌐 상대방</button>
+</div>
+<div id="speakerHint">스페이스바 또는 버튼 클릭으로 말하는 사람 전환</div>
+
+<div id="interim" class="empty"></div>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const feed=$('feed'), interim=$('interim');
+  const statusEl=$('status'), statusTxt=$('statusTxt');
+  let running=false, fontScale=1, showOrig=true;
+  let mode='consult';            // consult | lecture | convo
+  let speaker='me';              // 대화 모드: me | them
+
+  /* 음성인식용 언어 코드 매핑 */
+  const SPEECH={en:'en-US','zh-CN':'zh-CN','zh-TW':'zh-TW',ja:'ja-JP',
+                vi:'vi-VN',th:'th-TH',ru:'ru-RU',mn:'mn-MN'};
+  const langLabel=()=>$('selLang').selectedOptions[0].textContent.split('(')[0].trim();
+
+  /* ── 음성 인식 ── */
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR && $('hint')){
+    $('hint').innerHTML='이 브라우저는 음성 인식을 지원하지 않습니다.<br>PC 크롬(Chrome) 또는 엣지(Edge)에서 열어 주세요.';
+  }
+  let rec=null;
+  function currentRecLang(){
+    if(mode==='convo' && speaker==='them') return SPEECH[$('selLang').value]||'en-US';
+    return 'ko-KR';
+  }
+  function makeRec(){
+    const r=new SR();
+    r.lang=currentRecLang(); r.continuous=true; r.interimResults=true;
+    r.onresult=e=>{
+      let interimText='';
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const res=e.results[i];
+        if(res.isFinal){
+          const t=res[0].transcript.trim();
+          if(t) addEntry(t, speaker);
+        }else{
+          interimText+=res[0].transcript;
+        }
+      }
+      interim.textContent=interimText;
+      interim.classList.toggle('empty',!interimText.trim());
+    };
+    r.onerror=e=>{
+      if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+        running=false; updateUI();
+        setStatus('마이크 권한이 차단됨 — 주소창 자물쇠에서 허용해 주세요');
+      }else if(e.error==='no-speech'){ /* 무음 → 자동 재시작 */ }
+      else{ setStatus('인식 오류: '+e.error+' (자동 재시도)'); }
+    };
+    r.onend=()=>{
+      if(running){
+        r.lang=currentRecLang();   /* 화자 전환 반영 */
+        try{r.start();}catch(_){setTimeout(()=>{try{r.start();}catch(__){} },400);}
+        updateUI();
+      }else updateUI();
+    };
+    return r;
+  }
+  function restartRec(){ if(rec&&running){ try{rec.stop();}catch(_){} } }
+
+  /* ── 번역 ── */
+  async function translate(text,sl,tl){
+    const url='https://translate.googleapis.com/translate_a/single?client=gtx&sl='
+      +encodeURIComponent(sl)+'&tl='+encodeURIComponent(tl)+'&dt=t&q='+encodeURIComponent(text);
+    const res=await fetch(url);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    return (data[0]||[]).map(seg=>seg[0]).join('');
+  }
+
+  /* ── 자막 추가 ── */
+  const MAX_ENTRIES=300;
+  function addEntry(text, who){
+    const h=$('hint'); if(h) h.remove();
+    const tl=$('selLang').value;
+    const div=document.createElement('div');
+    div.className='entry'+(mode==='convo'&&who==='them'?' them':'');
+    const trans=document.createElement('div');
+    const orig=document.createElement('div');
+    trans.className='trans'; orig.className='orig';
+    orig.textContent=text;
+    div.appendChild(trans); div.appendChild(orig);
+
+    let sl,target;
+    if(mode==='convo'&&who==='them'){ sl=tl; target='ko'; }      /* 상대방 → 한국어 */
+    else{ sl='ko'; target=tl; }                                   /* 나 → 상대 언어 */
+
+    document.body.classList.toggle('konly', mode!=='convo' && tl==='ko');
+    if(target==='ko'&&sl==='ko'){ trans.textContent=''; }
+    else if(mode!=='convo'&&tl==='ko'){ trans.textContent=''; }
+    else{
+      trans.textContent='…'; trans.classList.add('pending');
+      translate(text,sl,target).then(t=>{
+        trans.textContent=t; trans.classList.remove('pending'); scrollBottom();
+      }).catch(()=>{
+        trans.textContent='(번역 실패 — 인터넷 연결 확인)'; scrollBottom();
+      });
+    }
+    feed.appendChild(div);
+    while(feed.children.length>MAX_ENTRIES) feed.removeChild(feed.firstChild);
+    scrollBottom();
+  }
+  function scrollBottom(){
+    const nearBottom=feed.scrollHeight-feed.scrollTop-feed.clientHeight<220;
+    if(nearBottom) feed.scrollTop=feed.scrollHeight;
+  }
+
+  /* ── UI ── */
+  function setStatus(t,live){ statusTxt.textContent=t; statusEl.classList.toggle('live',!!live); }
+  function updateUI(){
+    const b=$('btnStart');
+    b.textContent=running?'■ 정지':'▶ 시작';
+    b.classList.toggle('on',running);
+    const listening= mode==='convo'
+      ? (speaker==='me'?'한국어 (나)':langLabel()+' (상대방)')
+      : '한국어';
+    setStatus(running?'듣는 중 — '+listening:'대기 중',running);
+    if(!running){ interim.classList.add('empty'); }
+  }
+  $('btnStart').onclick=()=>{
+    if(!SR) return;
+    if(running){ running=false; try{rec.stop();}catch(_){}; updateUI(); }
+    else{
+      running=true; rec=rec||makeRec();
+      rec.lang=currentRecLang();
+      try{rec.start();}catch(_){}
+      updateUI();
+    }
+  };
+
+  /* 언어 선택 */
+  $('selLang').onchange=()=>{
+    if(mode==='convo' && $('selLang').value==='ko'){
+      $('selLang').value='en';   /* 대화 모드에서는 상대 언어가 필요 */
+    }
+    document.body.classList.toggle('konly', mode!=='convo' && $('selLang').value==='ko');
+    $('spkThem').textContent='🌐 '+langLabel()+' (상대방)';
+    if(mode==='convo'&&speaker==='them') restartRec();
+    updateUI();
+  };
+
+  /* 모드 전환 */
+  function setMode(m){
+    mode=m;
+    document.body.classList.toggle('consult',m==='consult');
+    document.body.classList.toggle('convo',m==='convo');
+    ['mConsult','mLecture','mConvo'].forEach(id=>$(id).classList.remove('sel'));
+    $({consult:'mConsult',lecture:'mLecture',convo:'mConvo'}[m]).classList.add('sel');
+    if(m==='convo'){
+      if($('selLang').value==='ko') $('selLang').value='en';
+      $('spkThem').textContent='🌐 '+langLabel()+' (상대방)';
+      setSpeaker('me',false);
+    }
+    document.body.classList.toggle('konly', m!=='convo' && $('selLang').value==='ko');
+    applyFont(); restartRec(); updateUI();
+  }
+  $('mConsult').onclick=()=>setMode('consult');
+  $('mLecture').onclick=()=>setMode('lecture');
+  $('mConvo').onclick=()=>setMode('convo');
+
+  /* 화자 전환 (대화 모드) */
+  function setSpeaker(s,restart=true){
+    speaker=s;
+    $('spkMe').classList.toggle('sel',s==='me');
+    $('spkThem').classList.toggle('sel',s==='them');
+    if(restart) restartRec();
+    updateUI();
+  }
+  $('spkMe').onclick=()=>setSpeaker('me');
+  $('spkThem').onclick=()=>setSpeaker('them');
+  document.addEventListener('keydown',e=>{
+    if(mode==='convo' && e.code==='Space' && e.target.tagName!=='SELECT'){
+      e.preventDefault();
+      setSpeaker(speaker==='me'?'them':'me');
+    }
+  });
+
+  /* 글자 크기 */
+  function applyFont(){
+    const base= mode==='consult' ? [60,28] : [44,22];
+    document.documentElement.style.setProperty('--trans-size',(base[0]*fontScale)+'px');
+    document.documentElement.style.setProperty('--orig-size',(base[1]*fontScale)+'px');
+  }
+  $('fPlus').onclick=()=>{ fontScale=Math.min(2.2,fontScale+0.15); applyFont(); };
+  $('fMinus').onclick=()=>{ fontScale=Math.max(0.5,fontScale-0.15); applyFont(); };
+
+  $('btnOrig').onclick=()=>{
+    showOrig=!showOrig;
+    document.body.classList.toggle('noorig',!showOrig);
+    $('btnOrig').style.borderColor=showOrig?'':'var(--accent)';
+  };
+  $('btnClear').onclick=()=>{ feed.innerHTML=''; };
+  $('btnFull').onclick=()=>{
+    if(document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  };
+
+  /* 발표 중 컨트롤바 자동 흐리기 */
+  let dimTimer;
+  function scheduleDim(){
+    clearTimeout(dimTimer); $('bar').classList.remove('dim');
+    dimTimer=setTimeout(()=>{ if(running&&mode!=='convo') $('bar').classList.add('dim'); },5000);
+  }
+  document.addEventListener('mousemove',scheduleDim);
+  scheduleDim();
+
+  /* 기본: 상담 모드 */
+  setMode('consult');
+})();
+</script>
+</body>
+</html>
