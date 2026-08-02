@@ -5705,12 +5705,10 @@ function _applyRegexFallbackAndRenderTable(){
     var hasMisu = misuAmt > 0;
     // ★ 결제금액 = 실수납액. 미수/시술합계로 덮지 않음.
     r.amount = paidAmt;
-    var origAmt = r.payText ? (extractAmount(r.payText)||0) : 0;
-    // 환불인 경우 origAmt를 음수로 변환하여 비교
-    var isRefund = /환불/i.test(r.payText||'');
-    var compareAmt = isRefund ? -Math.abs(origAmt) : origAmt;
-    // 미수 있으면: 시술합-미수 == 결제텍스트금액-미수 비교 (미수 제외 실결제 기준)
-    var sumOk = hasMisu ? true : (!r.payText ? true : Math.abs(treatSumR - compareAmt) < 0.5);
+    // ★ 금액불일치 기준 변경 (2026-08-02): 초안 시술합계(청구) vs 기입된 결제금액(paidAmt) 비교.
+    //   구버전(payText 재추출 extractAmount 비교)은 '=' 없는 표기(예: "예약금 3.3m 위챗", "…-13.2m(위챗)")에서
+    //   금액 추출 실패(0) → 오탐 발생하여 폐기. 미수 건은 기존대로 판정 제외(미수 배지가 별도 표시됨).
+    var sumOk = hasMisu ? true : Math.abs(treatSumR - paidAmt) < 0.5;
     var badgeColor = sumOk ? '#4ade80' : '#facc15';
     var treatCount = (r.treatments||[]).length;
 
@@ -5758,7 +5756,7 @@ function _applyRegexFallbackAndRenderTable(){
       html += '</span>';
     });
     html += '</div>';
-    html += '<div style="font-size:11px;color:'+badgeColor+'">청구 '+treatSumR+'만 / 결제 '+paidAmt+'만'+(hasMisu?' <span style="color:#ef4444">미수 '+misuAmt+'만</span>':'')+' / 결제텍스트 '+origAmt+'만 '+(sumOk?'✓':'← 확인 필요')+'</div>';
+    html += '<div style="font-size:11px;color:'+badgeColor+'">청구 '+treatSumR+'만 / 결제 '+paidAmt+'만'+(hasMisu?' <span style="color:#ef4444">미수 '+misuAmt+'만</span>':'')+' '+(sumOk?'✓':'← 확인 필요')+'</div>';
     html += '</td></tr>';
   }
 
