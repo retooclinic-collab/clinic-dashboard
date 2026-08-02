@@ -5788,16 +5788,36 @@ function _applyRegexFallbackAndRenderTable(){
   document.getElementById('import-preview').style.display = 'block';
 }
 
+/* ── 미리보기 재렌더 분기 (★ 2026-08-02 추가) ──
+   초안 미리보기(#draft-preview-body)는 #import-preview-body의 innerHTML 복사본이라
+   renderImportPreview()만 호출하면 초안 탭 화면이 갱신되지 않는다.
+   초안 탭에서는 renderDraftPreview()(재렌더+재복사)를 호출한다. */
+function _rerenderPreview(){
+  var dp = document.getElementById('draft-preview');
+  var inDraft = (typeof currentMode !== 'undefined' && currentMode === 'draft')
+                && (_currentDraftId || window._currentDraftId)
+                && dp && dp.style.display !== 'none';
+  if(inDraft) renderDraftPreview();
+  else renderImportPreview();
+}
+/* 초안 미리보기는 HTML 복사본이라 import-treat-N ID가 문서에 2개 존재한다.
+   getElementById는 첫 번째(숨겨진 원본)만 잡으므로 전부 대상으로 처리. */
+function _treatRowEls(idx){
+  return document.querySelectorAll('[id="import-treat-' + idx + '"]');
+}
+
 /* ── 미리보기 행 삭제 ── */
 function deleteImportRow(idx){
   const delName = _importRows[idx]?.name||'이름없음';
   if(!confirm(`${idx+1}번째 행 (${delName}) 을 삭제할까요?`)) return;
   _importRows.splice(idx, 1);
   if(_importRows.length > 0){
-    renderImportPreview();
+    _rerenderPreview();
   } else {
     document.getElementById('import-preview').style.display = 'none';
     document.getElementById('import-preview-body').innerHTML = '';
+    var _dpb = document.getElementById('draft-preview-body'); if(_dpb) _dpb.innerHTML = '';
+    var _dpw = document.getElementById('draft-preview'); if(_dpw) _dpw.style.display = 'none';
     showToast('모든 행이 삭제되었습니다','info');
   }
   // ★ 초안 모드면 Firestore draft에도 반영 (안 하면 새로고침 시 삭제된 행이 되살아남)
@@ -6153,7 +6173,7 @@ function saveImportRow(idx){
     methods: (window._iePays||[]).map(p=>p.method)
   };
   document.getElementById('import-edit-modal')?.remove();
-  renderImportPreview();
+  _rerenderPreview();
 
   // 초안 모드면 Firestore draft에도 반영
   var draftId = _currentDraftId || window._currentDraftId;
@@ -6178,8 +6198,10 @@ function saveImportRow(idx){
 }
 
 function toggleImportTreat(idx){
-  const el = document.getElementById(`import-treat-${idx}`);
-  if(el) el.style.display = el.style.display==='none' ? 'block' : 'none';
+  const els = _treatRowEls(idx);
+  if(!els.length) return;
+  const next = els[0].style.display==='none' ? 'block' : 'none';
+  els.forEach(function(el){ el.style.display = next; });
 }
 function updateImportTreat(rowIdx, treatIdx, field, val){
   if(!_importRows[rowIdx]?.treatments) return;
@@ -6192,10 +6214,9 @@ function updateImportTreat(rowIdx, treatIdx, field, val){
 function removeImportTreat(rowIdx, treatIdx){
   if(!_importRows[rowIdx]?.treatments) return;
   _importRows[rowIdx].treatments.splice(treatIdx, 1);
-  renderImportPreview();
+  _rerenderPreview();
   // 펼침 상태 유지
-  const el = document.getElementById(`import-treat-${rowIdx}`);
-  if(el) el.style.display='block';
+  _treatRowEls(rowIdx).forEach(function(el){ el.style.display='block'; });
 }
 function addImportTreat(rowIdx){
   const name = prompt('시술 항목명:'); if(!name) return;
@@ -6203,9 +6224,8 @@ function addImportTreat(rowIdx){
   const price = parseFloat(prompt('가격(만원):','0')||'0');
   if(!_importRows[rowIdx].treatments) _importRows[rowIdx].treatments=[];
   _importRows[rowIdx].treatments.push({item:name.trim(), qty, price});
-  renderImportPreview();
-  const el = document.getElementById(`import-treat-${rowIdx}`);
-  if(el) el.style.display='block';
+  _rerenderPreview();
+  _treatRowEls(rowIdx).forEach(function(el){ el.style.display='block'; });
 }
 
 
