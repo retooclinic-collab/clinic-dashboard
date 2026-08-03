@@ -1775,15 +1775,17 @@ function distributePrices(treatments, total, rawText){
   }catch(e){ console.warn('evt skincare0 err',e); }
   // 피부관리 최종가격 0원 → 라인 자체 제거 (2026-06-25, regex/AI 공통 후처리)
   try{ __p = __p.filter(t => !(t.item==='피부관리' && Math.round((t.price||0)*100)/100 === 0)); }catch(e){ console.warn('skincare0 drop err',e); }
-  // 미라젯 중복 통합: 한 결제건에 미라젯이 2개 이상이면 1줄로 합침 (qty=1 고정, 금액 합산) (2026-06-25, regex/AI 공통 후처리)
+  // 미라젯·엑스인젝터 중복 통합: 한 결제건에 2개 이상이면 1줄로 합침 (qty=1 고정, 금액 합산) (미라젯 2026-06-25, 엑스인젝터 2026-08-02, regex/AI 공통 후처리)
   try{
-    const __mj = __p.map((t,i)=> t.item==='미라젯' ? i : -1).filter(i=>i>=0);
-    if(__mj.length>1){
-      const __sum = __mj.reduce((a,i)=> a + (Number(__p[i].price)||0), 0);
-      const __first = __mj[0];
-      __p[__first] = {...__p[__first], qty:1, price:Math.round(__sum*100)/100};
-      __p = __p.filter((t,i)=> !(t.item==='미라젯' && i!==__first));
-    }
+    ['미라젯','엑스인젝터'].forEach(__nm => {
+      const __mj = __p.map((t,i)=> t.item===__nm ? i : -1).filter(i=>i>=0);
+      if(__mj.length>1){
+        const __sum = __mj.reduce((a,i)=> a + (Number(__p[i].price)||0), 0);
+        const __first = __mj[0];
+        __p[__first] = {...__p[__first], qty:1, price:Math.round(__sum*100)/100};
+        __p = __p.filter((t,i)=> !(t.item===__nm && i!==__first));
+      }
+    });
   }catch(e){ console.warn('mirajet merge err',e); }
   // 쥬브아셀 미표기(generic) → 쥬브아셀V 기본 매핑 (2026-06-27, regex/AI 공통 후처리)
   try{ __p = __p.map(t => t.item==='쥬브아셀' ? {...t, item:'쥬브아셀V'} : t); }catch(e){ console.warn('jba->V err',e); }
@@ -2150,6 +2152,7 @@ VIP할인혜택(별도 필드)
 피부관리 최종가격이 0(할인차감/sv 등)이면 → 항목 자체를 출력하지 마세요 (0원 피부관리 라인 제거)
 이벤트(N월e/이벤트) 번들에 포함된 피부관리는 0원 처리(자동 제거)됩니다 → 피부관리 가격배분에서 제외하고 그 몫을 다른 시술에 배분하세요
 미라젯이 한 결제건에 2번 이상 나오면 → 미라젯 한 줄로 합치세요 (qty=1 고정, 금액은 합산)
+엑스인젝터가 한 결제건에 2번 이상 나오면 → 엑스인젝터 한 줄로 합치세요 (qty=1 고정, 금액은 합산)
 폭탄수액,백옥슈팅,비타민수액,리커버리수액,리바이탈수액 → 수액
 백옥(단독) → 백옥 (수액과 별도 항목!)
 마스크팩,크림N박스,닥터랩마스크팩,기타 모든 판매품/화장품(리쥬셀릭크림/앰플/선물세트만 예외) → 제품
