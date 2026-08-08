@@ -13,7 +13,7 @@ from easycodefpy.util import encrypt_rsa
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-ENV          = os.environ.get("CODEF_ENV", "demo").lower()
+ENV = "api"  # 2026-08 정식전환 강제 (yml env 무시)
 CLIENT_ID    = os.environ["CODEF_CLIENT_ID"]
 CLIENT_SECRET= os.environ["CODEF_CLIENT_SECRET"]
 PUBLIC_KEY   = os.environ["CODEF_PUBLIC_KEY"]
