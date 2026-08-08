@@ -3085,7 +3085,23 @@ function applyBankFilter(){
   var mc=document.getElementById('bankMonChart');
   if(mc&&window.Chart) _bankCharts.mon=new Chart(mc.getContext('2d'),{type:(gran==='day'?'bar':'line'),data:{labels:tKeys,datasets:[{label:'입금',data:tKeys.map(function(k){return (byTin[k]||{}).sum||0;}),borderColor:'#16a34a',backgroundColor:'rgba(22,163,74,.12)',fill:true,tension:.2},{label:'출금',data:tKeys.map(function(k){return (byTout[k]||{}).sum||0;}),borderColor:'#dc2626',backgroundColor:'rgba(220,38,38,.10)',fill:true,tension:.2}]},options:{plugins:{legend:{display:true}}}});
   function tbl(title,arr,col){var h='<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-weight:700;margin-bottom:8px;font-size:13px;">'+title+'</div><table style="width:100%;border-collapse:collapse;font-size:12px;">';arr.forEach(function(x){h+='<tr style="border-bottom:1px solid #f1f5f9;"><td style="padding:5px 4px;">'+(x[0]||'(기타)')+'</td><td style="padding:5px 4px;text-align:right;color:#64748b;">'+x[2]+'건</td><td style="padding:5px 4px;text-align:right;font-weight:600;'+(col?'color:'+col+';':'')+'">'+won(x[1])+'</td></tr>';});h+='</table></div>';return h;}
-  document.getElementById('bank-cat-table').innerHTML=tbl('지출 카테고리별',catArr,'#dc2626');
+  (function(){ // 지출 카테고리별 — 행 클릭 시 개별 내역 펼침(드릴다운)
+    var esc2=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+    var h='<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;"><div style="font-weight:700;margin-bottom:8px;font-size:13px;">지출 카테고리별 <span style="font-weight:400;color:#94a3b8;font-size:11px;">(행 클릭 시 내역 펼침)</span></div><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    catArr.forEach(function(x,i){
+      var cat=x[0]||'(기타)';
+      var rows=outRows.filter(function(r){return (r.category||'(기타)')===cat;}).sort(function(a,b){return (b.amount||0)-(a.amount||0);});
+      h+='<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer;" onclick="var d=document.getElementById(\'bcatd-'+i+'\');d.style.display=d.style.display===\'none\'?\'\':\'none\';var t=this.querySelector(\'.tri\');t.textContent=d.style.display===\'none\'?\'\\u25B6\':\'\\u25BC\';">'
+        +'<td style="padding:5px 4px;"><span class="tri" style="color:#94a3b8;">\u25B6</span> '+esc2(cat)+'</td>'
+        +'<td style="padding:5px 4px;text-align:right;color:#64748b;">'+x[2]+'건</td>'
+        +'<td style="padding:5px 4px;text-align:right;font-weight:600;color:#dc2626;">'+won(x[1])+'</td></tr>';
+      var dh='';
+      rows.forEach(function(r){ dh+='<tr style="border-bottom:1px solid #f1f5f9;color:#475569;"><td style="padding:3px 4px 3px 20px;white-space:nowrap;color:#94a3b8;">'+esc2(r.date||'')+'</td><td style="padding:3px 4px;">'+esc2(r.counterparty||r.desc||'(내역없음)')+'</td><td style="padding:3px 4px;text-align:right;">'+won(r.amount||0)+'</td></tr>'; });
+      h+='<tr id="bcatd-'+i+'" style="display:none;"><td colspan="3" style="padding:2px 0 6px 0;background:#f8fafc;"><table style="width:100%;border-collapse:collapse;font-size:11px;">'+dh+'</table></td></tr>';
+    });
+    h+='</table></div>';
+    document.getElementById('bank-cat-table').innerHTML=h;
+  })();
   document.getElementById('bank-cp-table').innerHTML=tbl('지출 상위 상대방 TOP15',cpArr,'#dc2626');
   document.getElementById('bank-acct-table').innerHTML=tbl('계좌별 거래액',acctArr);
 }
