@@ -167,7 +167,15 @@ def to_doc(org, account_no, account_name, t):
              ("resAccountDesc1","resAccountDesc2","resAccountDesc3","resAccountDesc4")]
     descs = [d for d in descs if d]
     desc_join = " / ".join(descs)
-    counterparty = descs[0] if descs else ""
+    # 상대방명: '대체/타행이체' 같은 은행 거래구분 라벨이면 다음 실제 적요를 사용
+    counterparty = ""
+    for _d in descs:
+        _dl = _d.lower().strip()
+        if not _d: continue
+        if _dl in ("대체","타행이체","자동이체","이체","출금","입금","펌뱅킹","전자금융","저축예금"): continue
+        if "cbs" in _dl: continue
+        counterparty = _d; break
+    if not counterparty and descs: counterparty = descs[0]
     appr = str(_g(t, "resAccountTrNo", "resTrNo", default=""))
     key  = f"{org}|{account_no}|{date}|{tm}|{amount}|{inout}|{bal_after}|{desc_join}|{appr}"
     did  = hashlib.sha1(key.encode("utf-8")).hexdigest()
