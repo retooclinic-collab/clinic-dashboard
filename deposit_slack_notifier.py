@@ -73,6 +73,9 @@ def best_name(parts):
 # ── 제외 판정 ─────────────────────────────────────────────────────────────
 # collector_bank.py 의 IN_VENDOR 분류와 일치. category 값으로 1차 제외.
 EXCLUDE_CATEGORIES = {"카드매출입금", "보험청구입금", "이자수입"}
+# 확실한 공과금/환급/기관성 입금 = 제외 (이름이 있어도). 세금환급·4대보험환급 등.
+INSTITUTIONAL_HINTS = ("공단", "건강보험", "국민연금", "고용보험", "산재보험", "근로복지",
+                       "국고", "국세", "지방세", "세무서", "환급", "연금공단")
 
 def is_self_transfer(counterparty: str, desc: str, amount: int) -> bool:
     """대표 자금이동(자전거래) = clinic-final.html cfSelf 규칙과 동일."""
@@ -95,8 +98,11 @@ def decision(row: dict):
                        "이자수입": "이자"}[cat]
     if is_self_transfer(row.get("counterparty", ""), row.get("desc", ""), row.get("amount", 0)):
         return False, "대표자전거래"
+    blob = f"{row.get('counterparty','')} {row.get('desc','')}"
+    if any(h in blob for h in INSTITUTIONAL_HINTS):
+        return False, "공과금/환급"           # 세금환급·4대보험환급·공단 등
     if not row.get("name"):
-        return False, "정산성(이름없음)"     # 매출대금/삼성센터 등 — 실제 입금자명 없음
+        return False, "정산성(이름없음)"     # 매출대금/삼성센터 등 카드·PG정산(=카드입금 동급)
     return True, "고객이체(후보)"
 
 # ── Firestore ────────────────────────────────────────────────────────────
