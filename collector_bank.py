@@ -248,7 +248,10 @@ def main():
         print(f"\n✅ 한도 여유 — 요청 기간({LOOKBACK}일) 전체 조회 완료. 추가 실행 불필요.", flush=True)
 
 if __name__ == "__main__":
-    if os.environ.get("LOOKBACK_DAYS") == "9999":
+    _lb = os.environ.get("LOOKBACK_DAYS")
+    if _lb == "9999":
         import deposit_slack_notifier as _dn; _dn.cli_dry_run()  # 수집 안 함, 입금 dry-run만
+    elif _lb == "7777":
+        import deposit_slack_notifier as _dn; _dn.cli_seed()      # 시드(발송처리만, 전송 안 함)
     else:
         main()
