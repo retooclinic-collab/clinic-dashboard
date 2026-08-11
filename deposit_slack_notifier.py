@@ -39,6 +39,37 @@ STATE_PATH    = os.environ.get(
 SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK_URL", "")
 COLLECTION    = os.environ.get("FIRESTORE_COLLECTION", "bank_transactions")
 
+# ── 입금자명 추출기 (★ collector counterparty 신뢰 안 함) ────────────────────
+# 하나 저축예금 적요 4칸 구조: [상대/라벨 │ 거래종류/계좌 │ 실제이름/기관 │ 은행/부서]
+# 토스(비바리퍼블리카) 등 중계 라벨이 1번칸이면 실제 송금인은 3번칸에 있음 → 칸 전체 스캔.
+_LABELS = {"타행이체", "대체", "자동이체", "이체", "입금이체", "출금", "입금",
+           "펌뱅킹", "전자금융", "저축예금", "매출대금", "cms", "cbs", "카드대금"}
+_PLATFORM = {"(주)비바리퍼블리카", "비바리퍼블리카", "비바리퍼블리카(주)"}  # 결제중계 → 이름 아님
+_BANK_HINT = ("은행", "뱅킹", "저축은행", "카카오뱅크", "케이뱅크", "토스뱅크")
+_SETTLE_HINT = ("자금결제부", "결제부", "센터", "지점", "여의도", "플랫폼", "마케팅팀", "정산")
+
+def _is_accountish(s):
+    return sum(c.isdigit() for c in s) >= 5           # 계좌/전표번호류
+
+def _looks_name(s):
+    s = (s or "").strip()
+    if not s or s.lower() in _LABELS or s in _PLATFORM:
+        return False
+    if _is_accountish(s):
+        return False
+    if any(h in s for h in _BANK_HINT):
+        return False
+    if any(h in s for h in _SETTLE_HINT):
+        return False
+    return True
+
+def best_name(parts):
+    """적요칸들 중 실제 사람/회사 이름으로 보이는 첫 토큰. 없으면 '' (=정산성)."""
+    for p in (parts or []):
+        if _looks_name(p):
+            return p.strip()
+    return ""
+
 # ── 제외 판정 ─────────────────────────────────────────────────────────────
 # collector_bank.py 의 IN_VENDOR 분류와 일치. category 값으로 1차 제외.
 EXCLUDE_CATEGORIES = {"카드매출입금", "보험청구입금", "이자수입"}
@@ -64,6 +95,8 @@ def decision(row: dict):
                        "이자수입": "이자"}[cat]
     if is_self_transfer(row.get("counterparty", ""), row.get("desc", ""), row.get("amount", 0)):
         return False, "대표자전거래"
+    if not row.get("name"):
+        return False, "정산성(이름없음)"     # 매출대금/삼성센터 등 — 실제 입금자명 없음
     return True, "고객이체(후보)"
 
 # ── Firestore ────────────────────────────────────────────────────────────
@@ -92,12 +125,15 @@ def fetch_deposits(db, days=None):
             continue
         if r.get("inout") != "입금":
             continue
+        parts = r.get("descParts", []) or []
+        name = best_name(parts)                       # ★ 적요 전체칸에서 실제 이름 복원
         rows.append({
             "id": d.id,
             "date": r.get("date", ""), "time": str(r.get("time", "")),
             "inout": r.get("inout", ""), "amount": int(r.get("amount", 0) or 0),
-            "counterparty": r.get("counterparty", "") or r.get("desc", ""),
-            "desc": r.get("desc", ""), "descParts": r.get("descParts", []),
+            "name": name,
+            "counterparty": name or r.get("counterparty", "") or r.get("desc", ""),
+            "desc": r.get("desc", ""), "descParts": parts,
             "category": r.get("category", ""),
             "account": r.get("account", ""), "acct": acct,
             "trNo": str(r.get("trNo", "")),
