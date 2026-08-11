@@ -1,0 +1,37 @@
+name: deposit-slack-alert
+# 업무시간(진료시간)에만 10분마다 …23207 즉석 스크랩 → 카드사 외 신규 입금 → 상담팀 슬랙.
+# 중복방지는 Firestore(deposit_alert_state) — 이미 보낸 건 재전송 안 함.
+on:
+  schedule:
+    # 매 10분, UTC 00:00–12:59 = KST 09:00–21:59, 월–토 (일요일 제외)
+    - cron: "*/10 0-12 * * 1-6"
+  workflow_dispatch:      # 수동 실행도 가능
+concurrency:
+  group: deposit-alert
+  cancel-in-progress: false
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: install
+        run: pip install -r requirements.txt
+      - name: scrape fresh + alert new deposits
+        env:
+          CODEF_CLIENT_ID:      ${{ secrets.CODEF_CLIENT_ID }}
+          CODEF_CLIENT_SECRET:  ${{ secrets.CODEF_CLIENT_SECRET }}
+          CODEF_PUBLIC_KEY:     ${{ secrets.CODEF_PUBLIC_KEY }}
+          CODEF_CONNECTED_ID:   ${{ secrets.CODEF_CONNECTED_ID }}
+          CODEF_BIRTHDATE:      ${{ secrets.CODEF_BIRTHDATE }}
+          BANK_HANA_ACCTPW:     ${{ secrets.BANK_HANA_ACCTPW }}
+          BANK_BUSAN_ACCTPW:    ${{ secrets.BANK_BUSAN_ACCTPW }}
+          FIREBASE_SA_JSON:     ${{ secrets.FIREBASE_SA_JSON }}
+          SLACK_WEBHOOK_URL:    ${{ secrets.SLACK_WEBHOOK_URL }}
+          LOOKBACK_DAYS:        "2"
+          FIRESTORE_COLLECTION: "bank_transactions"
+        run: |
+          python collector_bank.py            # …23207 포함 즉석 스크랩 → bank_transactions
+          python deposit_slack_notifier.py    # 카드사 외 신규 입금만 → 상담팀 웹훅
