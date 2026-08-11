@@ -174,18 +174,22 @@ def post_slack(text):
     with urllib.request.urlopen(req, timeout=10) as resp:
         return resp.status
 
-# ── 상태(중복방지) ────────────────────────────────────────────────────────
-def load_state():
-    try:
-        with open(STATE_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {"sent_ids": []}
+# ── 상태(중복방지) — Firestore 저장 (헤드리스 필수: 매 실행 초기화 방지) ──────────
+STATE_DOC = os.environ.get("STATE_DOC", "deposit_alert_state/main")
 
-def save_state(st):
-    os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
-        json.dump(st, f, ensure_ascii=False, indent=2)
+def load_state(db):
+    try:
+        col, doc = STATE_DOC.split("/", 1)
+        snap = db.collection(col).document(doc).get()
+        if snap.exists:
+            return snap.to_dict() or {"sent_ids": []}
+    except Exception as e:
+        print("state load warn:", e)
+    return {"sent_ids": []}
+
+def save_state(db, st):
+    col, doc = STATE_DOC.split("/", 1)
+    db.collection(col).document(doc).set({"sent_ids": st.get("sent_ids", [])[-8000:]})
 
 # ── main ─────────────────────────────────────────────────────────────────
 def classify_rows(rows):
@@ -224,22 +228,35 @@ def cli_dry_run(days=21):
     print("\n(dry-run: 슬랙 전송 안 함)")
 
 def cli_live():
-    """운영모드: 신규 입금만 슬랙 전송 + 중복방지 상태 저장."""
+    """운영모드: 신규 입금만 슬랙 전송 + 중복방지 상태 저장(Firestore)."""
     db = init_db()
     rows = fetch_deposits(db)
     send_rows, _ = classify_rows(rows)
-    st = load_state(); seen = set(st.get("sent_ids", []))
+    st = load_state(db); seen = set(st.get("sent_ids", []))
     new_sent = 0
     for r, why in send_rows:
         if r["id"] in seen:
             continue
         post_slack(slack_text(r)); seen.add(r["id"]); new_sent += 1
-    st["sent_ids"] = list(seen)[-5000:]; save_state(st)
-    print(f"전송 {new_sent}건 (신규만). 누적 상태 {len(seen)}건.")
+    save_state(db, {"sent_ids": list(seen)})
+    print(f"전송 {new_sent}건 (신규만). 누적 {len(seen)}건.")
+
+def cli_seed(days=14):
+    """최초 배포용: 기존 입금건을 '이미 발송'으로 표시만(전송 안 함). 첫 실행 폭주 방지."""
+    db = init_db()
+    rows = fetch_deposits(db, days=days)
+    send_rows, _ = classify_rows(rows)
+    st = load_state(db); seen = set(st.get("sent_ids", []))
+    for r, _why in send_rows:
+        seen.add(r["id"])
+    save_state(db, {"sent_ids": list(seen)})
+    print(f"시드 완료: 기존 {len(send_rows)}건 발송처리(전송 안 함). 누적 {len(seen)}건.")
 
 def main():
     if "--dry-run" in sys.argv:
         cli_dry_run()
+    elif "--seed" in sys.argv:
+        cli_seed()
     else:
         cli_live()
 
