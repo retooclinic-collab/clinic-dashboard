@@ -97,7 +97,8 @@ def fetch_deposits(db, days=None):
             "date": r.get("date", ""), "time": str(r.get("time", "")),
             "inout": r.get("inout", ""), "amount": int(r.get("amount", 0) or 0),
             "counterparty": r.get("counterparty", "") or r.get("desc", ""),
-            "desc": r.get("desc", ""), "category": r.get("category", ""),
+            "desc": r.get("desc", ""), "descParts": r.get("descParts", []),
+            "category": r.get("category", ""),
             "account": r.get("account", ""), "acct": acct,
             "trNo": str(r.get("trNo", "")),
         })
@@ -172,6 +173,12 @@ def cli_dry_run(days=21):
     print("\n--- 전송 미리보기(첫 3건) ---")
     for r, why in send_rows[:3]:
         print(slack_text(r)); print("-")
+    # ★ 적요 원본 4칸 전수 덤프 — 진짜 입금자명이 어느 칸에 있는지 진단용
+    print("\n=== RAW 적요칸 덤프 (…{} 입금 전건) ===".format(TARGET_SUFFIX))
+    print("  일시        | 금액           | category   | 추출된counterparty || 원본칸들(desc1│desc2│...)")
+    for r in rows:
+        parts = " │ ".join(str(p) for p in (r.get("descParts") or []))
+        print(f"  {fmt_time(r):>11} | {fmt_won(r['amount']):>14} | {r['category']:<10} | {r['counterparty'][:14]:<14} || {parts}")
     print("\n(dry-run: 슬랙 전송 안 함)")
 
 def cli_live():
