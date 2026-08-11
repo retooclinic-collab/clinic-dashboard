@@ -167,13 +167,19 @@ def to_doc(org, account_no, account_name, t):
              ("resAccountDesc1","resAccountDesc2","resAccountDesc3","resAccountDesc4")]
     descs = [d for d in descs if d]
     desc_join = " / ".join(descs)
-    # 상대방명: '대체/타행이체' 같은 은행 거래구분 라벨이면 다음 실제 적요를 사용
+    # 상대방명: 은행 거래구분 라벨/결제중계(토스=비바리퍼블리카)/전표번호는 건너뛰고
+    #           뒷단의 '실제 상대방'을 상대방명으로 사용 (입금·출금 공통).
+    _SKIP = ("대체","타행이체","자동이체","이체","입금이체","출금","입금",
+             "펌뱅킹","전자금융","저축예금","매출대금","카드대금")
+    def _acctish(_s): return sum(_c.isdigit() for _c in _s) >= 5
     counterparty = ""
     for _d in descs:
         _dl = _d.lower().strip()
         if not _d: continue
-        if _dl in ("대체","타행이체","자동이체","이체","출금","입금","펌뱅킹","전자금융","저축예금"): continue
+        if _dl in _SKIP: continue
         if "cbs" in _dl: continue
+        if "비바리퍼블리카" in _d: continue     # 결제중계사(토스) — 실제 송금인은 다른 칸
+        if _acctish(_d): continue               # 계좌/전표번호류
         counterparty = _d; break
     if not counterparty and descs: counterparty = descs[0]
     appr = str(_g(t, "resAccountTrNo", "resTrNo", default=""))
