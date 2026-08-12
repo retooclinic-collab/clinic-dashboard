@@ -1,0 +1,30 @@
+name: jrk-collect
+# JRK(제이알케이) 카드·은행 수집 → jrk_* 컬렉션. 인증서(JRK connectedId) 준비 후 활성화.
+# 지금은 수동실행만(schedule 없음). JRK 시크릿 세팅 후 cron 추가하면 자동수집.
+on:
+  workflow_dispatch:
+    inputs:
+      lookback_days: { description: "조회 일수", default: "30", required: false }
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - name: JRK 은행 수집 → jrk_bank_transactions
+        env:
+          CODEF_CLIENT_ID:      ${{ secrets.CODEF_CLIENT_ID }}
+          CODEF_CLIENT_SECRET:  ${{ secrets.CODEF_CLIENT_SECRET }}
+          CODEF_PUBLIC_KEY:     ${{ secrets.CODEF_PUBLIC_KEY }}
+          CODEF_CONNECTED_ID:   ${{ secrets.JRK_CONNECTED_ID }}     # JRK 전용 connectedId
+          CODEF_BIRTHDATE:      ${{ secrets.JRK_BIRTHDATE }}
+          BANK_HANA_ACCTPW:     ${{ secrets.JRK_BANK_HANA_ACCTPW }}
+          FIREBASE_SA_JSON:     ${{ secrets.FIREBASE_SA_JSON }}
+          LOOKBACK_DAYS:        ${{ github.event.inputs.lookback_days || '30' }}
+          BANK_ORG_ONLY:        "0081"
+          FIRESTORE_COLLECTION: "jrk_bank_transactions"
+        run: python collector_bank.py
+      # NOTE: 카드(하나카드) 수집은 collector.py에 COLLECTION 환경변수 지원 추가 후 스텝 추가 예정
+      #       (현재 collector.py는 card_expenses 하드코딩 → 1줄 파라미터화 필요)
