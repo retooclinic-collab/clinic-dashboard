@@ -111,4 +111,18 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
   }
+    // ===== JRK(제이알케이) 재무 — 원장(admin) 전용, 서버(SA)만 쓰기 =====
+    match /jrk_card_expenses/{doc}        { allow read: if isAdmin(); allow write: if false; }
+    match /jrk_bank_transactions/{doc}    { allow read: if isAdmin(); allow write: if false; }
+    match /jrk_card_sync_log/{doc}        { allow read: if isAdmin(); allow write: if false; }
+    match /jrk_bank_sync_log/{doc}        { allow read: if isAdmin(); allow write: if false; }
+    match /jrk_card_vendor_checks/{doc}   { allow read, write: if isAdmin(); }
+    match /jrk_consultations/{doc}        { allow read, write: if isAdmin(); }
+    match /jrk_clinic_archive/{doc}       { allow read, write: if isAdmin(); }
+    match /jrk_clinic_settings/{doc}      { allow read, write: if isAdmin(); }
+    match /jrk_draft_imports/{doc}        { allow read, write: if isAdmin(); }
+    match /jrk_inventory_stock/{doc}      { allow read: if isAdmin(); allow write: if false; }
+    match /jrk_inventory_value_daily/{doc}{ allow read, write: if isAdmin(); }
+    match /jrk_access_log/{doc}           { allow read: if isAdmin(); allow create: if isAuthenticated(); allow update, delete: if false; }
+    match /jrk_audit_log/{doc}            { allow read: if isAdmin(); allow create: if isAuthenticated(); allow update, delete: if false; }
 }
