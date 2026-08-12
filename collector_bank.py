@@ -34,6 +34,8 @@ SKIP_ACCT = ("퇴직연금","irp","ira","isa","신탁","펀드","적금","정기
 SCOPE = os.environ.get("BANK_SCOPE", "b")
 PATH_ACCOUNTS = f"/v1/kr/bank/{SCOPE}/account/account-list"
 PATH_TRANS    = f"/v1/kr/bank/{SCOPE}/account/transaction-list"
+ORG_ONLY    = os.environ.get("BANK_ORG_ONLY", "")     # 지정 시 해당 은행코드만 수집
+ACCT_SUFFIX = os.environ.get("BANK_ACCT_SUFFIX", "")  # 지정 시 계좌번호 끝자리 일치만
 _LIMIT_HIT = []  # CF-00012(일일 호출한도) 도달 여부 기록
 
 OUT_VENDOR = {
@@ -110,6 +112,8 @@ def list_accounts(codef, org):
     for a in accts:
         no = _g(a, "resAccount", "resAccountNo", "resAccountDisplay")
         nm = str(_g(a,"resAccountName","resAccountNickName","resAccountDeposit"))
+        if no and ACCT_SUFFIX and not str(no).endswith(ACCT_SUFFIX):
+            continue
         if no and not any(k in nm.lower() for k in SKIP_ACCT):
             out.append({"no":str(no).strip(), "name":nm,
                         "balance":_g(a,"resAccountBalance","resAccountBalanceAmt", default="0")})
@@ -206,7 +210,7 @@ def main():
     total = 0
     stats = {}   # 계좌명 -> {min, max, cnt}
     batch = db.batch(); n = 0
-    for org in ORG_NAME:
+    for org in ([ORG_ONLY] if ORG_ONLY else ORG_NAME):
         print("수집:", ORG_NAME[org], flush=True)
         acctpw_raw = os.environ.get(ACCTPW_KEY.get(org, ""), "")
         acctpw_enc = encrypt_rsa(acctpw_raw, PUBLIC_KEY) if acctpw_raw else ""
