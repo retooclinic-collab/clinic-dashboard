@@ -31,6 +31,8 @@ jobs:
           FIREBASE_SA_JSON:     ${{ secrets.FIREBASE_SA_JSON }}
           SLACK_WEBHOOK_URL:    ${{ secrets.SLACK_WEBHOOK_URL }}
           LOOKBACK_DAYS:        "2"
+          BANK_ORG_ONLY:        "0081"
+          BANK_ACCT_SUFFIX:     "23207"
           FIRESTORE_COLLECTION: "bank_transactions"
         run: |
           python collector_bank.py            # …23207 포함 즉석 스크랩 → bank_transactions
