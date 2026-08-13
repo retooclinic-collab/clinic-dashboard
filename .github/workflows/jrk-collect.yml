@@ -2,6 +2,8 @@ name: jrk-collect
 # JRK(제이알케이) 카드·은행 수집 → jrk_* 컬렉션. 인증서(JRK connectedId) 준비 후 활성화.
 # 지금은 수동실행만(schedule 없음). JRK 시크릿 세팅 후 cron 추가하면 자동수집.
 on:
+  schedule:
+    - cron: "40 21 * * *"   # 매일 06:40 KST
   workflow_dispatch:
     inputs:
       lookback_days: { description: "조회 일수", default: "30", required: false }
