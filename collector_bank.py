@@ -67,6 +67,18 @@ def categorize(inout, desc):
                 return cat
     return ("기타수입" if inout == "입금" else "기타지출")
 
+# 벤더 메모(서브태그): 큰 카테고리 안에서 세부 채널/거래처를 식별. 필요시 계속 추가.
+# 예) 아이메이 = 중국(따) 유치 에이전시 → 메모 "중따". 다른 에이전시/유치경로도 여기 추가.
+VENDOR_MEMO = {
+ "아이메이": "중따",
+}
+def vendor_memo(desc):
+    s = str(desc).lower()
+    for kw, memo in VENDOR_MEMO.items():
+        if kw.lower() in s:
+            return memo
+    return ""
+
 def init_db():
     sa_json = os.environ.get("FIREBASE_SA_JSON")
     if sa_json:
@@ -202,6 +214,7 @@ def to_doc(org, account_no, account_name, t):
         "balanceAfter": bal_after,
         "desc": desc_join, "descParts": descs, "counterparty": counterparty,
         "category": categorize(inout, desc_join),
+        "vendorMemo": vendor_memo(desc_join),
         "trNo": appr,
         "updatedAt": firestore.SERVER_TIMESTAMP,
     }
