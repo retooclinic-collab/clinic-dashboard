@@ -6318,6 +6318,9 @@ async function confirmImport(){
         cat1: normalizeCat1(r.cat1 || r.category1 || ''),
         cat2: r.cat2 || r.category2 || '',
         staff: mapStaff(r.staff || r.consultant || '') || r.staff || '',
+        // ★ 시트 원문 약칭 보존 (2026-08-31): 확정 후에도 "시트엔 뭐라 적혀 있었나" 추적 가능.
+        //   종전엔 확정 시 staffRaw가 버려져 공란 행의 원문을 잃었다.
+        staffRaw: r.staffRaw || r.staff || r.consultant || '',
         doctor: r.doctor||'',
         paymentText: r.payText,
         amount: r.amount,
