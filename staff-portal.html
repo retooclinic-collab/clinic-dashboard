@@ -1249,7 +1249,7 @@ const _ITEM_KEYWORDS = {
   '줄기세포240cc':/줄기세포\s*240/i, '줄기세포120cc':/줄기세포\s*120/i,
   '줄기세포60cc':/줄기세포\s*60/i, '줄기세포30cc':/줄기세포\s*30/i,
   '줄기세포':/줄기세포/i,
-  '히알라제':/히알라제/i, '새살주사':/새살주사/i,
+  '히알라제':/히알(?!루론)/i, '새살주사':/새살주사/i,   // 히알 = 히알라제 약칭 (입술히알1cc 등). 필러 아님
   '인텐스울트라':/인텐스울트라/i, '위고비':/위고비/i,
   '마운자로 10.0':/마운자로\s*10/i, '마운자로 7.5':/마운자로\s*7\.5/i, '마운자로 5.0':/마운자로\s*5/i, '마운자로 2.5':/마운자로\s*2\.5/i,
   '조각주사':/조각주사/i,
@@ -1775,15 +1775,20 @@ function distributePrices(treatments, total, rawText){
   }catch(e){ console.warn('evt skincare0 err',e); }
   // 피부관리 최종가격 0원 → 라인 자체 제거 (2026-06-25, regex/AI 공통 후처리)
   try{ __p = __p.filter(t => !(t.item==='피부관리' && Math.round((t.price||0)*100)/100 === 0)); }catch(e){ console.warn('skincare0 drop err',e); }
-  // 미라젯·엑스인젝터 중복 통합: 한 결제건에 2개 이상이면 1줄로 합침 (qty=1 고정, 금액 합산) (미라젯 2026-06-25, 엑스인젝터 2026-08-02, regex/AI 공통 후처리)
+  // 미라젯·엑스인젝터 중복 통합: 회차 미명시(qty<2) 중복 라인만 1줄로 합침 (qty=1 고정, 금액 합산).
+  //   ★ 회차(N회) 패키지 라인(qty>=2)은 N번 시술분이므로 통합 대상에서 제외·그대로 보존 (2026-08-13).
+  //   (미라젯 2026-06-25, 엑스인젝터 2026-08-02, 회차예외 2026-08-13, regex/AI 공통 후처리)
   try{
     ['미라젯','엑스인젝터'].forEach(__nm => {
-      const __mj = __p.map((t,i)=> t.item===__nm ? i : -1).filter(i=>i>=0);
-      if(__mj.length>1){
-        const __sum = __mj.reduce((a,i)=> a + (Number(__p[i].price)||0), 0);
-        const __first = __mj[0];
+      const __all = __p.map((t,i)=> t.item===__nm ? i : -1).filter(i=>i>=0);
+      // 회차 패키지(qty>=2)는 보존, 회차 미명시(qty<2) 중복만 통합
+      const __unit = __all.filter(i => (Number(__p[i].qty)||1) < 2);
+      if(__unit.length>1){
+        const __sum = __unit.reduce((a,i)=> a + (Number(__p[i].price)||0), 0);
+        const __first = __unit[0];
         __p[__first] = {...__p[__first], qty:1, price:Math.round(__sum*100)/100};
-        __p = __p.filter((t,i)=> !(t.item===__nm && i!==__first));
+        const __drop = new Set(__unit.slice(1));
+        __p = __p.filter((t,i)=> !__drop.has(i));
       }
     });
   }catch(e){ console.warn('mirajet merge err',e); }
@@ -2151,8 +2156,9 @@ VIP할인혜택(별도 필드)
 진정관리,진정팩,커스텀케어 → 피부관리
 피부관리 최종가격이 0(할인차감/sv 등)이면 → 항목 자체를 출력하지 마세요 (0원 피부관리 라인 제거)
 이벤트(N월e/이벤트) 번들에 포함된 피부관리는 0원 처리(자동 제거)됩니다 → 피부관리 가격배분에서 제외하고 그 몫을 다른 시술에 배분하세요
-미라젯이 한 결제건에 2번 이상 나오면 → 미라젯 한 줄로 합치세요 (qty=1 고정, 금액은 합산)
-엑스인젝터가 한 결제건에 2번 이상 나오면 → 엑스인젝터 한 줄로 합치세요 (qty=1 고정, 금액은 합산)
+★회차(N회) vs 수량(N개/N병/Ncc) 구분: '미라젯/엑스인젝터...N회'는 묶음 전체가 N번 시술 → 미라젯·엑스인젝터 포함 그 묶음 모든 항목 qty=N (예: 미라젯쥬브아셀V3회→미라젯 qty=3+쥬브아셀V qty=3, 엑스인젝터리쥬란V3회→엑스인젝터 qty=3). 개·병·cc(수량)는 동반 약물에만 적용, 디바이스(미라젯/엑스인젝터)는 qty=1 (예: 미라젯+쥬브아셀2병→미라젯 qty=1)
+미라젯이 한 결제건에 회차 미명시로 2번 이상 나오면(같은 날 방식 반복) → 미라젯 한 줄로 합치세요 (qty=1 고정, 금액은 합산). ★단 'N회' 회차 패키지의 미라젯은 qty=N 유지(합치지 말 것)
+엑스인젝터가 한 결제건에 회차 미명시로 2번 이상 나오면 → 엑스인젝터 한 줄로 합치세요 (qty=1 고정, 금액은 합산). ★단 'N회' 회차 패키지의 엑스인젝터는 qty=N 유지
 폭탄수액,백옥슈팅,비타민수액,리커버리수액,리바이탈수액 → 수액
 백옥(단독) → 백옥 (수액과 별도 항목!)
 마스크팩,크림N박스,닥터랩마스크팩,기타 모든 판매품/화장품(리쥬셀릭크림/앰플/선물세트만 예외) → 제품
@@ -2169,6 +2175,7 @@ BBL여드름 → BBL(여드름) | BBL스킨타이트닝 → BBL(스킨타이트�
 "스킨b 제오민업그레이드" → 보톡스(수입) qty=1 (국산→제오민 업그레이드 추가금)
 쥬브아셀3%→쥬브아셀3%, 쥬브아셀8%→쥬브아셀8%, 쥬브아셀V→쥬브아셀V (농도/버전별 별개 항목! 필러 아님). 농도/버전 미표기는 쥬브아셀V (generic 쥬브아셀 만들지 마세요)
 필러 약어: F,f = 필러. 턱끝F,목필러,입술F → 필러. 부위명+F → 부위필러.
+히알 = 히알라제 약칭 (필러 아님!). 입술히알1cc, 턱히알, 히알2cc → 전부 히알라제 qty=1. ★cc 무관 항상 qty=1 (cc로 환산 금지). 히알루론산 필러가 아니라 필러 녹이는 시술.
 리투오(또는쥬브아셀), 리투오/쥬브아셀, 리투오or쥬브아셀 → 쥬브아셀만 카운트
 (○○대체) 괄호 안 대체 표기 → 항목 추가 안 함 (메모)
 미수금완납N, 미수금N결제, N미수금결제 → 미수금결제 항목 price=N (과거 미수금 당일 정산). 청구=결제 맞추려 포함. 당일 시술과 별개.
@@ -2255,6 +2262,11 @@ qty = cc수. 1cc→1, 2cc→2
 미라젯리쥬란Ncc → 미라젯 qty=1 + 리쥬란 qty=N÷2
 엑스인젝터 = 주사방식(디바이스) 항목(하이쿡스와 동일 성격). cc/용량과 무관하게 항상 qty=1, 기본가 11. Ncc는 동반 약물 쪽 수량(예: 엑스인젝터리쥬란4cc → 리쥬란 qty=2 + 엑스인젝터 qty=1). 괄호 분해 명시가 우선(예: 엑스인젝터리쥬란4cc121(리쥬란110+엑스인젝터11) → 리쥬란 qty2 110 + 엑스인젝터 11). 리쥬란 외 어떤 시술과 조합돼도 동일. 단독 엑스인젝터N → qty=1, 가격 N(보통 11)
 미라젯리쥬란HB Ncc → 미라젯 qty=1 + 리쥬란HB qty=N
+미라젯리쥬란Ncc M회 → 미라젯 qty=M + 리쥬란 qty=(N÷2)×M  (예: 미라젯리쥬란4cc3회 → 미라젯3 + 리쥬란6)
+미라젯리쥬란HB Ncc M회 → 미라젯 qty=M + 리쥬란HB qty=N×M  (예: 미라젯리쥬란HB3cc2회 → 미라젯2 + 리쥬란HB6)
+미라젯리쥬란아이 Ncc M회 → 미라젯 qty=M + 리쥬란아이 qty=N×M
+★★ 모든 미라젯 콤보 공통: 'N회' 명시되면 미라젯 qty=N, 동반약물 qty=단위수량×N (쥬베룩·쥬브아셀3%/8%/V·리투오·리쥬란·리쥬란HB·리쥬란아이 전부 동일, 예외 없음).
+   근거: 'N회'는 그 묶음을 다른 날에 N번 반복한다는 뜻 → 장비도 약물도 N번 들어감. 미라젯만 qty=1로 두지 마세요
 미라젯쥬브아셀N회 → 미라젯 qty=N + 쥬브아셀 qty=N
 미라젯리투오N회 → 미라젯 qty=N + 리투오 qty=N
 미라젯(리투오+리쥬란HB2cc) → 미라젯1 + 리투오1 + 리쥬란HB2 (괄호 안 = 서브항목)
@@ -2312,6 +2324,9 @@ VIP 등급별 할인: VIP500→vipDiscount=25, VIP700→vipDiscount=49, VIP1000�
   "스킨b 제오민업그레이드" → 보톡스(수입) qty=1
 ✗ F/f = 필러! 보톡스가 아닙니다!
   "입술F" → 필러 | "턱끝F" → 필러
+✗ 히알 = 히알라제! 절대 필러가 아닙니다!
+  "입술히알1cc" → 히알라제 qty=1 (16.5) | "턱히알라제" → 히알라제 qty=1
+  ★ "히알2cc" 도 qty=1 (cc로 qty 환산 금지)
 ✓ 쥬브아셀3%/8%/V = 각각 별개 항목 (필러 아님! 농도·버전별 분리). 미표기는 쥬브아셀V
 ✗ 커스텀케어 = 피부관리 (독립 시술 아님)
 ✗ 힐라이트sv = 피부관리 price=0 (이미 피부관리가 있으면 중복 추가 안 함)
@@ -2410,7 +2425,7 @@ price=만원. 텍스트에 가격 있으면 사용, 없으면 null.
 리투핏주사, 리투업주사 → 각각 독립 항목 (17.6만원)
 리투핏주사(바디) → 바디 버전 (17.6만원)
 새살주사 → 새살주사 (27.5만원)
-히알라제 → 히알라제 (16.5만원)
+히알라제, 히알 → 히알라제 (16.5만원). ★ "입술히알1cc" "턱히알" 처럼 부위명+히알+cc 형태도 히알라제! 필러 아님 (부위명 제거, ★cc 무관 항상 qty=1)
 
 [기타 시술]
 자가엑소좀 ≠ 엑소좀! 자가엑소좀=165, 엑소좀=55 (완전 별개!)
@@ -2806,6 +2821,7 @@ index는 입력의 [번호]와 동일하게.`,
 ★ 핵심 규칙:
 - b/B/btx = 보톡스 (필러 아님!)
 - F/f = 필러 (보톡스 아님!)
+- 히알/히알라제 = 히알라제 (필러 아님!). "입술히알1cc" = 히알라제 qty=1
 - 쥬브아셀3%/8%/V = 각각 별개 항목 (필러 아님!) 미표기는 쥬브아셀V
 - 커스텀케어/진정관리 = 피부관리
 - sv = 서비스 (price=0)
@@ -2894,6 +2910,7 @@ async function verifyParse(raw, treatments) {
 ★ 핵심 규칙:
 - b/B/btx = 보톡스 (필러 아님!). "이마b(국)" = 보톡스(국산) qty=1
 - F/f = 필러 (보톡스 아님!). "입술F" = 필러
+- 히알/히알라제 = 히알라제 (필러 아님!). "입술히알1cc" = 히알라제 qty=1
 - 쥬브아셀3%/8%/V = 각각 별개 항목 (필러 아님! 농도·버전별 분리) 미표기는 쥬브아셀V
 - 커스텀케어/진정관리/힐라이트 = 피부관리
 - sv/SV = 서비스 (price=0)
@@ -3485,11 +3502,21 @@ function localParse(raw){
     }
   } else if(opusS) results.push({item:'오푸스', qty:1});
 
+  // ★ 미라젯 콤보 공통 회차(N회): 묶음 전체가 N번 시술 → 미라젯 qty=N (2026-08-13 규칙, 2026-08-31 전 콤보 확대)
+  //   같은 세그먼트(+ , 줄바꿈 이전) 안의 첫 'N회'만 인정.
+  //   ★ 동반약물도 '단위수량 × 회차' (N회 = 다른 날 N번 반복 시술이므로 약물도 N번 들어감) — 2026-08-31 원장확인
+  const _mjHoeM = raw.match(/미라젯[^,+\n]*?(\d+)\s*회/i);
+  const _mjHoe = _mjHoeM ? parseInt(_mjHoeM[1]) : 1;
+  // 미라젯+리쥬란HB / 미라젯+리쥬란아이 콤보 여부 (단독 파서 중복 push 방지 — 2026-08-31)
+  const _mjRjHBCombo  = /미라젯\s*리쥬란\s*hb/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*hb/i.test(raw);
+  const _mjRjEyeCombo = /미라젯\s*리쥬란\s*아이/i.test(raw) || /미라젯\s*\([^)]*리쥬란\s*아이/i.test(raw) || /미라젯\s*아이리쥬란/i.test(raw);
+
   // ── 리쥬란 (HB, 아이, 일반) ──
   const rjHB = raw.match(/리쥬란\s*hb\s*(\d+)\s*cc/i);
-  if(rjHB) results.push({item:'리쥬란HB', qty: parseInt(rjHB[1])});
+  // ★ 미라젯 콤보면 아래 콤보 블록에서 회차 반영해 push (여기서 하면 이중 계상) — 2026-08-31
+  if(rjHB && !_mjRjHBCombo) results.push({item:'리쥬란HB', qty: parseInt(rjHB[1])});
   const rjEye = raw.match(/(?:아이리쥬란|리쥬란아이|리쥬란\s*e\s*아이)\s*(\d+)\s*cc/i);
-  if(rjEye) results.push({item:'리쥬란아이', qty: parseInt(rjEye[1])});
+  if(rjEye && !_mjRjEyeCombo) results.push({item:'리쥬란아이', qty: parseInt(rjEye[1])});
   // 미라젯리쥬란 콤보가 있을 경우 단독 리쥬란 파서는 스킵 (콤보에서 처리)
   // 이벤트 그룹에서 이미 리쥬란이 처리된 경우도 스킵
   const _egHasRjEarly = _eventGroupRawTokens.some(t => /리쥬란/.test(t));
@@ -3536,24 +3563,28 @@ function localParse(raw){
   const hasMjLto = !(_egHasMj && _egHasLto) && (/미라젯\s*리투오/i.test(raw) || /미라젯\s*\([^)]*리투오/i.test(raw));
 
   if(hasMjRjHB){
-    results.push({item:'미라젯', qty:1});
-    const cc = raw.match(/미라젯\s*리쥬란\s*hb\s*(\d+)\s*cc/i) || raw.match(/미라젯\s*\([^)]*리쥬란\s*hb\s*(\d+)\s*cc/i);
-    results.push({item:'리쥬란HB', qty: cc?parseInt(cc[1]):1});
+    results.push({item:'미라젯', qty:_mjHoe});
+    const cc = raw.match(/미라젯\s*리쥬란\s*hb\s*(\d+)\s*cc/i) || raw.match(/미라젯\s*\([^)]*리쥬란\s*hb\s*(\d+)\s*cc/i)
+            || rjHB;
+    // 리쥬란HB 1cc=1단위 × 회차
+    results.push({item:'리쥬란HB', qty: (cc?parseInt(cc[1]):1) * _mjHoe});
   }
   if(hasMjRjEye){
-    // 미라젯리쥬란아이 → 미라젯1 + 리쥬란아이는 rjEye에서 이미 처리됨
-    results.push({item:'미라젯', qty:1});
+    // 미라젯리쥬란아이 → 미라젯 qty=회차, 리쥬란아이는 여기서 (1cc=1단위 × 회차)
+    results.push({item:'미라젯', qty:_mjHoe});
+    results.push({item:'리쥬란아이', qty: (rjEye?parseInt(rjEye[1]):1) * _mjHoe});
   }
   if(hasMjRj){
-    results.push({item:'미라젯', qty:1});
+    results.push({item:'미라젯', qty:_mjHoe});
     const cc = raw.match(/미라젯\s*리쥬란\s*(\d+)\s*cc/i) || raw.match(/미라젯\s*\([^)]*리쥬란\s*(\d+)\s*cc/i)
             || raw.match(/리쥬란\s*(\d+)\s*cc\s*\(\s*미라젯\s*\)/i);
-    results.push({item:'리쥬란', qty: cc?Math.round(parseInt(cc[1])/2):1});
+    // 리쥬란(일반) 2cc=1단위 × 회차
+    results.push({item:'리쥬란', qty: (cc?Math.max(1,Math.round(parseInt(cc[1])/2)):1) * _mjHoe});
   }
   if(hasMjJbv){
     // 미라젯쥬베룩 → 쥬베룩볼륨만 추가 (미라젯은 다른 조합이나 단독에서 1회로 카운트)
     const m = raw.match(/미라젯\s*쥬베룩\s*(\d+)\s*회/i) || raw.match(/미라젯\s*\([^)]*쥬베룩\s*(\d+)\s*회/i);
-    const q = m ? parseInt(m[1]) : 1;
+    const q = m ? parseInt(m[1]) : _mjHoe;
     // 미라젯리쥬란 등 다른 조합이 없으면 미라젯도 추가
     if(!hasMjRj && !hasMjRjHB && !hasMjRjEye && !hasMjJba && !hasMjLto){
       results.push({item:'미라젯', qty:q, _fixedAmt:38.5*q});
@@ -3565,14 +3596,14 @@ function localParse(raw){
     const _jvm = raw.match(/미라젯\s*쥬브아셀\s*(3\s*%|8\s*%|[vV])/i);
     const _jbaItem = _jvm ? (/3/.test(_jvm[1])?'쥬브아셀3%':/8/.test(_jvm[1])?'쥬브아셀8%':'쥬브아셀V') : '쥬브아셀';
     const m = raw.match(/미라젯\s*쥬브아셀\s*(?:[vV]|\d+\s*%)?\s*(\d+)\s*[회병]/i);
-    const q = m ? parseInt(m[1]) : 1;
+    const q = m ? parseInt(m[1]) : _mjHoe;
     results.push({item:'미라젯', qty:q, _fixedAmt:38.5*q});
     results.push({item:_jbaItem, qty:q, _fixedAmt:88*q});
   }
   if(hasMjLto){
     // 미라젯리투오 → 미라젯1(38.5) + 리투오1(88)
     const m = raw.match(/미라젯\s*리투오\s*(\d+)\s*[회병]/i);
-    const q = m ? parseInt(m[1]) : 1;
+    const q = m ? parseInt(m[1]) : _mjHoe;
     results.push({item:'미라젯', qty:q, _fixedAmt:38.5*q});
     results.push({item:'리투오', qty:q, _fixedAmt:88*q});
   }
@@ -3978,6 +4009,10 @@ function localParse(raw){
     }
   }
   if(/새살주사/i.test(raw)) results.push({item:'새살주사', qty:1});
+  // ── 히알라제 (약칭 '히알' 포함, 부위명 제거) ──
+  // "입술히알1cc16.5", "턱히알라제16.5" → 히알라제. ★ 필러 아님 (히알루론산 아님)
+  // ★ cc 무관 항상 qty=1 (히알2cc도 1). cc는 용량 표기일 뿐 과금 단위 아님
+  if(/히알(?!루론)/i.test(raw)) results.push({item:'히알라제', qty:1});
   if(/스킨바이브/i.test(raw)){
     const sbM = raw.match(/스킨바이브\s*(\d+)\s*cc/i);
     results.push({item:'스킨바이브', qty: sbM?parseInt(sbM[1]):1});
@@ -4255,33 +4290,43 @@ function localParse(raw){
         else qty = Math.max(1, ccVal);
       }
       const hoeM = t.match(/(\d+)\s*회/); if(hoeM) qty = parseInt(hoeM[1]);
+      // ★ 미라젯 콤보의 미라젯 qty = 회차(N회) 명시 시 N, 그 외 1 (cc/병 수량은 동반약물 전용) — 2026-08-31
+      const _mjQty = hoeM ? parseInt(hoeM[1]) : 1;
       // kj는 수량 영향 거의 없음 (티타늄)
 
       // 시술명 매핑 — 배열 반환 (하나의 토큰이 여러 항목으로 분해될 수 있음)
       // 미라젯 조합 우선 체크 (쥬베룩/리쥬란/쥬브아셀/리투오 보다 앞에)
       if(/미라젯쥬베룩/.test(t)) return [{item:'미라젯', qty}, {item:'쥬베룩볼륨', qty}];
-      if(/미라젯.*리쥬란\s*hb/.test(t)) return [{item:'미라젯', qty:1}, {item:'리쥬란HB', qty}];
+      if(/미라젯.*리쥬란\s*hb/.test(t)){
+        const _hbCc = t.match(/(\d+)\s*cc/);
+        return [{item:'미라젯', qty:_mjQty}, {item:'리쥬란HB', qty: (_hbCc?parseInt(_hbCc[1]):1) * _mjQty}];
+      }
       // 미라젯리쥬란아이 → 미라젯1 + 리쥬란아이(cc기반 qty)
       if(/미라젯.*리쥬란\s*아이|미라젯.*아이리쥬란/.test(t)){
         const ccM = t.match(/(\d+)\s*cc/);
-        const eyeQty = ccM ? parseInt(ccM[1]) : qty;
-        return [{item:'미라젯', qty:1}, {item:'리쥬란아이', qty: eyeQty}];
+        const eyeQty = (ccM ? parseInt(ccM[1]) : 1) * _mjQty;   // 1cc=1단위 × 회차
+        return [{item:'미라젯', qty:_mjQty}, {item:'리쥬란아이', qty: eyeQty}];
       }
       // 미라젯(리쥬란+쥬베룩) 복합: 리쥬란Ncc + 쥬베룩Mcc 둘 다 포함
       // 미라젯은 디바이스 1개, 리쥬란·쥬베룩 각각 별도 카운트
       if(/미라젯/.test(t) && /리쥬란/.test(t) && /쥬베룩/.test(t)){
         const rjCc = t.match(/리쥬란\s*(\d+)\s*cc/);
-        const rjQty = rjCc ? Math.max(1, Math.round(parseInt(rjCc[1])/2)) : 1;
-        return [{item:'미라젯', qty:1}, {item:'리쥬란', qty: rjQty}, {item:'쥬베룩볼륨', qty: 1}];
+        const rjQty = (rjCc ? Math.max(1, Math.round(parseInt(rjCc[1])/2)) : 1) * _mjQty;   // 2cc=1단위 × 회차
+        return [{item:'미라젯', qty:_mjQty}, {item:'리쥬란', qty: rjQty}, {item:'쥬베룩볼륨', qty: _mjQty}];
       }
       if(/미라젯.*리쥬란|리쥬란.*미라젯/.test(t)){
         // 미라젯리쥬란NCC → 미라젯 1 + 리쥬란 N/2
         const ccM = t.match(/(\d+)\s*cc/);
-        const rjQty = ccM ? Math.max(1, Math.round(parseInt(ccM[1])/2)) : qty;
-        return [{item:'미라젯', qty:1}, {item:'리쥬란', qty: rjQty}];
+        const rjQty = (ccM ? Math.max(1, Math.round(parseInt(ccM[1])/2)) : 1) * _mjQty;   // 2cc=1단위 × 회차
+        return [{item:'미라젯', qty:_mjQty}, {item:'리쥬란', qty: rjQty}];
       }
-      if(/미라젯.*쥬브아셀|쥬브아셀.*미라젯/.test(t)) return [{item:'미라젯', qty:1}, {item:'쥬브아셀', qty}];
-      if(/미라젯.*리투오|리투오.*미라젯/.test(t)) return [{item:'미라젯', qty:1}, {item:'리투오', qty}];
+      if(/미라젯.*쥬브아셀|쥬브아셀.*미라젯/.test(t)){
+        // 농도/버전별 별개 항목 (미표기는 쥬브아셀V) — generic '쥬브아셀' 생성 금지 (규칙 2-9)
+        const _jv = t.match(/쥬브아셀\s*(3\s*%|8\s*%|[vV])/i);
+        const _jbaItem = _jv ? (/3/.test(_jv[1])?'쥬브아셀3%':/8/.test(_jv[1])?'쥬브아셀8%':'쥬브아셀V') : '쥬브아셀V';
+        return [{item:'미라젯', qty:_mjQty}, {item:_jbaItem, qty}];
+      }
+      if(/미라젯.*리투오|리투오.*미라젯/.test(t)) return [{item:'미라젯', qty:_mjQty}, {item:'리투오', qty}];
 
       // 일반 시술
       if(/소프(?:웨이브)?/.test(t)) return [{item:'소프웨이브(50샷)', qty}];
