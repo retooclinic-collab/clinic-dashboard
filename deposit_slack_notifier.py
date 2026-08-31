@@ -262,11 +262,15 @@ def cli_live():
     send_rows, _ = classify_rows(rows)
     st = load_state(db); seen = set(st.get("sent_ids", []))
     new_sent = 0
-    for r, why in send_rows:
-        if r["id"] in seen:
-            continue
-        post_slack(slack_text(r)); seen.add(r["id"]); new_sent += 1
-    save_state(db, {"sent_ids": list(seen)})
+    try:
+        for r, why in send_rows:
+            if r["id"] in seen:
+                continue
+            post_slack(slack_text(r)); seen.add(r["id"]); new_sent += 1
+    finally:
+        # 중간에 실패해도 "이미 보낸 것"까지는 반드시 기록 — 안 그러면 다음 폴링에 중복 발송된다.
+        # (3분 폴링이라 예전 10분 크론보다 중복 위험이 훨씬 크다)
+        save_state(db, {"sent_ids": list(seen)})
     print(f"전송 {new_sent}건 (신규만). 누적 {len(seen)}건.")
 
 def cli_seed(days=14):
