@@ -24,7 +24,9 @@
 환경변수:
   FIREBASE_SA_JSON        : 서비스계정 JSON(문자열) — Firestore 읽기
   또는 GOOGLE_APPLICATION_CREDENTIALS : SA JSON 파일경로
-  SLACK_WEBHOOK_URL       : 상담팀 채널 Incoming Webhook (운영모드에서만 필요)
+  SLACK_WEBHOOK_URLS      : 발송할 Incoming Webhook URL 목록(쉼표/줄바꿈 구분)
+                            예) 상담팀 + 00-데스크-daily 두 채널 동시발송
+  SLACK_WEBHOOK_URL       : 단일 웹훅(하위호환). URLS와 같이 써도 됨(중복 자동제거)
   TARGET_ACCT_SUFFIX      : 대상계좌 끝자리(기본 "23207")
   LOOKBACK_DAYS           : 조회 일수(기본 14)
   STATE_PATH              : 중복방지 상태파일(기본 E:\...\deposit_notifier_state.json)
@@ -36,7 +38,18 @@ LOOKBACK      = int(os.environ.get("LOOKBACK_DAYS", "14"))
 STATE_PATH    = os.environ.get(
     "STATE_PATH",
     r"E:\Claude\Projects\클로드 Cowork\card-automation\deposit_notifier_state.json")
-SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK_URL", "")
+# ── 발송 채널 ─────────────────────────────────────────────────────────────
+# 여러 채널 동시발송. 채널마다 Incoming Webhook URL이 따로 발급되므로 목록으로 받는다.
+def _webhook_list():
+    raw = os.environ.get("SLACK_WEBHOOK_URLS", "") + "," + os.environ.get("SLACK_WEBHOOK_URL", "")
+    seen, out = set(), []
+    for u in raw.replace(chr(10), ",").split(","):
+        u = u.strip()
+        if u and u not in seen:
+            seen.add(u); out.append(u)
+    return out
+
+SLACK_WEBHOOKS = _webhook_list()
 COLLECTION    = os.environ.get("FIRESTORE_COLLECTION", "bank_transactions")
 
 # ── 입금자명 추출기 (★ collector counterparty 신뢰 안 함) ────────────────────
@@ -166,13 +179,28 @@ def slack_text(row):
             f"• 계좌   : 하나 …{acct_tail}")
 
 def post_slack(text):
-    if not SLACK_WEBHOOK:
-        raise RuntimeError("SLACK_WEBHOOK_URL 미설정 — 운영모드 불가")
-    req = urllib.request.Request(
-        SLACK_WEBHOOK, data=json.dumps({"text": text}).encode("utf-8"),
-        headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return resp.status
+    """등록된 모든 채널에 발송. 일부 채널만 실패하면 경고만 남기고 성공 처리한다
+    (한 채널 장애로 다른 채널까지 재발송/중복되는 것을 막기 위함). 전 채널 실패면 예외."""
+    if not SLACK_WEBHOOKS:
+        raise RuntimeError("SLACK_WEBHOOK_URLS / SLACK_WEBHOOK_URL 미설정 — 운영모드 불가")
+    ok, errs = 0, []
+    for url in SLACK_WEBHOOKS:
+        req = urllib.request.Request(
+            url, data=json.dumps({"text": text}).encode("utf-8"),
+            headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if 200 <= resp.status < 300:
+                    ok += 1
+                else:
+                    errs.append(f"...{url[-10:]} HTTP {resp.status}")
+        except Exception as e:                      # URL은 비밀 → 끝 10자만 로그
+            errs.append(f"...{url[-10:]} {e}")
+    if errs:
+        print("slack warn:", "; ".join(errs), flush=True)
+    if ok == 0:
+        raise RuntimeError("슬랙 전 채널 발송 실패: " + "; ".join(errs))
+    return ok
 
 # ── 상태(중복방지) — Firestore 저장 (헤드리스 필수: 매 실행 초기화 방지) ──────────
 STATE_DOC = os.environ.get("STATE_DOC", "deposit_alert_state/main")
