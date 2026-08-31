@@ -5269,14 +5269,10 @@ function renderAdminTab(){
   loadAuditLog();
 }
 
-var _staffAccounts = [
-  {name:'테스트직원', email:'progressio333@gmail.com', status:'활성'},
-  {name:'김구슬', email:'gs.kim@retooclinic.com', status:'대기'},
-  {name:'길연주', email:'yj.gil@retooclinic.com', status:'대기'},
-  {name:'김도은', email:'de.kim@retooclinic.com', status:'대기'},
-  {name:'호아신', email:'as.ho@retooclinic.com', status:'대기'},
-  {name:'장나은', email:'ne.jang@retooclinic.com', status:'대기'},
-];
+// ★ 실명·이메일 비공개 (2026-08-31): 이 파일은 로그인 없이 공개 접근되므로 직원 명단을
+//   코드에 두지 않는다. 실제 목록은 Firestore clinic_settings/staff_list 에만 있고
+//   renderStaffList()가 fbLoadStaffList()로 불러온다. ❌ 여기에 이름/이메일 다시 넣지 말 것.
+var _staffAccounts = [];
 
 async function renderStaffList(){
   var container = document.getElementById('admin-staff-list');
