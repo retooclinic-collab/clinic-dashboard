@@ -1,17 +1,23 @@
 name: deposit-slack-alert
-# 업무시간(진료시간)에만 10분마다 …23207 즉석 스크랩 → 카드사 외 신규 입금 → 상담팀 슬랙.
+# 하나 …23207 입금 → 카드사/공단/이자/대표자전거래 제외 → 상담팀 + #00-데스크-daily 슬랙.
 # 중복방지는 Firestore(deposit_alert_state) — 이미 보낸 건 재전송 안 함.
+#
+# ★ 2026-08-31 구조 변경 — "크론 10분"에서 "잡 안에서 3분 루프"로.
+#   GitHub 예약 크론은 틱을 대부분 버린다(실측: 8/27~8/31 하루 1~3회밖에 안 돎).
+#   그래서 크론에 매 폴링을 맡기지 않고, 한 번 뜬 잡이 3분마다 스스로 도는 방식으로 바꿨다.
+#   크론은 "시동"만 담당하고, 10분마다 시동을 시도한다(대부분 버려져도 하나만 붙으면 5시간반 커버).
+#   동시 실행은 concurrency로 1개 + 대기 1개까지만 → 돌던 잡이 끝나면 대기 잡이 이어받아 연속 커버.
 on:
   schedule:
-    # 매 10분, UTC 00:00–12:59 = KST 09:00–21:59, 월–토 (일요일 제외)
-    - cron: "*/10 0-12 * * 1-6"
-  workflow_dispatch:      # 수동 실행도 가능
+    - cron: "*/10 0-12 * * 1-6"   # UTC 00:00–12:59 = KST 09:00–21:59, 월–토
+  workflow_dispatch:
 concurrency:
   group: deposit-alert
   cancel-in-progress: false
 jobs:
   alert:
     runs-on: ubuntu-latest
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,7 +25,7 @@ jobs:
           python-version: "3.11"
       - name: install
         run: pip install -r requirements.txt
-      - name: scrape fresh + alert new deposits
+      - name: poll loop (3분 간격, 최대 5시간 40분)
         env:
           CODEF_CLIENT_ID:      ${{ secrets.CODEF_CLIENT_ID }}
           CODEF_CLIENT_SECRET:  ${{ secrets.CODEF_CLIENT_SECRET }}
@@ -27,13 +33,33 @@ jobs:
           CODEF_CONNECTED_ID:   ${{ secrets.CODEF_CONNECTED_ID }}
           CODEF_BIRTHDATE:      ${{ secrets.CODEF_BIRTHDATE }}
           BANK_HANA_ACCTPW:     ${{ secrets.BANK_HANA_ACCTPW }}
-          BANK_BUSAN_ACCTPW:    ${{ secrets.BANK_BUSAN_ACCTPW }}
           FIREBASE_SA_JSON:     ${{ secrets.FIREBASE_SA_JSON }}
           SLACK_WEBHOOK_URL:    ${{ secrets.SLACK_WEBHOOK_URL }}
+          # 여러 채널 동시발송(상담팀 + #00-데스크-daily). 쉼표로 구분한 웹훅 URL 목록.
+          # 미설정이면 위 SLACK_WEBHOOK_URL 하나만 쓰는 기존 동작 그대로.
+          SLACK_WEBHOOK_URLS:   ${{ secrets.SLACK_WEBHOOK_URLS }}
           LOOKBACK_DAYS:        "2"
+          # 부산(0032)은 정식 connectedId에 등록돼 있지 않아 매번 실패콜만 낭비 → 하나(0081)만.
+          # ※ 계좌는 좁히지 않는다 — 저축예금(입금)뿐 아니라 사업자주거래우대통장(출금)도 같이 받아야
+          #   clinic-final 입출금 탭의 "오늘 출금"이 하루 종일 최신으로 유지된다.
           BANK_ORG_ONLY:        "0081"
-          BANK_ACCT_SUFFIX:     "23207"
           FIRESTORE_COLLECTION: "bank_transactions"
         run: |
-          python collector_bank.py            # …23207 포함 즉석 스크랩 → bank_transactions
-          python deposit_slack_notifier.py    # 카드사 외 신규 입금만 → 상담팀 웹훅
+          set -u
+          kst() { date -u -d "@$(( $(date -u +%s) + 32400 ))" "+$1"; }   # tzdata 의존 없이 KST 계산
+          END=$(( $(date -u +%s) + 340*60 ))
+          n=0
+          while :; do
+            H=$(kst %H); D=$(kst %u)
+            if [ "$D" = "7" ] || [ "$H" -ge 22 ] || [ "$H" -lt 09 ]; then
+              echo "::notice::진료시간 밖(KST $(kst '%F %H:%M'), 요일 $D) — 루프 종료"; break
+            fi
+            n=$((n+1)); echo "── [$n] KST $(kst '%F %H:%M:%S') 폴링 ──"
+            python collector_bank.py         || echo "::warning::collector rc=$?"
+            python deposit_slack_notifier.py || echo "::warning::notifier rc=$?"
+            if [ "$(date -u +%s)" -ge "$END" ]; then
+              echo "::notice::루프 시간 소진 — 종료(다음 시동 대기)"; break
+            fi
+            sleep 180
+          done
+          echo "총 $n회 폴링."
