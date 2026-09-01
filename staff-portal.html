@@ -6058,6 +6058,7 @@ function openImportEditModal(idx){
           <textarea id="ie-paytext" class="form-textarea" style="min-height:140px;padding-bottom:36px">${r.payText||''}</textarea>
           <button onclick="reparseImportRow(${idx})" style="position:absolute;right:8px;bottom:8px;background:var(--accent);color:#0f172a;border:none;border-radius:7px;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;z-index:1">⚡ 재분석</button>
         </div>
+        <div id="ie-parse-result" style="margin-top:6px;font-size:11px;color:var(--muted)"></div>
       </div>
 
       <!-- 시술항목 -->
@@ -6178,6 +6179,21 @@ function ieAddTreat(idx){
 }
 
 
+/* ★ 2026-09-01: 재분석 출처 배지.
+   smartParse는 AI 실패 시 regex 파서로 조용히 폴백한다. 어느 경로로 파싱됐는지
+   보이지 않으면 결과가 이상할 때 원인 추적이 불가능하므로 항상 표시한다. */
+window._parseSrcBadge = function(elId, source, count){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  const isAI = String(source||'').startsWith('ai');
+  const badge = isAI
+    ? '<span style="background:#10b981;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:6px">AI 분석</span>'
+    : '<span style="background:#b45309;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:6px">자동(규칙)</span>';
+  const note = isAI ? '' : ' <span style="font-size:10px;color:var(--muted)">AI 미응답 → 규칙 파서로 처리</span>';
+  el.innerHTML = '<span style="color:#10b981">\u2713 ' + (count||0) + '개 항목 재추출</span>' + badge + note;
+  el.title = 'parse source: ' + (source||'regex');
+};
+
 async function reparseImportRow(idx){
   const text = document.getElementById('ie-paytext')?.value.trim();
   if(!text) return;
@@ -6187,6 +6203,7 @@ async function reparseImportRow(idx){
     const parsed = await smartParse(text);
     window._ieTreats = distributePrices(parsed.treatments, amt, text);
     renderIETreatList(idx);
+    window._parseSrcBadge('ie-parse-result', parsed._source, (window._ieTreats||[]).length);
     // AI 결제방식
     if(parsed._source?.startsWith('ai') && parsed.payMethods?.length){
       window._iePays = parsed.payMethods.map(p=>({method:p.method, amt:p.amt||0}));
@@ -7620,8 +7637,10 @@ async function reparseEditModal(){
   if(!text){ showToast('결제내역을 입력해주세요','error'); return; }
   const amt = parseFloat(document.getElementById('edit-amount')?.value)||extractAmount(text)||0;
   if(amt) document.getElementById('edit-amount').value = amt;
+  let _parseSrc = null;
   try {
     const parsed = await smartParse(text);
+    _parseSrc = parsed._source;
     window._editTreatments = distributePrices(parsed.treatments, amt, text);
     renderEditTreatList();
     // AI 결제방식
@@ -7638,9 +7657,8 @@ async function reparseEditModal(){
       }
     }
   } catch(e) { console.warn(e); }
-  const src = window._editTreatments?.[0]?._fromAI ? 'AI' : 'regex';
-  const el = document.getElementById('edit-parse-result');
-  if(el) el.innerHTML = `<span style="color:var(--green)">✓ ${(window._editTreatments||[]).length}개 항목 재추출됨 <span style="font-size:10px;color:#10b981">${src}</span></span>`;
+  // ★ 2026-09-01: 첫 항목의 _fromAI 플래그 추정 대신 parsed._source 사용
+  window._parseSrcBadge('edit-parse-result', _parseSrc, (window._editTreatments||[]).length);
 }
 
 async function saveEditModal(id){
