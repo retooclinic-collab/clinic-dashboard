@@ -285,11 +285,97 @@ def main():
     else:
         print(f"\n✅ 한도 여유 — 요청 기간({LOOKBACK}일) 전체 조회 완료. 추가 실행 불필요.", flush=True)
 
+def retag():
+    """[재라벨 모드] CODEF 재조회 없이, Firestore에 이미 저장된 desc/inout 만으로
+    category·vendorMemo 를 다시 계산해 갱신한다. (CODEF 일일 호출한도 소모 없음)
+
+    실행:  collect_bank.yml -> Run workflow
+             lookback_days = 5555   (재라벨 모드)
+             debug         = 1      -> 드라이런(변경내역만 출력, 쓰기 없음)
+                             0      -> 실제 적용
+    ※ 분류키워드(OUT_VENDOR/IN_VENDOR/VENDOR_MEMO)를 고친 뒤 과거분에 소급 반영할 때 사용.
+    """
+    db = init_db()
+    col = db.collection(COLLECTION)
+    dry = DEBUG
+    print("[재라벨] collection=%s / 모드=%s" % (COLLECTION, "드라이런(쓰기 없음)" if dry else "실제 적용"), flush=True)
+
+    cat_moves, memo_moves, samples = {}, {}, []
+    scanned = changed = 0
+    batch = db.batch(); n = 0
+
+    for snap in col.stream():
+        d = snap.to_dict() or {}
+        scanned += 1
+        inout = d.get("inout", "")
+        desc = d.get("desc", "")
+        if not inout:
+            continue
+        old_cat, new_cat = d.get("category", ""), categorize(inout, desc)
+        old_memo, new_memo = d.get("vendorMemo", ""), vendor_memo(desc)
+        upd = {}
+        if new_cat != old_cat:
+            upd["category"] = new_cat
+            k = "%s -> %s" % (old_cat or "(없음)", new_cat or "(없음)")
+            cat_moves[k] = cat_moves.get(k, 0) + 1
+        if new_memo != old_memo:
+            upd["vendorMemo"] = new_memo
+            k = "%s -> %s" % (old_memo or "(없음)", new_memo or "(없음)")
+            memo_moves[k] = memo_moves.get(k, 0) + 1
+        if not upd:
+            continue
+        changed += 1
+        if len(samples) < 60:
+            samples.append("  %s %14s원 %-28s [%s -> %s] memo[%s -> %s]" % (
+                d.get("date", ""), format(int(d.get("amount") or 0), ","),
+                (d.get("counterparty") or "")[:28],
+                old_cat or "-", new_cat or "-", old_memo or "-", new_memo or "-"))
+        if not dry:
+            upd["retaggedAt"] = firestore.SERVER_TIMESTAMP
+            batch.set(col.document(snap.id), upd, merge=True)
+            n += 1
+            if n >= 400:
+                batch.commit(); batch = db.batch(); n = 0
+
+    if not dry and n:
+        batch.commit()
+
+    print("", flush=True)
+    print("── 카테고리 변경 요약 ──", flush=True)
+    for k in sorted(cat_moves, key=lambda x: -cat_moves[x]):
+        print("  %-46s %d건" % (k, cat_moves[k]), flush=True)
+    if not cat_moves:
+        print("  (변경 없음)", flush=True)
+    print("", flush=True)
+    print("── vendorMemo(내원경로) 변경 요약 ──", flush=True)
+    for k in sorted(memo_moves, key=lambda x: -memo_moves[x]):
+        print("  %-46s %d건" % (k, memo_moves[k]), flush=True)
+    if not memo_moves:
+        print("  (변경 없음)", flush=True)
+    if samples:
+        print("", flush=True)
+        print("── 변경 예시(최대 60건) ──", flush=True)
+        for line in samples:
+            print(line, flush=True)
+
+    print("", flush=True)
+    print("스캔 %d건 / 변경대상 %d건 %s" % (
+        scanned, changed, "(드라이런 — 아무것도 쓰지 않음)" if dry else "-> 적용완료"), flush=True)
+
+    if not dry:
+        db.collection("bank_sync_log").add({
+            "ranAt": firestore.SERVER_TIMESTAMP, "env": ENV,
+            "mode": "retag", "scanned": scanned, "retagged": changed,
+        })
+
+
 if __name__ == "__main__":
     _lb = os.environ.get("LOOKBACK_DAYS")
     if _lb == "9999":
         import deposit_slack_notifier as _dn; _dn.cli_dry_run()  # 수집 안 함, 입금 dry-run만
     elif _lb == "7777":
         import deposit_slack_notifier as _dn; _dn.cli_seed()      # 시드(발송처리만, 전송 안 함)
+    elif _lb == "5555":
+        retag()                                                   # 재라벨(CODEF 미사용). debug=1이면 드라이런
     else:
         main()
