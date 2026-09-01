@@ -1872,14 +1872,20 @@ async function refreshTrendFromDB(){
 var CF_AGENCY=['비주얼제이','박선하','비요네즈','JIN TAIGEN','목금미여','에스큐뷰티','아이메이그룹','HAN DAN','신화월드투어'];
 var CF_CAPEX=['아베크디자','올포메디홀딩스','애거슨','메디컬노바','아이벡스메디칼','서울시스템에어','이원오엠에스','골지어스'];/* 제이알케이: capex 아님 — 5천만↑은 cfSelf 자전거래 제외, 미만은 화장품구매(일반 운영지출) (2026-07-13) */
 function cfHit(r,arr){var s=(r.counterparty||'')+' '+(r.desc||'');return arr.some(function(a){return s.indexOf(a)>=0;});}
-function cfSelf(r){var cp=(r.counterparty||'');var s=cp+' '+(r.desc||'');var isTax=(s.indexOf('국고')>=0||s.indexOf('국세')>=0||s.indexOf('공과금')>=0);return (cp.indexOf('김재림')>=0&&!isTax)||(cp==='청담리투의원'&&s.indexOf('타행송금')>=0)||(s.indexOf('제이알케이')>=0&&(r.amount||0)>=50000000);}
+/* 세금·공과 판정 (자전거래 예외 · 세금집계 공용) — 1차: 수집기가 붙인 category, 2차: 수집기 키워드가 못 잡는 은행 축약표기 보정.
+   2026-08 오분류 사례: '서울특징김재림'(서울시 지방소득세 특별징수) · '김재림서울주민'(주민세)
+   → category가 '기타지출'이라 세금에도 안 잡히고, cp에 '김재림'이 있어 자전거래로도 빠졌다(양쪽 오제외).
+   ★ 2차 보정 덕에 과거 행을 재수집(재태깅)하지 않아도 세금으로 잡힌다. */
+var CF_TAX_KW=['특징','특별징수','서울주민','시주민','구주민','지방소득','위택스','wetax','국고','국세','지방세','공과금'];
+function cfTax(r){var c=r.category||'';if(c==='세금/공과/수수료')return true;if(c&&c!=='기타지출'&&c!=='기타수입')return false;/* 급여·에이전시 등 다른 분류는 건드리지 않음(예: 국세청 납부 원천세=인건비) */var s=((r.counterparty||'')+' '+(r.desc||'')).toLowerCase();return CF_TAX_KW.some(function(k){return s.indexOf(k)>=0;});}
+function cfSelf(r){var cp=(r.counterparty||'');var s=cp+' '+(r.desc||'');return (cp.indexOf('김재림')>=0&&!cfTax(r))||(cp==='청담리투의원'&&s.indexOf('타행송금')>=0)||(s.indexOf('제이알케이')>=0&&(r.amount||0)>=50000000);}
 function cfMonthKey(lbl){var m=String(lbl||'').match(/(\d{4})\D*?(\d{1,2})\s*월/);if(!m)return null;return m[1]+'-'+('0'+m[2]).slice(-2);}
 function getFixedExCard(){var t=getFixedTotal();var list=(typeof getFixedList==='function')?getFixedList():[];var ci=0;list.forEach(function(f){if(f&&!f.isSep&&/삼성카드/.test(f.name||''))ci+=(f.amount||0);});return t-ci;}
 async function cfLoad(force){
   try{
     if(force){window._cfCard=null;window._cfBank=null;}
     if(!window._cfCard && window.fbGetCardExpenses){var c=await window.fbGetCardExpenses();var cm={};c.forEach(function(r){if(r.cancelYN!=='정상')return;var k=r.month||((r.date||'').slice(0,7));cm[k]=(cm[k]||0)+(r.amount||0);});window._cfCard=cm;}
-    if(!window._cfBank && window.fbGetBankTransactions){var b=await window.fbGetBankTransactions();var bm={};b.forEach(function(r){if(r.inout!=='출금'||!r.month)return;var k=r.month,a=r.amount||0;if(!bm[k])bm[k]={all:0,noself:0,op:0,ag:0,self:0,capex:0,cardpay:0,tax:0};var o=bm[k];o.all+=a;if(cfSelf(r)){o.self+=a;return;}o.noself+=a;if(r.category==='세금/공과/수수료')o.tax+=a;if(cfHit(r,CF_AGENCY)){o.ag+=a;return;}if(cfHit(r,CF_CAPEX)){o.capex+=a;return;}o.op+=a;if(r.category==='카드대금출금')o.cardpay+=a;});window._cfBank=bm;}
+    if(!window._cfBank && window.fbGetBankTransactions){var b=await window.fbGetBankTransactions();var bm={};b.forEach(function(r){if(r.inout!=='출금'||!r.month)return;var k=r.month,a=r.amount||0;if(!bm[k])bm[k]={all:0,noself:0,op:0,ag:0,self:0,capex:0,cardpay:0,tax:0};var o=bm[k];o.all+=a;if(cfSelf(r)){o.self+=a;return;}o.noself+=a;if(cfTax(r))o.tax+=a;if(cfHit(r,CF_AGENCY)){o.ag+=a;return;}if(cfHit(r,CF_CAPEX)){o.capex+=a;return;}o.op+=a;if(r.category==='카드대금출금')o.cardpay+=a;});window._cfBank=bm;}
   }catch(e){console.warn('cfLoad',e);}
 }
 function cfPickMonths(){var pick={};(G.arc||[]).forEach(function(a){var k=cfMonthKey(a.displayLabel||a.label);if(!k)return;var isSL=/상담리스트/.test(a.displayLabel||a.label||'');if(!pick[k]||(isSL&&!pick[k].isSL)||((isSL===pick[k].isSL)&&((a.savedAt||'')>(pick[k].a.savedAt||'')))){pick[k]={a:a,isSL:isSL};}});return pick;}
