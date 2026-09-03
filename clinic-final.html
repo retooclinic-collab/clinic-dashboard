@@ -499,7 +499,8 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
         <b>비율(%)</b>: 해당 경로의 수납금액 × % = 수수료<br>
         <b>고정값 차감(₩)</b>: 입력한 금액 자체가 수수료 (수납금액 무관)<br>
         <b>비율 + 월 고정액</b>: 수납금액 × % + 월 고정액 (일본(통) 등). 고정액은 <b>월 1회만</b> 가산<br>
-        <span style="color:#2563eb;"><b>분류2</b> 배지가 붙은 행</span>은 <b>분류1 안의 개별 에이전시 요율</b>로, 상위 분류1 요율보다 우선 적용됩니다.
+        <span style="color:#2563eb;"><b>분류2</b> 배지가 붙은 행</span>은 <b>분류1 안의 개별 에이전시 요율</b>로, 상위 분류1 요율보다 우선 적용됩니다.<br>
+        <b>적용 시작일</b>: 요율을 바꾸면서 날짜를 넣으면 <b>그날부터</b> 새 요율이 적용되고 이전 기간은 옛 요율로 남습니다(<span style="color:#a855f7;">📅 이력</span>으로 표시). 비우면 전 기간이 새 요율로 바뀝니다.
       </div>
       <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">값 입력 후 아래 <b>저장 및 반영</b> 버튼을 눌러야 결과에 반영됩니다.</div>
       <div style="overflow-x:auto;margin-bottom:14px;">
@@ -988,7 +989,7 @@ var DEFAULT_PROCEDURES={
 /* ★ 수수료율 SSOT = E:\Claude\Projects\클로드 Cowork\수수료율_진실표.md (2026-09-03 원장 확정)
    요율 키는 두 형태: 'cat1' 또는 'cat1|cat2'. cat2 키가 있으면 cat1보다 우선한다.
    type: 'percent'(비율) | 'fixed'(고정액) | 'pctfix'(비율 + 월 고정액) */
-var ROUTE_VER=2;   // ↑ 올리면 다음 로드 때 아래 기본 요율을 강제 재적용(사용자 추가 경로는 보존)
+var ROUTE_VER=3;   // ↑ 올리면 다음 로드 때 아래 기본 요율을 강제 재적용(사용자 추가 경로는 보존)
 var DEFAULT_ROUTES={
   '중국(기타)':{type:'percent',value:22},
   '중국(마)':{type:'percent',value:25},
@@ -996,7 +997,10 @@ var DEFAULT_ROUTES={
   '중국(따)':{type:'percent',value:25},
   '일본(통)':{type:'pctfix',value:10,fixed:3300000},
   // ── cat1='중국(기타)' 하위 에이전시(cat2) 개별 요율 ──
-  '중국(기타)|미원':{type:'percent',value:20},
+  // 미원: 2026-08-01부터 20% → 22% 인상 (원장 확정 2026-09-03)
+  '중국(기타)|미원':{type:'percent',value:22,history:[
+      {from:'2000-01-01',type:'percent',value:20},
+      {from:'2026-08-01',type:'percent',value:22}]},
   '중국(기타)|다우시':{type:'percent',value:25},
   '중국(기타)|편화':{type:'percent',value:25},
   '중국(기타)|동호':{type:'percent',value:25},
@@ -1270,20 +1274,24 @@ async function loadFromConsultations(){
       var route=routeKey(it.cat1,it.cat2,_cfgRK);   // cat2 전용 요율이 있으면 'cat1|cat2'
       if(!route || /합계|총계/.test(route)) return;
       var amt=(parseFloat(it.amount)||0)*10000; // manwon→원
-      if(!routeMap[route]) routeMap[route]=0;
-      routeMap[route]+=amt;
+      if(!routeMap[route]) routeMap[route]={amt:0,comm:0,last:''};
+      routeMap[route].amt+=amt;
+      // 건별 거래일 기준 요율로 합산 — 기간 중 요율이 바뀌어도 정확
+      routeMap[route].comm+=routeComm(_cfgRK.routes[route],amt,false,it.date);
+      if((it.date||'')>routeMap[route].last) routeMap[route].last=it.date||'';
     });
     if(Object.keys(routeMap).length){
       var cfgB=loadCfg();
       var bItems=[];
       Object.keys(routeMap).forEach(function(route){
-        var amt=routeMap[route];
+        var amt=routeMap[route].amt, dt=routeMap[route].last;
         var rc=cfgB.routes[route];
-        var v=rc?parseFloat(rc.value)||0:0;
-        var tp=rc?rc.type:'percent';
-        var fx=rc?parseFloat(rc.fixed)||0:0;
-        var comm=routeComm(rc,amt,true);
-        bItems.push({route:route,amount:amt,type:tp,value:v,fixed:fx,commission:comm});
+        var cf=routeConfAt(rc,dt)||{};
+        var v=parseFloat(cf.value)||0;
+        var tp=cf.type||'percent';
+        var fx=parseFloat(cf.fixed)||0;
+        var comm=routeMap[route].comm+routeFixedAt(rc,dt); // 비율분(건별) + 월 고정액 1회
+        bItems.push({route:route,amount:amt,type:tp,value:v,fixed:fx,date:dt,commission:comm});
       });
       var totA=bItems.reduce(function(s,i){return s+i.amount},0);
       var totC=bItems.reduce(function(s,i){return s+i.commission},0);
@@ -1301,7 +1309,7 @@ async function loadFromConsultations(){
         if(!smMap[sk]) smMap[sk]={comm:0,mat:0};
         var cat1=(it.cat1||'').trim();
         var amt=(parseFloat(it.amount)||0)*10000;
-        smMap[sk].comm+=calcCommission(cat1,amt,cfgM,true,it.cat2);
+        smMap[sk].comm+=calcCommission(cat1,amt,cfgM,true,it.cat2,it.date);
         smMap[sk].mat+=calcMaterialCost(it.treatments,cfgM,it.date);
       });
       G.cData.byStaff.forEach(function(s){
@@ -1859,20 +1867,23 @@ async function refreshTrendFromDB(){
         var route=routeKey(it.cat1,it.cat2,_cfgRK2);   // cat2 전용 요율이 있으면 'cat1|cat2'
         if(!route||/합계|총계/.test(route)) return;
         var amt2=(parseFloat(it.amount)||0)*10000;
-        if(!routeMap[route]) routeMap[route]=0;
-        routeMap[route]+=amt2;
+        if(!routeMap[route]) routeMap[route]={amt:0,comm:0,last:''};
+        routeMap[route].amt+=amt2;
+        routeMap[route].comm+=routeComm(_cfgRK2.routes[route],amt2,false,it.date);
+        if((it.date||'')>routeMap[route].last) routeMap[route].last=it.date||'';
       });
       if(Object.keys(routeMap).length){
         var cfgB=loadCfg();
         var bItems=[];
         Object.keys(routeMap).forEach(function(route){
-          var amt3=routeMap[route];
+          var amt3=routeMap[route].amt, dt3=routeMap[route].last;
           var rc=cfgB.routes[route];
-          var v=rc?parseFloat(rc.value)||0:0;
-          var tp=rc?rc.type:'percent';
-          var fx=rc?parseFloat(rc.fixed)||0:0;
-          var comm=routeComm(rc,amt3,true);
-          bItems.push({route:route,amount:amt3,type:tp,value:v,fixed:fx,commission:comm});
+          var cf3=routeConfAt(rc,dt3)||{};
+          var v=parseFloat(cf3.value)||0;
+          var tp=cf3.type||'percent';
+          var fx=parseFloat(cf3.fixed)||0;
+          var comm=routeMap[route].comm+routeFixedAt(rc,dt3);
+          bItems.push({route:route,amount:amt3,type:tp,value:v,fixed:fx,date:dt3,commission:comm});
         });
         a.bData={items:bItems,totalAmount:bItems.reduce(function(s,i){return s+i.amount},0),totalCommission:bItems.reduce(function(s,i){return s+i.commission},0)};
       }
@@ -2146,6 +2157,14 @@ function renderCfgUI(){
   var RT_LBL={percent:'비율 (%)',fixed:'고정값 차감 (₩)',pctfix:'비율 + 월 고정액'};
   rb.innerHTML=routes.length?routes.map(function(e,i){
     var opts=['percent','fixed','pctfix'].map(function(t){return'<option value="'+t+'"'+(e[1].type===t?' selected':'')+'>'+RT_LBL[t]+'</option>'}).join('');
+    var rhist=(e[1].history&&e[1].history.length)
+      ? '<div style="font-size:10px;color:#a855f7;padding:3px 0 0 2px;" title="수수료율 변경 이력">📅 '+e[1].history.slice().sort(function(x,y){return x.from<y.from?-1:1;}).map(function(h){
+          var lbl=(h.type==='pctfix')?((parseFloat(h.value)||0)+'% + '+won(parseFloat(h.fixed)||0))
+                 :(h.type==='fixed')?won(parseFloat(h.value)||0)
+                 :((parseFloat(h.value)||0)+'%');
+          return (h.from==='2000-01-01'?'처음':esc(h.from))+'~ '+lbl;
+        }).join(' / ')+'</div>'
+      : '';
     var isSub=e[0].indexOf('|')>=0;
     var nm=isSub
       ? '<span style="color:#94a3b8;">'+esc(e[0].split('|')[0])+' ›</span> <b>'+esc(e[0].split('|')[1])+'</b><span style="font-size:10px;color:#2563eb;margin-left:5px;">분류2</span>'
@@ -2153,7 +2172,8 @@ function renderCfgUI(){
     return'<tr><td>'+nm+'</td>'+
       '<td><select class="route-type" data-idx="'+i+'">'+opts+'</select></td>'+
       '<td><input type="number" class="route-val" data-idx="'+i+'" value="'+(parseFloat(e[1].value)||0)+'" min="0" placeholder="0" style="width:88px;">'+
-      '<input type="number" class="route-fix" data-idx="'+i+'" value="'+(parseFloat(e[1].fixed)||0)+'" min="0" placeholder="월 고정액" title="비율 + 월 고정액 방식일 때만 사용" style="width:110px;margin-left:6px;'+(e[1].type==='pctfix'?'':'opacity:.35;')+'"></td>'+
+      '<input type="number" class="route-fix" data-idx="'+i+'" value="'+(parseFloat(e[1].fixed)||0)+'" min="0" placeholder="월 고정액" title="비율 + 월 고정액 방식일 때만 사용" style="width:110px;margin-left:6px;'+(e[1].type==='pctfix'?'':'opacity:.35;')+'">'+
+      '<input type="date" class="route-date" data-idx="'+i+'" title="이 요율을 적용할 시작일(선택). 비우면 현재 요율만 변경" style="margin-left:6px;">'+rhist+'</td>'+
       '<td><button class="btn btn-r btn-sm" onclick="delRoute('+i+')">삭제</button></td></tr>';
   }).join(''):'<tr><td colspan="4" style="color:#94a3b8;font-size:12px;padding:12px;">③ 파일 업로드 후 자동 추가됩니다</td></tr>';
 
@@ -2217,6 +2237,24 @@ function applyRoute(){
     var idx=parseInt(inp.getAttribute('data-idx'));
     if(idx>=0&&idx<routes.length)cfg.routes[routes[idx]].fixed=parseFloat(inp.value)||0;
   });
+  // 적용 시작일이 입력된 행 → 요율 변경 이력에 구간 추가 (재료 단가와 동일 규칙)
+  var _today=new Date().toISOString().slice(0,10);
+  document.querySelectorAll('.route-date').forEach(function(inp){
+    var idx=parseInt(inp.getAttribute('data-idx'));
+    var from=(inp.value||'').trim();
+    if(!from||idx<0||idx>=routes.length) return;
+    var r=cfg.routes[routes[idx]];
+    var prev=r._prevConf||{type:r.type,value:r.value,fixed:r.fixed};
+    r.history=r.history||[];
+    // 이력이 없으면 '변경 이전(처음부터)' 구간을 자동 생성
+    if(r.history.length===0) r.history.push({from:'2000-01-01',type:prev.type,value:prev.value,fixed:prev.fixed});
+    var ex=null; for(var hi=0;hi<r.history.length;hi++){ if(r.history[hi].from===from){ex=r.history[hi];break;} }
+    var ent={from:from,type:r.type,value:r.value,fixed:r.fixed};
+    if(ex){ ex.type=ent.type; ex.value=ent.value; ex.fixed=ent.fixed; } else r.history.push(ent);
+    r.history.sort(function(a,b){return a.from<b.from?-1:(a.from>b.from?1:0);});
+    var cur=routeConfAt(r,_today); r.type=cur.type; r.value=cur.value; r.fixed=cur.fixed; // 현재값 = 오늘 기준
+    delete r._prevConf;
+  });
   saveCfg(cfg);
   computeB();
   render();
@@ -2260,14 +2298,19 @@ async function recomputeArchiveRoute(cfg){
     if(!a.bData||!a.bData.items||!a.bData.items.length) continue;
     var changed=false;
     var totC=0;
+    // 그 아카이브가 속한 달을 요율 기준일로 삼는다 ("2026년 08월_(상담리스트)" → 2026-08-01)
+    var _lm=String(a.label||'').match(/(\d{4})년?\s*(\d{1,2})월/);
+    var _refDate=_lm?(_lm[1]+'-'+String(parseInt(_lm[2])).padStart(2,'0')+'-01'):'';
     a.bData.items.forEach(function(item){
       var rc=cfg.routes[item.route];
-      var newType=rc?rc.type:'percent';
-      var newVal=rc?parseFloat(rc.value)||0:0;
-      var newFix=rc?parseFloat(rc.fixed)||0:0;
+      var _rd=item.date||_refDate;
+      var cf=routeConfAt(rc,_rd)||{};
+      var newType=cf.type||'percent';
+      var newVal=parseFloat(cf.value)||0;
+      var newFix=parseFloat(cf.fixed)||0;
       if(newType!==item.type||newVal!==item.value||newFix!==(item.fixed||0)){changed=true;}
       item.type=newType; item.value=newVal; item.fixed=newFix;
-      item.commission=routeComm(rc,item.amount,true);
+      item.commission=routeComm(rc,item.amount,true,_rd);
       totC+=item.commission;
     });
     if(changed){
@@ -3346,7 +3389,7 @@ function renderDailyTotals(){
   _dailyFiltered.forEach(function(it){
     var amt=(parseFloat(it.amount)||0)*10000;
     var cat1=normRoute(it.cat1);
-    var comm=calcCommission(cat1,amt,cfg2,true,it.cat2); // percent만(월 고정액 제외)
+    var comm=calcCommission(cat1,amt,cfg2,true,it.cat2,it.date); // percent만(월 고정액 제외)
     var mat=calcMaterialCost(it.treatments,cfg2,it.date);
     tAmt+=amt; tComm+=comm; tMat+=mat;
     var sk=it.staff||'미지정';
@@ -3920,7 +3963,7 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     var amt=(parseFloat(it.amount)||0)*10000;
     var cat1=normRoute(it.cat1);
     // percent 수수료만 (월 고정액 제외 — 일본(통) 등)
-    var comm=calcCommission(cat1,amt,cfg2,true,it.cat2);
+    var comm=calcCommission(cat1,amt,cfg2,true,it.cat2,it.date);
     var txs=(it.treatments||[]).filter(function(t){return t && t.item;});
     if(!txs.length){
       var key='(시술미입력)';
@@ -4197,7 +4240,7 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
       if(!s) return;
       var amt=(parseFloat(it.amount)||0)*10000;
       var cat1=normRoute(it.cat1);
-      var comm=calcCommission(cat1,amt,cfg2,true,it.cat2);
+      var comm=calcCommission(cat1,amt,cfg2,true,it.cat2,it.date);
       var txs=(it.treatments||[]).filter(function(t){return t && t.item;});
       var mat=calcMaterialCost(txs,cfg2,it.date);
       s.cnt++; s.amt+=amt; s.comm+=comm; s.mat+=mat;
@@ -4319,7 +4362,7 @@ function downloadDailyCSV(){
   _dailyFiltered.forEach(function(it){
     var amt=(parseFloat(it.amount)||0)*10000;
     var cat1=normRoute(it.cat1);
-    var comm=calcCommission(cat1,amt,cfg2,true,it.cat2);
+    var comm=calcCommission(cat1,amt,cfg2,true,it.cat2,it.date);
     var mat=calcMaterialCost(it.treatments,cfg2,it.date);
     var net=amt-comm-mat;
     var rate=amt>0?(net/amt*100):0;
@@ -4391,19 +4434,40 @@ function routeKey(cat1, cat2, cfg2){
   if(c1&&c2&&cfg2&&cfg2.routes&&cfg2.routes[c1+'|'+c2]) return c1+'|'+c2;
   return c1;
 }
+/* 수수료율: 거래일(dateStr) 기준 유효 요율.
+   history=[{from:'YYYY-MM-DD',type,value,fixed}] 가 있으면 그 시점 요율, 없으면 현재 요율.
+   ★ 재료 단가의 procPriceAt()과 같은 규칙 — from<=거래일 중 가장 늦은 구간을 쓴다. */
+function routeConfAt(rc, dateStr){
+  if(!rc) return null;
+  if(!rc.history||!rc.history.length||!dateStr) return rc;
+  var h=rc.history.slice().sort(function(a,b){return a.from<b.from?-1:(a.from>b.from?1:0);});
+  var chosen=null;
+  for(var i=0;i<h.length;i++){ if(h[i].from<=dateStr) chosen=h[i]; }
+  if(chosen===null) chosen=h[0];
+  return {type:chosen.type||rc.type, value:chosen.value, fixed:(chosen.fixed!==undefined?chosen.fixed:rc.fixed)};
+}
+/* 요율 설정의 월 고정액(있으면). 월 집계에서 1회만 가산한다 */
+function routeFixedAt(rc, dateStr){
+  var c=routeConfAt(rc,dateStr);
+  if(!c) return 0;
+  if(c.type==='pctfix') return parseFloat(c.fixed)||0;
+  if(c.type==='fixed') return parseFloat(c.value)||0;
+  return 0;
+}
 /* 요율 설정 1건 → 수수료. monthly=true일 때만 고정액을 포함한다 */
-function routeComm(rc, amt, monthly){
-  if(!rc) return 0;
-  var v=parseFloat(rc.value)||0;
-  if(rc.type==='percent') return amt*(v/100);
-  if(rc.type==='pctfix') return amt*(v/100)+(monthly?(parseFloat(rc.fixed)||0):0);
+function routeComm(rc, amt, monthly, dateStr){
+  var c=routeConfAt(rc, dateStr);
+  if(!c) return 0;
+  var v=parseFloat(c.value)||0;
+  if(c.type==='percent') return amt*(v/100);
+  if(c.type==='pctfix') return amt*(v/100)+(monthly?(parseFloat(c.fixed)||0):0);
   return monthly?v:0; // fixed
 }
-/* cat2까지 반영한 건별 수수료. percentOnly=true면 월 고정액 제외(건별 합산용) */
-function calcCommission(cat1, amount, cfg2, percentOnly, cat2){
+/* cat2·거래일까지 반영한 건별 수수료. percentOnly=true면 월 고정액 제외(건별 합산용) */
+function calcCommission(cat1, amount, cfg2, percentOnly, cat2, dateStr){
   var route=cfg2.routes[routeKey(cat1, cat2, cfg2)];
   if(!route) return 0;
-  return routeComm(route, amount, !percentOnly);
+  return routeComm(route, amount, !percentOnly, dateStr);
 }
 
 function renderDailyPage(){
@@ -4467,7 +4531,7 @@ function renderDailyPage(){
 
   pageItems.forEach(function(it,idx){
     var amt=(parseFloat(it.amount)||0)*10000;
-    var comm=calcCommission(it.cat1||'',amt,cfg2,true,it.cat2);
+    var comm=calcCommission(it.cat1||'',amt,cfg2,true,it.cat2,it.date);
     var mat=calcMaterialCost(it.treatments,cfg2,it.date);
     var net=amt-comm-mat;
     var treats=(it.treatments||[]).map(function(t){return t.item+'x'+t.qty}).join(', ')||'-';
