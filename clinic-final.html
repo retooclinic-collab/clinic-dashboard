@@ -327,7 +327,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
       <input type="date" id="bank-from" style="padding:4px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;">
       <span>~</span>
       <input type="date" id="bank-to" style="padding:4px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;">
-      <button class="btn btn-o btn-sm" onclick="setBankPresetActive(null);applyBankFilter()">적용</button>
+      <button class="btn btn-o btn-sm" onclick="bankApplyRange()">적용</button>
     </div>
     <div id="bank-kpi" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;"></div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
@@ -497,7 +497,9 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
       </div>
       <div style="font-size:12px;color:#94a3b8;margin-bottom:6px;line-height:1.7;">
         <b>비율(%)</b>: 해당 경로의 수납금액 × % = 수수료<br>
-        <b>고정값 차감(₩)</b>: 입력한 금액 자체가 수수료 (수납금액 무관)
+        <b>고정값 차감(₩)</b>: 입력한 금액 자체가 수수료 (수납금액 무관)<br>
+        <b>비율 + 월 고정액</b>: 수납금액 × % + 월 고정액 (일본(통) 등). 고정액은 <b>월 1회만</b> 가산<br>
+        <span style="color:#2563eb;"><b>분류2</b> 배지가 붙은 행</span>은 <b>분류1 안의 개별 에이전시 요율</b>로, 상위 분류1 요율보다 우선 적용됩니다.
       </div>
       <div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">값 입력 후 아래 <b>저장 및 반영</b> 버튼을 눌러야 결과에 반영됩니다.</div>
       <div style="overflow-x:auto;margin-bottom:14px;">
@@ -774,8 +776,14 @@ try {
     await setDoc(doc(db, 'card_vendor_checks', key), data, { merge:true }); return true;
   };
 
-  window.fbGetBankTransactions = async function() {
-    const snap = await getDocs(collection(db, 'bank_transactions'));
+  // ★ 통장 데이터는 '필요한 기간만' 읽는다 (2026-09-04).
+  //   종전엔 컬렉션 전체를 무필터로 읽어서, 탭 한 번 열 때마다 누적 수천 건을 소모했다.
+  //   2026-09-03 실제로 Firestore 일일 읽기 할당량이 12:53에 말라
+  //   ① 입금알림 중복방지 상태를 못 읽어 중복 발송 ② 이후 수집기가 매 사이클 크래시(입출금 갱신 중단).
+  //   sinceISO('YYYY-MM-DD')를 주면 그 날짜 이후만 읽는다. 생략하면 종전처럼 전체(= '전체' 프리셋 전용).
+  window.fbGetBankTransactions = async function(sinceISO) {
+    const col = collection(db, 'bank_transactions');
+    const snap = await getDocs(sinceISO ? query(col, where('date', '>=', sinceISO)) : col);
     const arr = []; snap.forEach(function(d){ arr.push(d.data()); });
     return arr;
   };
@@ -977,13 +985,31 @@ var DEFAULT_PROCEDURES={
   '써마지 아이450':{price:462000},
   '물광':{price:0}
 };
+/* ★ 수수료율 SSOT = E:\Claude\Projects\클로드 Cowork\수수료율_진실표.md (2026-09-03 원장 확정)
+   요율 키는 두 형태: 'cat1' 또는 'cat1|cat2'. cat2 키가 있으면 cat1보다 우선한다.
+   type: 'percent'(비율) | 'fixed'(고정액) | 'pctfix'(비율 + 월 고정액) */
+var ROUTE_VER=2;   // ↑ 올리면 다음 로드 때 아래 기본 요율을 강제 재적용(사용자 추가 경로는 보존)
 var DEFAULT_ROUTES={
   '중국(기타)':{type:'percent',value:22},
   '중국(마)':{type:'percent',value:25},
   '중국(강)':{type:'percent',value:25},
   '중국(따)':{type:'percent',value:25},
-  '일본(통)':{type:'fixed',value:8000000}
+  '일본(통)':{type:'pctfix',value:10,fixed:3300000},
+  // ── cat1='중국(기타)' 하위 에이전시(cat2) 개별 요율 ──
+  '중국(기타)|미원':{type:'percent',value:20},
+  '중국(기타)|다우시':{type:'percent',value:25},
+  '중국(기타)|편화':{type:'percent',value:25},
+  '중국(기타)|동호':{type:'percent',value:25},
+  '중국(기타)|ky여행사':{type:'percent',value:20},
+  '중국(기타)|메디차이나':{type:'percent',value:5},
+  '중국(기타)|서아국제':{type:'percent',value:20},
+  '중국(기타)|하이한여행사':{type:'percent',value:15},
+  '중국(기타)|하은':{type:'percent',value:25},
+  '중국(기타)|라미타':{type:'percent',value:20}
+  // ⬜ 미확정(원장 확인 대기): 중국(청)·울트 → 키 없음 = 상위 중국(기타) 22% 상속
 };
+/* cat2 표기 변형 통일 */
+var CAT2_ALIAS={'KY여행사':'ky여행사','동호에이전시':'동호','하이한':'하이한여행사'};
 
 // 재료비 불필요 회계성/비시술 항목 (자동동기화 시 제외)
 var NON_MATERIAL_ITEMS=new Set(['예약금','예약금제외','수면비제외','VIP회원권','VIP할인혜택','적립금','적립금차감','선납금차감','상품권차감','할인차감','할인','환불','위약금','양도','결제오류','미수금결제','상담만','소견서','지정비용','결제','환불후재결제','재결제']);
@@ -1042,7 +1068,19 @@ function loadCfg(){
     if(!c.routes[k]||!(c.routes[k].value>0))
       c.routes[k]=Object.assign({},DEFAULT_ROUTES[k]);
   });
+  migrateRoutes(c);
   return c;
+}
+/* 저장돼 있던 옛 요율을 새 기본값으로 1회 덮어쓴다(사용자가 직접 추가한 경로는 건드리지 않음).
+   ROUTE_VER를 올릴 때만 동작하므로, 이후 사용자가 UI에서 바꾼 값은 그대로 유지된다. */
+function migrateRoutes(c){
+  if(!c.routes) c.routes={};
+  if(c._routeVer===ROUTE_VER) return false;
+  Object.keys(DEFAULT_ROUTES).forEach(function(k){
+    c.routes[k]=Object.assign({},DEFAULT_ROUTES[k]);
+  });
+  c._routeVer=ROUTE_VER;
+  return true;
 }
 function saveCfg(c){
   c._cfgTs=Date.now();
@@ -1227,8 +1265,9 @@ async function loadFromConsultations(){
 
     // 상담데이터 cat1 → bData(수수료) 자동 계산
     var routeMap={};
+    var _cfgRK=loadCfg();
     items.forEach(function(it){
-      var route=normRoute(it.cat1);
+      var route=routeKey(it.cat1,it.cat2,_cfgRK);   // cat2 전용 요율이 있으면 'cat1|cat2'
       if(!route || /합계|총계/.test(route)) return;
       var amt=(parseFloat(it.amount)||0)*10000; // manwon→원
       if(!routeMap[route]) routeMap[route]=0;
@@ -1242,8 +1281,9 @@ async function loadFromConsultations(){
         var rc=cfgB.routes[route];
         var v=rc?parseFloat(rc.value)||0:0;
         var tp=rc?rc.type:'percent';
-        var comm=tp==='percent'?amt*(v/100):v;
-        bItems.push({route:route,amount:amt,type:tp,value:v,commission:comm});
+        var fx=rc?parseFloat(rc.fixed)||0:0;
+        var comm=routeComm(rc,amt,true);
+        bItems.push({route:route,amount:amt,type:tp,value:v,fixed:fx,commission:comm});
       });
       var totA=bItems.reduce(function(s,i){return s+i.amount},0);
       var totC=bItems.reduce(function(s,i){return s+i.commission},0);
@@ -1261,7 +1301,7 @@ async function loadFromConsultations(){
         if(!smMap[sk]) smMap[sk]={comm:0,mat:0};
         var cat1=(it.cat1||'').trim();
         var amt=(parseFloat(it.amount)||0)*10000;
-        smMap[sk].comm+=calcCommission(cat1,amt,cfgM,true);
+        smMap[sk].comm+=calcCommission(cat1,amt,cfgM,true,it.cat2);
         smMap[sk].mat+=calcMaterialCost(it.treatments,cfgM,it.date);
       });
       G.cData.byStaff.forEach(function(s){
@@ -1466,8 +1506,8 @@ function computeB(){
     var rc=cfg.routes[route];
     if(!rc){newRoutes[route]={type:'percent',value:0};rc=newRoutes[route]}
     var v=parseFloat(rc.value)||0;
-    var comm=rc.type==='percent'?amt*(v/100):v;
-    items.push({route:route,amount:amt,type:rc.type,value:v,commission:comm});
+    var comm=routeComm(rc,amt,true);
+    items.push({route:route,amount:amt,type:rc.type,value:v,fixed:parseFloat(rc.fixed)||0,commission:comm});
   });
   if(Object.keys(newRoutes).length){
     Object.assign(cfg.routes,newRoutes);
@@ -1612,8 +1652,13 @@ function render(){
       return b.commission-a.commission;
     });
     sortedItems.forEach(function(i,idx){
-      var tb=i.type==='percent'?'<span class="badge-blue">비율</span>':'<span class="badge-green">고정차감</span>';
-      var vs=i.type==='percent'?i.value+'%':won(i.value);
+      var tb=i.type==='percent'?'<span class="badge-blue">비율</span>'
+           :i.type==='pctfix'?'<span class="badge-blue">비율+월고정</span>'
+           :'<span class="badge-green">고정차감</span>';
+      var vs=i.type==='percent'?i.value+'%'
+           :i.type==='pctfix'?(i.value+'% + '+won(i.fixed||0))
+           :won(i.value);
+      var _rt=String(i.route||''); if(_rt.indexOf('|')>=0) i=Object.assign({},i,{route:_rt.split('|')[0]+' › '+_rt.split('|')[1]});
       var zeroStyle=i.commission===0?'opacity:0.45;':'';
       h+='<tr style="'+zeroStyle+'"><td><span class="dot" style="background:'+COLS[(idx+2)%COLS.length]+'"></span><b>'+esc(i.route)+'</b></td>';
       h+='<td class="r">'+won(i.amount)+'</td><td class="ce">'+tb+'</td>';
@@ -1809,8 +1854,9 @@ async function refreshTrendFromDB(){
 
       // bData 재계산 (수수료)
       var routeMap={};
+      var _cfgRK2=loadCfg();
       items.forEach(function(it){
-        var route=normRoute(it.cat1);
+        var route=routeKey(it.cat1,it.cat2,_cfgRK2);   // cat2 전용 요율이 있으면 'cat1|cat2'
         if(!route||/합계|총계/.test(route)) return;
         var amt2=(parseFloat(it.amount)||0)*10000;
         if(!routeMap[route]) routeMap[route]=0;
@@ -1824,8 +1870,9 @@ async function refreshTrendFromDB(){
           var rc=cfgB.routes[route];
           var v=rc?parseFloat(rc.value)||0:0;
           var tp=rc?rc.type:'percent';
-          var comm=tp==='percent'?amt3*(v/100):v;
-          bItems.push({route:route,amount:amt3,type:tp,value:v,commission:comm});
+          var fx=rc?parseFloat(rc.fixed)||0:0;
+          var comm=routeComm(rc,amt3,true);
+          bItems.push({route:route,amount:amt3,type:tp,value:v,fixed:fx,commission:comm});
         });
         a.bData={items:bItems,totalAmount:bItems.reduce(function(s,i){return s+i.amount},0),totalCommission:bItems.reduce(function(s,i){return s+i.commission},0)};
       }
@@ -1885,7 +1932,7 @@ async function cfLoad(force){
   try{
     if(force){window._cfCard=null;window._cfBank=null;}
     if(!window._cfCard && window.fbGetCardExpenses){var c=await window.fbGetCardExpenses();var cm={};c.forEach(function(r){if(r.cancelYN!=='정상')return;var k=r.month||((r.date||'').slice(0,7));cm[k]=(cm[k]||0)+(r.amount||0);});window._cfCard=cm;}
-    if(!window._cfBank && window.fbGetBankTransactions){var b=await window.fbGetBankTransactions();var bm={};b.forEach(function(r){if(r.inout!=='출금'||!r.month)return;var k=r.month,a=r.amount||0;if(!bm[k])bm[k]={all:0,noself:0,op:0,ag:0,self:0,capex:0,cardpay:0,tax:0};var o=bm[k];o.all+=a;if(cfSelf(r)){o.self+=a;return;}o.noself+=a;if(cfTax(r))o.tax+=a;if(r.category==='에이전시수수료'||cfHit(r,CF_AGENCY)){o.ag+=a;return;}if(cfHit(r,CF_CAPEX)){o.capex+=a;return;}o.op+=a;if(r.category==='카드대금출금')o.cardpay+=a;});window._cfBank=bm;}
+    if(!window._cfBank && window.fbGetBankTransactions){/* 월별 집계라 이력이 필요하다. 단 전체는 과하므로 최근 13개월로 제한 — 표에 뜨는 달은 전부 덮는다. */var _cd=new Date();_cd.setMonth(_cd.getMonth()-12);_cd.setDate(1);var _cf=_cd.getFullYear()+'-'+('0'+(_cd.getMonth()+1)).slice(-2)+'-01';var b=await window.fbGetBankTransactions(_cf);var bm={};b.forEach(function(r){if(r.inout!=='출금'||!r.month)return;var k=r.month,a=r.amount||0;if(!bm[k])bm[k]={all:0,noself:0,op:0,ag:0,self:0,capex:0,cardpay:0,tax:0};var o=bm[k];o.all+=a;if(cfSelf(r)){o.self+=a;return;}o.noself+=a;if(cfTax(r))o.tax+=a;if(r.category==='에이전시수수료'||cfHit(r,CF_AGENCY)){o.ag+=a;return;}if(cfHit(r,CF_CAPEX)){o.capex+=a;return;}o.op+=a;if(r.category==='카드대금출금')o.cardpay+=a;});window._cfBank=bm;}
   }catch(e){console.warn('cfLoad',e);}
 }
 function cfPickMonths(){var pick={};(G.arc||[]).forEach(function(a){var k=cfMonthKey(a.displayLabel||a.label);if(!k)return;var isSL=/상담리스트/.test(a.displayLabel||a.label||'');if(!pick[k]||(isSL&&!pick[k].isSL)||((isSL===pick[k].isSL)&&((a.savedAt||'')>(pick[k].a.savedAt||'')))){pick[k]={a:a,isSL:isSL};}});return pick;}
@@ -2096,11 +2143,17 @@ function renderCfgUI(){
   /* 경로 수수료 */
   var rb=document.getElementById('route-body');
   var routes=Object.entries(cfg.routes);
+  var RT_LBL={percent:'비율 (%)',fixed:'고정값 차감 (₩)',pctfix:'비율 + 월 고정액'};
   rb.innerHTML=routes.length?routes.map(function(e,i){
-    var opts=['percent','fixed'].map(function(t){return'<option value="'+t+'"'+(e[1].type===t?' selected':'')+'>'+( t==='percent'?'비율 (%)':'고정값 차감 (₩)')+'</option>'}).join('');
-    return'<tr><td><b>'+esc(e[0])+'</b></td>'+
+    var opts=['percent','fixed','pctfix'].map(function(t){return'<option value="'+t+'"'+(e[1].type===t?' selected':'')+'>'+RT_LBL[t]+'</option>'}).join('');
+    var isSub=e[0].indexOf('|')>=0;
+    var nm=isSub
+      ? '<span style="color:#94a3b8;">'+esc(e[0].split('|')[0])+' ›</span> <b>'+esc(e[0].split('|')[1])+'</b><span style="font-size:10px;color:#2563eb;margin-left:5px;">분류2</span>'
+      : '<b>'+esc(e[0])+'</b>';
+    return'<tr><td>'+nm+'</td>'+
       '<td><select class="route-type" data-idx="'+i+'">'+opts+'</select></td>'+
-      '<td><input type="number" class="route-val" data-idx="'+i+'" value="'+(parseFloat(e[1].value)||0)+'" min="0" placeholder="0"></td>'+
+      '<td><input type="number" class="route-val" data-idx="'+i+'" value="'+(parseFloat(e[1].value)||0)+'" min="0" placeholder="0" style="width:88px;">'+
+      '<input type="number" class="route-fix" data-idx="'+i+'" value="'+(parseFloat(e[1].fixed)||0)+'" min="0" placeholder="월 고정액" title="비율 + 월 고정액 방식일 때만 사용" style="width:110px;margin-left:6px;'+(e[1].type==='pctfix'?'':'opacity:.35;')+'"></td>'+
       '<td><button class="btn btn-r btn-sm" onclick="delRoute('+i+')">삭제</button></td></tr>';
   }).join(''):'<tr><td colspan="4" style="color:#94a3b8;font-size:12px;padding:12px;">③ 파일 업로드 후 자동 추가됩니다</td></tr>';
 
@@ -2160,6 +2213,10 @@ function applyRoute(){
     var idx=parseInt(inp.getAttribute('data-idx'));
     if(idx>=0&&idx<routes.length)cfg.routes[routes[idx]].value=parseFloat(inp.value)||0;
   });
+  document.querySelectorAll('.route-fix').forEach(function(inp){
+    var idx=parseInt(inp.getAttribute('data-idx'));
+    if(idx>=0&&idx<routes.length)cfg.routes[routes[idx]].fixed=parseFloat(inp.value)||0;
+  });
   saveCfg(cfg);
   computeB();
   render();
@@ -2207,9 +2264,10 @@ async function recomputeArchiveRoute(cfg){
       var rc=cfg.routes[item.route];
       var newType=rc?rc.type:'percent';
       var newVal=rc?parseFloat(rc.value)||0:0;
-      if(newType!==item.type||newVal!==item.value){changed=true;}
-      item.type=newType; item.value=newVal;
-      item.commission=newType==='percent'?item.amount*(newVal/100):newVal;
+      var newFix=rc?parseFloat(rc.fixed)||0:0;
+      if(newType!==item.type||newVal!==item.value||newFix!==(item.fixed||0)){changed=true;}
+      item.type=newType; item.value=newVal; item.fixed=newFix;
+      item.commission=routeComm(rc,item.amount,true);
       totC+=item.commission;
     });
     if(changed){
@@ -2266,6 +2324,10 @@ function delRoute(i){
   document.querySelectorAll('.route-val').forEach(function(inp){
     var idx=parseInt(inp.getAttribute('data-idx'));
     if(idx>=0&&idx<keys.length)cfg.routes[keys[idx]].value=parseFloat(inp.value)||0;
+  });
+  document.querySelectorAll('.route-fix').forEach(function(inp){
+    var idx=parseInt(inp.getAttribute('data-idx'));
+    if(idx>=0&&idx<keys.length)cfg.routes[keys[idx]].fixed=parseFloat(inp.value)||0;
   });
   delete cfg.routes[keys[i]];saveCfg(cfg);renderCfgUI();computeB();render();
 }
@@ -3017,25 +3079,38 @@ function exportCardTxCsv(){
 }
 /* === 은행 입출금 탭 === */
 var _bankCharts={}, _bankRows=null, _bankGran='month';
+/* 지금 읽어둔 기간의 하한. null = 아직 안 읽음, '' = 전체를 읽음. (2026-09-04)
+   입출금 탭은 '그날 확인하고 끝내는' 용도라 기본은 오늘+어제만 읽는다.
+   더 넓은 기간 프리셋을 고르면 그때 필요한 만큼만 추가로 읽는다 — Firestore 읽기 할당량 보호. */
+var _bankSince=null;
+function bankDaysAgo(n){ var d=new Date(); d.setDate(d.getDate()-n); return bankFmt(d); }
+async function ensureBankRows(sinceISO){
+  // 이미 그만큼(혹은 더 넓게) 읽어놨으면 재조회하지 않는다.
+  if(_bankRows!==null && _bankSince!==null && (_bankSince==='' || (sinceISO!=='' && _bankSince<=sinceISO))) return true;
+  var kpi=document.getElementById('bank-kpi');
+  if(kpi) kpi.innerHTML='<div style="color:#64748b;">불러오는 중...</div>';
+  try{ _bankRows=await window.fbGetBankTransactions(sinceISO||undefined); _bankSince=sinceISO; }
+  catch(e){ if(kpi) kpi.innerHTML='<div style="color:#ef4444;">조회 실패: '+e.message+'</div>'; return false; }
+  return true;
+}
 async function renderBankTab(){ if(_bankRows===null){ await loadBankRows(false); } else { applyBankFilter(); } }
 async function loadBankRows(force){
   var kpi=document.getElementById('bank-kpi'); if(!kpi) return;
   if(!window.fbGetBankTransactions){ kpi.innerHTML='<div style="color:#ef4444;">Firebase 연결 필요</div>'; return; }
-  if(force||_bankRows===null){
-    kpi.innerHTML='<div style="color:#64748b;">불러오는 중...</div>';
-    try{ _bankRows=await window.fbGetBankTransactions(); }
-    catch(e){ kpi.innerHTML='<div style="color:#ef4444;">조회 실패: '+e.message+'</div>'; return; }
-  }
+  if(force){ _bankRows=null; _bankSince=null; }
+  if(!await ensureBankRows(bankDaysAgo(1))) return;   // 기본 = 어제~오늘
   setBankGranActive();
-  bankPreset('month');
+  bankPreset('today');
 }
 function setBankGran(g){ _bankGran=g; setBankGranActive(); applyBankFilter(); }
 function setBankGranActive(){ var b=document.querySelectorAll('#bank-gran-btns button'); b.forEach(function(x){ var on=x.getAttribute('data-g')===_bankGran; x.style.background=on?'#7c3aed':''; x.style.color=on?'#fff':''; }); }
 function bankFmt(d){ var y=d.getFullYear(), m=('0'+(d.getMonth()+1)).slice(-2), da=('0'+d.getDate()).slice(-2); return y+'-'+m+'-'+da; }
 function setBankPresetActive(kind){ var b=document.querySelectorAll('#bank-preset-btns button'); b.forEach(function(x){ var on=x.getAttribute('data-p')===kind; x.style.background=on?'#2563eb':''; x.style.color=on?'#fff':''; }); }
-function bankPreset(kind){
+async function bankPreset(kind){
   var now=new Date(), f, t=new Date(now);
-  if(kind==='all'){ var ds=_bankRows.map(function(r){return r.date||'';}).filter(Boolean).sort(); document.getElementById('bank-from').value=ds[0]||''; document.getElementById('bank-to').value=ds[ds.length-1]||''; setBankPresetActive(kind); applyBankFilter(); return; }
+  if(kind==='all'){
+    if(!await ensureBankRows('')) return;            // '전체'만 컬렉션을 통째로 읽는다
+    var ds=_bankRows.map(function(r){return r.date||'';}).filter(Boolean).sort(); document.getElementById('bank-from').value=ds[0]||''; document.getElementById('bank-to').value=ds[ds.length-1]||''; setBankPresetActive(kind); applyBankFilter(); return; }
   if(kind==='today'){ f=new Date(now); }
   else if(kind==='week'){ f=new Date(now); var dow=(now.getDay()+6)%7; f.setDate(now.getDate()-dow); }
   else if(kind==='month'){ f=new Date(now.getFullYear(), now.getMonth(), 1); }
@@ -3045,7 +3120,16 @@ function bankPreset(kind){
   else { f=new Date(now); }
   document.getElementById('bank-from').value=bankFmt(f);
   document.getElementById('bank-to').value=bankFmt(t);
+  if(!await ensureBankRows(bankFmt(f))) return;      // 고른 기간이 지금 읽어둔 것보다 넓으면 그만큼만 더 읽는다
   setBankPresetActive(kind); applyBankFilter();
+}
+/* 수동 기간 적용 — 직접 입력한 시작일이 지금 읽어둔 범위보다 과거면 그만큼 더 읽는다.
+   (안 그러면 데이터가 없는 게 아니라 '안 읽은' 건데 0으로 보인다) */
+async function bankApplyRange(){
+  var from=(document.getElementById('bank-from')||{}).value||'';
+  if(from && !await ensureBankRows(from)) return;
+  if(!from && !await ensureBankRows('')) return;      // 시작일 비우면 전체
+  setBankPresetActive(null); applyBankFilter();
 }
 function bankWeekKey(d){ var dt=new Date(d+'T00:00:00'); var day=(dt.getDay()+6)%7; dt.setDate(dt.getDate()-day); return dt.toISOString().slice(0,10); }
 function bankUniqDays(rows){var s={};rows.forEach(function(r){if(r.date)s[r.date]=1;});return Object.keys(s).length;}
@@ -3259,7 +3343,7 @@ function renderDailyTotals(){
   _dailyFiltered.forEach(function(it){
     var amt=(parseFloat(it.amount)||0)*10000;
     var cat1=normRoute(it.cat1);
-    var comm=calcCommission(cat1,amt,cfg2,true); // percent만
+    var comm=calcCommission(cat1,amt,cfg2,true,it.cat2); // percent만(월 고정액 제외)
     var mat=calcMaterialCost(it.treatments,cfg2,it.date);
     tAmt+=amt; tComm+=comm; tMat+=mat;
     var sk=it.staff||'미지정';
@@ -3281,8 +3365,8 @@ function renderDailyTotals(){
   if(isFullMonth){
     Object.keys(byCat).forEach(function(cat1){
       var rc=cfg2.routes[cat1];
-      if(rc&&rc.type==='fixed'){
-        var fixedVal=parseFloat(rc.value)||0;
+      if(rc&&(rc.type==='fixed'||rc.type==='pctfix')){
+        var fixedVal=(rc.type==='pctfix')?(parseFloat(rc.fixed)||0):(parseFloat(rc.value)||0);
         byCat[cat1].comm+=fixedVal;
         tComm+=fixedVal;
       }
@@ -3832,8 +3916,8 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
     if(!mix[staff]) mix[staff]={};
     var amt=(parseFloat(it.amount)||0)*10000;
     var cat1=normRoute(it.cat1);
-    // percent 수수료만 (고정값 경로 제외 — 일본(통) 등)
-    var comm=calcCommission(cat1,amt,cfg2,true);
+    // percent 수수료만 (월 고정액 제외 — 일본(통) 등)
+    var comm=calcCommission(cat1,amt,cfg2,true,it.cat2);
     var txs=(it.treatments||[]).filter(function(t){return t && t.item;});
     if(!txs.length){
       var key='(시술미입력)';
@@ -4110,7 +4194,7 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
       if(!s) return;
       var amt=(parseFloat(it.amount)||0)*10000;
       var cat1=normRoute(it.cat1);
-      var comm=calcCommission(cat1,amt,cfg2,true);
+      var comm=calcCommission(cat1,amt,cfg2,true,it.cat2);
       var txs=(it.treatments||[]).filter(function(t){return t && t.item;});
       var mat=calcMaterialCost(txs,cfg2,it.date);
       s.cnt++; s.amt+=amt; s.comm+=comm; s.mat+=mat;
@@ -4232,7 +4316,7 @@ function downloadDailyCSV(){
   _dailyFiltered.forEach(function(it){
     var amt=(parseFloat(it.amount)||0)*10000;
     var cat1=normRoute(it.cat1);
-    var comm=calcCommission(cat1,amt,cfg2,true);
+    var comm=calcCommission(cat1,amt,cfg2,true,it.cat2);
     var mat=calcMaterialCost(it.treatments,cfg2,it.date);
     var net=amt-comm-mat;
     var rate=amt>0?(net/amt*100):0;
@@ -4289,13 +4373,34 @@ function calcMaterialCost(treatments, cfg2, dateStr){
   return total;
 }
 
-function calcCommission(cat1, amount, cfg2, percentOnly){
-  var route=cfg2.routes[cat1];
+/* cat2(분류2) 정규화 — 공백·전각괄호·제로폭 제거 후 별칭 통일 */
+function normCat2(s){
+  if(s==null) return '';
+  var v=String(s).replace(/[\u200b-\u200d\ufeff]/g,'')
+    .replace(/\uff08/g,'(').replace(/\uff09/g,')')
+    .replace(/[\s\u00a0\u3000]+/g,'');
+  return CAT2_ALIAS[v]||v;
+}
+/* 요율 키 결정: cat2 전용 요율이 설정돼 있으면 'cat1|cat2', 아니면 'cat1' */
+function routeKey(cat1, cat2, cfg2){
+  var c1=normRoute(cat1);
+  var c2=normCat2(cat2);
+  if(c1&&c2&&cfg2&&cfg2.routes&&cfg2.routes[c1+'|'+c2]) return c1+'|'+c2;
+  return c1;
+}
+/* 요율 설정 1건 → 수수료. monthly=true일 때만 고정액을 포함한다 */
+function routeComm(rc, amt, monthly){
+  if(!rc) return 0;
+  var v=parseFloat(rc.value)||0;
+  if(rc.type==='percent') return amt*(v/100);
+  if(rc.type==='pctfix') return amt*(v/100)+(monthly?(parseFloat(rc.fixed)||0):0);
+  return monthly?v:0; // fixed
+}
+/* cat2까지 반영한 건별 수수료. percentOnly=true면 월 고정액 제외(건별 합산용) */
+function calcCommission(cat1, amount, cfg2, percentOnly, cat2){
+  var route=cfg2.routes[routeKey(cat1, cat2, cfg2)];
   if(!route) return 0;
-  var v=parseFloat(route.value)||0;
-  if(route.type==='percent') return amount*(v/100);
-  if(percentOnly) return 0; // 일별: 고정 수수료 제외
-  return v; // fixed (월별만 적용)
+  return routeComm(route, amount, !percentOnly);
 }
 
 function renderDailyPage(){
@@ -4359,7 +4464,7 @@ function renderDailyPage(){
 
   pageItems.forEach(function(it,idx){
     var amt=(parseFloat(it.amount)||0)*10000;
-    var comm=calcCommission(it.cat1||'',amt,cfg2,true);
+    var comm=calcCommission(it.cat1||'',amt,cfg2,true,it.cat2);
     var mat=calcMaterialCost(it.treatments,cfg2,it.date);
     var net=amt-comm-mat;
     var treats=(it.treatments||[]).map(function(t){return t.item+'x'+t.qty}).join(', ')||'-';
@@ -5241,6 +5346,7 @@ window.onFbReady = function(){
       Object.keys(DEFAULT_ROUTES).forEach(function(k){
         if(!cfg.routes[k]||!(cfg.routes[k].value>0))cfg.routes[k]=Object.assign({},DEFAULT_ROUTES[k]);
       });
+      migrateRoutes(cfg);
       if(!cfg.fixedCosts||!cfg.fixedCosts.length)cfg.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
       localStorage.setItem(SKEY,JSON.stringify(cfg));
       window.fbSaveSettings(cfg);
