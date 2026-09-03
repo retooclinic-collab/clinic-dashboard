@@ -28,7 +28,8 @@
                             예) 상담팀 + 00-데스크-daily 두 채널 동시발송
   SLACK_WEBHOOK_URL       : 단일 웹훅(하위호환). URLS와 같이 써도 됨(중복 자동제거)
   TARGET_ACCT_SUFFIX      : 대상계좌 끝자리(기본 "23207")
-  LOOKBACK_DAYS           : 조회 일수(기본 14)
+  LOOKBACK_DAYS           : --dry-run/--seed 의 조회 일수(기본 14).
+                            ※ 운영 폴링은 이 값과 무관하게 **오늘 하루치만** 읽는다(할당량 보호).
   STATE_PATH              : 중복방지 상태파일(기본 E:\...\deposit_notifier_state.json)
 """
 import os, sys, json, datetime, urllib.request
@@ -131,12 +132,33 @@ def init_db():
         firebase_admin.initialize_app(cred)
     return firestore.client()
 
+def kst_today():
+    """러너는 UTC다. 진료시간(KST 09~22시)엔 UTC 날짜와 같지만, 헷갈리지 않게 명시적으로 계산한다."""
+    return (datetime.datetime.utcnow() + datetime.timedelta(hours=9)).date()
+
 def fetch_deposits(db, days=None):
-    if days is None:
-        days = LOOKBACK
-    cutoff = (datetime.date.today() - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
-    q = db.collection(COLLECTION).where("date", ">=", cutoff)
+    """운영(3분 폴링)에서는 **오늘 하루치만** 읽는다.
+
+    ★ 2026-09-04 변경 — Firestore 일일 읽기 할당량 보호.
+      종전엔 LOOKBACK_DAYS(운영 yml=2)로 3일치를 매 사이클 긁었다. 3~4분마다, 하루 200사이클이면
+      같은 과거 행을 수백 번 다시 읽는 셈이다. 2026-09-03 12:53 실제로 할당량이 말라
+      중복방지 상태를 못 읽고 중복 발송 + 이후 수집기 연쇄 크래시로 이어졌다.
+      알림은 '오늘 들어온 입금'만 보면 되고 중복방지는 Firestore 상태가 따로 하므로 하루치로 충분하다.
+      (놓친 과거분 점검이 필요하면 --dry-run 이 days 를 명시적으로 받는다.)
+    """
     rows = []
+    if days is None:
+        now = datetime.datetime.utcnow() + datetime.timedelta(hours=9)   # KST
+        if now.hour < 10:
+            # 루프는 22시에 멈춘다. 어제 21:58(마지막 폴링) 이후 들어온 입금은 어제 못 잡았으므로
+            # 하루 첫 시간대에만 어제분까지 훑는다. 나머지 시간은 오늘 하루치만(할당량 보호).
+            cutoff = (now.date() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+            q = db.collection(COLLECTION).where("date", ">=", cutoff)
+        else:
+            q = db.collection(COLLECTION).where("date", "==", now.date().strftime("%Y-%m-%d"))
+    else:
+        cutoff = (kst_today() - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+        q = db.collection(COLLECTION).where("date", ">=", cutoff)
     for d in q.stream():
         r = d.to_dict() or {}
         acct = str(r.get("accountNoMasked", ""))
