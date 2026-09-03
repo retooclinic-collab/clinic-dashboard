@@ -3098,9 +3098,12 @@ async function loadBankRows(force){
   var kpi=document.getElementById('bank-kpi'); if(!kpi) return;
   if(!window.fbGetBankTransactions){ kpi.innerHTML='<div style="color:#ef4444;">Firebase 연결 필요</div>'; return; }
   if(force){ _bankRows=null; _bankSince=null; }
-  if(!await ensureBankRows(bankDaysAgo(1))) return;   // 기본 = 어제~오늘
+  // 첫 화면은 종전과 같이 '이번달'. 전체를 통째로 읽지 않을 뿐,
+  // 기간 버튼·직접입력·'전체'를 고르면 그 범위를 그때 다 읽어온다(보이는 데이터는 종전과 동일).
+  var _m=new Date(); _m.setDate(1);
+  if(!await ensureBankRows(bankFmt(_m))) return;
   setBankGranActive();
-  bankPreset('today');
+  bankPreset('month');
 }
 function setBankGran(g){ _bankGran=g; setBankGranActive(); applyBankFilter(); }
 function setBankGranActive(){ var b=document.querySelectorAll('#bank-gran-btns button'); b.forEach(function(x){ var on=x.getAttribute('data-g')===_bankGran; x.style.background=on?'#7c3aed':''; x.style.color=on?'#fff':''; }); }
