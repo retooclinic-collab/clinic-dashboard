@@ -205,15 +205,27 @@ def post_slack(text):
 # ── 상태(중복방지) — Firestore 저장 (헤드리스 필수: 매 실행 초기화 방지) ──────────
 STATE_DOC = os.environ.get("STATE_DOC", "deposit_alert_state/main")
 
+class StateUnavailable(RuntimeError):
+    """중복방지 상태를 못 읽음 → 발송을 포기한다(빈 상태로 진행 금지)."""
+
 def load_state(db):
+    """★ 읽기 실패는 치명적으로 다룬다 — 빈 상태로 진행하면 안 된다.
+
+    2026-09-03 사고: Firestore 일일 할당량 초과(429 Quota exceeded)로 상태 읽기가 실패했는데
+    종전 코드는 경고만 찍고 `{"sent_ids": []}` 로 진행했다. 그 결과
+      ① 이미 보낸 2건(정진혁 1,000만 · 박시현 27.5만)을 12:53에 재발송 → 상담팀·데스크 중복 알림
+      ② 이어진 save_state 가 sent_ids 를 그 2건으로 **덮어써** 중복방지 이력 29건이 통째로 소실
+    못 읽었을 때 안전한 쪽은 "보내지 않는다"다. 한 사이클 빠져도 3~4분 뒤 다시 폴링한다.
+    문서가 아예 없는 첫 실행(snap.exists=False)만 빈 상태로 시작한다.
+    """
+    col, doc = STATE_DOC.split("/", 1)
     try:
-        col, doc = STATE_DOC.split("/", 1)
         snap = db.collection(col).document(doc).get()
-        if snap.exists:
-            return snap.to_dict() or {"sent_ids": []}
     except Exception as e:
-        print("state load warn:", e)
-    return {"sent_ids": []}
+        raise StateUnavailable("상태 읽기 실패 — 이번 사이클 발송 건너뜀: %s" % e) from e
+    if snap.exists:
+        return snap.to_dict() or {"sent_ids": []}
+    return {"sent_ids": []}          # 첫 실행(문서 없음)은 정상
 
 def save_state(db, st):
     col, doc = STATE_DOC.split("/", 1)
@@ -260,7 +272,13 @@ def cli_live():
     db = init_db()
     rows = fetch_deposits(db)
     send_rows, _ = classify_rows(rows)
-    st = load_state(db); seen = set(st.get("sent_ids", []))
+    try:
+        st = load_state(db)
+    except StateUnavailable as e:
+        # 발송 안 함. 상태 저장도 안 함(덮어쓰기로 이력 날리는 걸 막는다).
+        print("SKIP:", e, flush=True)
+        return
+    seen = set(st.get("sent_ids", []))
     new_sent = 0
     try:
         for r, why in send_rows:
@@ -278,7 +296,7 @@ def cli_seed(days=14):
     db = init_db()
     rows = fetch_deposits(db, days=days)
     send_rows, _ = classify_rows(rows)
-    st = load_state(db); seen = set(st.get("sent_ids", []))
+    st = load_state(db); seen = set(st.get("sent_ids", []))   # 시드는 수동 실행 → 실패 시 그대로 예외
     for r, _why in send_rows:
         seen.add(r["id"])
     save_state(db, {"sent_ids": list(seen)})
