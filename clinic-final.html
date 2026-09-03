@@ -989,7 +989,7 @@ var DEFAULT_PROCEDURES={
 /* ★ 수수료율 SSOT = E:\Claude\Projects\클로드 Cowork\수수료율_진실표.md (2026-09-03 원장 확정)
    요율 키는 두 형태: 'cat1' 또는 'cat1|cat2'. cat2 키가 있으면 cat1보다 우선한다.
    type: 'percent'(비율) | 'fixed'(고정액) | 'pctfix'(비율 + 월 고정액) */
-var ROUTE_VER=3;   // ↑ 올리면 다음 로드 때 아래 기본 요율을 강제 재적용(사용자 추가 경로는 보존)
+var ROUTE_VER=4;   // ↑ 올리면 다음 로드 때 아래 기본 요율을 강제 재적용(사용자 추가 경로는 보존)
 var DEFAULT_ROUTES={
   '중국(기타)':{type:'percent',value:22},
   '중국(마)':{type:'percent',value:25},
@@ -1009,8 +1009,9 @@ var DEFAULT_ROUTES={
   '중국(기타)|서아국제':{type:'percent',value:20},
   '중국(기타)|하이한여행사':{type:'percent',value:15},
   '중국(기타)|하은':{type:'percent',value:25},
-  '중국(기타)|라미타':{type:'percent',value:20}
-  // ⬜ 미확정(원장 확인 대기): 중국(청)·울트 → 키 없음 = 상위 중국(기타) 22% 상속
+  '중국(기타)|라미타':{type:'percent',value:20},
+  '중국(기타)|중국(청)':{type:'percent',value:30}
+  // ⬜ 미확정(원장 확인 대기): 울트 → 키 없음 = 상위 중국(기타) 22% 상속
 };
 /* cat2 표기 변형 통일 */
 var CAT2_ALIAS={'KY여행사':'ky여행사','동호에이전시':'동호','하이한':'하이한여행사'};
