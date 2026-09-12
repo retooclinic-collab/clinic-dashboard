@@ -4,7 +4,6 @@
 - CODEF에서 5개 카드(KB/현대/삼성/롯데/하나) 승인내역 수집
 - 가맹점/업종 기반 지출 분류
 - Firebase Firestore(card_expenses)에 중복 없이 저장(upsert)
-- 청구내역(billing-list) → card_billing (결제예정일·결제예정금액, 2026-09 추가)
 환경변수(깃허브 시크릿)로 모든 설정 주입. 코드에 비밀정보 없음.
 """
 import os, json, time, datetime, hashlib, sys
@@ -30,8 +29,6 @@ SVC = ServiceType.PRODUCT if ENV in ("api","prod","product") else ServiceType.DE
 ORG_NAME = {"0301":"KB국민","0302":"현대","0303":"삼성","0305":"IBK기업(비씨)","0311":"롯데","0313":"하나"}
 MAX_MONTHS = {"0301":12,"0303":12,"0313":18,"0311":6,"0302":3,"0305":9}
 PATH = "/v1/kr/card/p/account/approval-list"
-BILL_PATH = "/v1/kr/card/p/account/billing-list"   # 청구내역(결제예정) — 2026-09 추가
-BILL_COLLECTION = os.environ.get("FIRESTORE_BILL_COLLECTION", "card_billing")
 
 # ---------- 분류 규칙 ----------
 VENDOR = {
@@ -138,87 +135,6 @@ def to_doc(org, t):
         "updatedAt": firestore.SERVER_TIMESTAMP,
     }
 
-# ---------- 청구내역(결제예정금액·결제예정일) ----------
-def _i(v):
-    try: return int(str(v).replace(",","").strip() or 0)
-    except: return 0
-
-def fetch_billing(codef, org):
-    """당월·익월 청구명세서 + '최근 명세서'(startDate 빈값)를 조회해 결제예정일별로 dedupe."""
-    today = datetime.date.today()
-    ym_this = today.strftime("%Y%m")
-    nxt = (today.replace(day=1) + datetime.timedelta(days=32)).replace(day=1)
-    months = ["", ym_this, nxt.strftime("%Y%m")]
-    out = {}
-    for ym in months:
-        p = {"organization":org,"connectedId":CONNECTED_ID,"birthDate":BIRTHDATE,
-             "startDate":ym,"memberStoreInfoYN":"1","cardNo":"","cardPassword":""}
-        if org == "0302":
-            p["cardNo"] = HD_CARDNO
-            p["cardPassword"] = encrypt_rsa(HD_CARDPW, PUBLIC_KEY) if HD_CARDPW else ""
-        try:
-            r = json.loads(codef.request_product(BILL_PATH, SVC, p))
-        except Exception as e:
-            print(f"  [청구:{ORG_NAME.get(org,org)}] {ym or '최근'} 예외: {e}", flush=True); continue
-        code = (r.get("result") or {}).get("code")
-        if code != "CF-00000":
-            print(f"  [청구:{ORG_NAME.get(org,org)}] {ym or '최근'} {code}: {(r.get('result') or {}).get('message')}", flush=True)
-            time.sleep(1); continue
-        d = r.get("data"); d = [d] if isinstance(d, dict) else (d or [])
-        for b in d:
-            due = str(b.get("resPaymentDueDate","") or "")
-            if not due: continue
-            out[(org, due, str(b.get("resBillType","")))] = b
-        time.sleep(1)
-    return list(out.values())
-
-def bill_to_doc(org, b):
-    due = str(b.get("resPaymentDueDate",""))
-    items = []
-    for h in (b.get("resChargeHistoryList") or []):
-        ud = str(h.get("resUsedDate","") or "")
-        items.append({
-            "merchant": str(h.get("resMemberStoreName","")).strip(),
-            "usedDate": f"{ud[:4]}-{ud[4:6]}-{ud[6:8]}" if len(ud)==8 else ud,
-            "usedAmount": _i(h.get("resUsedAmount")),
-            "paymentAmt": _i(h.get("resPaymentAmt")),
-            "principal": _i(h.get("resPaymentPrincipal")),
-            "fee": _i(h.get("resFee")),
-            "paymentType": {"1":"일시불","2":"할부","3":"기타","4":"단기대출","5":"장기대출"}.get(str(h.get("resPaymentType","")),""),
-            "installmentMonth": str(h.get("resInstallmentMonth","") or ""),
-            "roundNo": str(h.get("resRoundNo","") or ""),
-            "card": str(h.get("resUsedCard","") or ""),
-        })
-    did = f"{org}_{due}_{b.get('resBillType','') or '0'}"
-    return did, {
-        "card": ORG_NAME.get(org, org), "org": org,
-        "paymentDueDate": f"{due[:4]}-{due[4:6]}-{due[6:8]}" if len(due)==8 else due,
-        "withdrawalDueDate": str(b.get("resWithdrawalDueDate","") or ""),
-        "billType": str(b.get("resBillType","") or ""),
-        "paymentAccount": str(b.get("resPaymentAccount","") or ""),
-        "totalAmount": _i(b.get("resTotalAmount")),
-        "fullAmt": _i(b.get("resFullAmt")), "installmentAmt": _i(b.get("resInstallmentAmt")),
-        "outstanding": _i(b.get("resAmountOutstanding")), "lateFee": _i(b.get("resLateFee")),
-        "cashService": _i(b.get("resCashService")), "cardLoan": _i(b.get("resCardLoan")),
-        "revolving": _i(b.get("resRevolving")), "annualFee": _i(b.get("resAnnualFee")),
-        "overseasUse": _i(b.get("resOverseasUse")),
-        "itemCount": len(items), "items": items[:800],
-        "updatedAt": firestore.SERVER_TIMESTAMP,
-    }
-
-def collect_billing(db, codef):
-    col = db.collection(BILL_COLLECTION)
-    n = 0
-    for org in ORG_NAME:
-        try:
-            for b in fetch_billing(codef, org):
-                did, doc = bill_to_doc(org, b)
-                col.document(did).set(doc, merge=True); n += 1
-        except Exception as e:
-            print(f"  [청구:{ORG_NAME[org]}] 실패: {e}", flush=True)
-    print(f"청구내역: {n}건 명세서 upsert (collection={BILL_COLLECTION})", flush=True)
-    return n
-
 def main():
     db = init_db()
     codef = make_codef()
@@ -235,15 +151,10 @@ def main():
                 batch.commit(); batch = db.batch(); n = 0
     if n: batch.commit()
     written = total
-    # 청구내역(결제예정) — 실패해도 승인내역 수집엔 영향 없음
-    try:
-        bills = collect_billing(db, codef)
-    except Exception as e:
-        bills = -1; print("청구내역 수집 실패:", e, flush=True)
     # 실행 로그 기록
     db.collection("card_sync_log").add({
         "ranAt": firestore.SERVER_TIMESTAMP, "env": ENV,
-        "lookbackDays": LOOKBACK, "upserted": written, "billing": bills,
+        "lookbackDays": LOOKBACK, "upserted": written,
     })
     print(f"\n완료: {written}건 upsert (collection={COLLECTION})", flush=True)
 
