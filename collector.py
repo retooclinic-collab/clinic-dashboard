@@ -101,7 +101,15 @@ def fetch_org(codef, org):
         if org == "0302":
             p["cardNo"] = HD_CARDNO
             p["cardPassword"] = encrypt_rsa(HD_CARDPW, PUBLIC_KEY) if HD_CARDPW else ""
-        r = json.loads(codef.request_product(PATH, SVC, p))
+        r = None
+        for attempt in range(3):   # CODEF 연결 끊김(RemoteDisconnected) 등 일시 오류 재시도
+            try:
+                r = json.loads(codef.request_product(PATH, SVC, p)); break
+            except Exception as e:
+                print(f"  [{ORG_NAME.get(org,org)}] {ws}~{we} 요청 실패({attempt+1}/3): {repr(e)[:120]}", flush=True)
+                time.sleep(10 * (attempt + 1))
+        if r is None:
+            ws = we + datetime.timedelta(days=1); continue
         code = (r.get("result") or {}).get("code")
         if code != "CF-00000":
             print(f"  [{ORG_NAME.get(org,org)}] {ws}~{we} {code}: {(r.get('result') or {}).get('message')}", flush=True)
