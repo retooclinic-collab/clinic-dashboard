@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 청담리투의원 카드 결제내역 자동 수집기
-- CODEF에서 5개 카드(KB/현대/삼성/롯데/하나) 승인내역 수집
+- CODEF에서 7개 카드(KB/현대/삼성/롯데/하나/IBK비씨/신한) 승인내역 수집
 - 가맹점/업종 기반 지출 분류
 - Firebase Firestore(card_expenses)에 중복 없이 저장(upsert)
 환경변수(깃허브 시크릿)로 모든 설정 주입. 코드에 비밀정보 없음.
@@ -26,8 +26,8 @@ HD_CONFIRMED = os.environ.get("HD_CONFIRMED", "0")  # "1"이면 현대카드를 
 COLLECTION   = os.environ.get("FIRESTORE_COLLECTION", "card_expenses")
 
 SVC = ServiceType.PRODUCT if ENV in ("api","prod","product") else ServiceType.DEMO
-ORG_NAME = {"0301":"KB국민","0302":"현대","0303":"삼성","0305":"IBK기업(비씨)","0311":"롯데","0313":"하나"}
-MAX_MONTHS = {"0301":12,"0303":12,"0313":18,"0311":6,"0302":3,"0305":9}
+ORG_NAME = {"0301":"KB국민","0302":"현대","0303":"삼성","0305":"IBK기업(비씨)","0311":"롯데","0313":"하나","0306":"신한"}
+MAX_MONTHS = {"0301":12,"0303":12,"0313":18,"0311":6,"0302":3,"0305":9,"0306":12}
 PATH = "/v1/kr/card/p/account/approval-list"
 
 # ---------- 분류 규칙 ----------
