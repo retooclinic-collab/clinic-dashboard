@@ -38,10 +38,6 @@ jobs:
           # 여러 채널 동시발송(상담팀 + #00-데스크-daily). 쉼표로 구분한 웹훅 URL 목록.
           # 미설정이면 위 SLACK_WEBHOOK_URL 하나만 쓰는 기존 동작 그대로.
           SLACK_WEBHOOK_URLS:   ${{ secrets.SLACK_WEBHOOK_URLS }}
-          # PayPal 결제수령 메일(retooclinic@gmail.com) → 같은 채널 알림 (paypal_mail_notifier.py, 2026-09-14)
-          GMAIL_CLIENT_ID:      ${{ secrets.GMAIL_CLIENT_ID }}
-          GMAIL_CLIENT_SECRET:  ${{ secrets.GMAIL_CLIENT_SECRET }}
-          GMAIL_REFRESH_TOKEN:  ${{ secrets.GMAIL_REFRESH_TOKEN }}
           LOOKBACK_DAYS:        "2"
           # 부산(0032)은 정식 connectedId에 등록돼 있지 않아 매번 실패콜만 낭비 → 하나(0081)만.
           # ※ 계좌는 좁히지 않는다 — 저축예금(입금)뿐 아니라 사업자주거래우대통장(출금)도 같이 받아야
@@ -61,7 +57,6 @@ jobs:
             n=$((n+1)); echo "── [$n] KST $(kst '%F %H:%M:%S') 폴링 ──"
             python collector_bank.py         || echo "::warning::collector rc=$?"
             python deposit_slack_notifier.py || echo "::warning::notifier rc=$?"
-            python paypal_mail_notifier.py   || echo "::warning::paypal rc=$?"
             if [ "$(date -u +%s)" -ge "$END" ]; then
               echo "::notice::루프 시간 소진 — 종료(다음 시동 대기)"; break
             fi
