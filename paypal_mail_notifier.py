@@ -149,15 +149,25 @@ def parse(msg):
         "ship_method": " ".join(b.get("배송 방법", [])),
         "item": desc[0] if desc else "", "total": total,
         "subject": header(msg, "Subject"), "received": header(msg, "Date"),
+        "received_kst": _kst(msg.get("internalDate")),   # 본문엔 날짜만 있고 시각이 없다 → 메일 도착시각(≈결제시각)
     }
+
+def _kst(ms):
+    """Gmail internalDate(epoch ms) → 'MM/DD HH:MM' KST. 없으면 ''."""
+    import datetime
+    try:
+        t = datetime.datetime.fromtimestamp(int(ms) / 1000, datetime.timezone(datetime.timedelta(hours=9)))
+        return t.strftime("%m/%d %H:%M")
+    except Exception:
+        return ""
 
 # ── Slack ────────────────────────────────────────────────────────────────
 def slack_text(p):
     lines = ["🤖 클로드 AI가 알려드립니다", "💳 PayPal 결제 수령", p["sentence"], ""]
     def add(k, v):
         if v: lines.append(f"• {k} : {v}")
+    add("결제시각", (p["received_kst"] + " (메일 수신 기준)") if p["received_kst"] else p["date"])
     add("거래 ID", p["tx_id"])
-    add("거래일", p["date"])
     add("구매자", p["buyer"])
     add("구매자 안내", p["note"])
     add("배송지", p["ship"])
