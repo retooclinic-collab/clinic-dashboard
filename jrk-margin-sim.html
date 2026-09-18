@@ -18,10 +18,15 @@ async function open(pw){
   const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);
   const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:u8(P.salt),iterations:P.iter,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['decrypt']);
   const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:u8(P.iv)},key,u8(P.ct));
-  const html=new TextDecoder().decode(pt);
+  return new TextDecoder().decode(pt);
+}
+async function go(){
+  const pw=document.getElementById('pw').value, keep=document.getElementById('keep').checked;
+  let html; try{ html=await open(pw); }catch(e){ document.getElementById('err').style.display='block'; localStorage.removeItem('jrkSimPw'); return; }
+  try{ if(keep) localStorage.setItem('jrkSimPw',pw); }catch(e){}
   document.open();document.write(html);document.close();
 }
-async function go(){const pw=document.getElementById('pw').value;try{await open(pw);if(document.getElementById('keep')?.checked)localStorage.setItem('jrkSimPw',pw);}catch(e){document.getElementById('err').style.display='block';localStorage.removeItem('jrkSimPw');}}
 document.getElementById('go').onclick=go;document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')go();});
-const saved=localStorage.getItem('jrkSimPw');if(saved){document.getElementById('pw').value=saved;go();}
+let saved=null; try{ saved=localStorage.getItem('jrkSimPw'); }catch(e){}
+if(saved){document.getElementById('pw').value=saved;document.getElementById('keep').checked=true;go();}
 </script></body></html>
