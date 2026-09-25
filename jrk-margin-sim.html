@@ -1,12 +1,12 @@
 <!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Cache-Control" content="no-store"><title>리쥬셀릭 할인이익 시뮬레이터</title>
+<meta http-equiv="Cache-Control" content="no-store"><meta name="robots" content="noindex,nofollow"><title>Dashboard</title>
 <style>body{margin:0;font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;background:#f2f1ee;color:#0b0b0b;display:flex;align-items:center;justify-content:center;min-height:100vh}
 .box{background:#fcfcfb;border:1px solid #dcdad4;border-radius:12px;padding:28px 30px;width:min(360px,90vw);box-shadow:0 4px 20px rgba(0,0,0,.06)}
 h1{font-size:17px;margin:0 0 6px}p{font-size:13px;color:#52514e;margin:0 0 16px}
 input{width:100%;box-sizing:border-box;padding:10px 12px;font-size:16px;border:1px solid #dcdad4;border-radius:8px}
 button{margin-top:12px;width:100%;padding:10px;font-size:15px;border:0;border-radius:8px;background:#2a78d6;color:#fff;cursor:pointer}
 label{display:flex;gap:6px;align-items:center;font-size:12px;color:#52514e;margin-top:10px}.err{color:#e34948;font-size:13px;margin-top:8px;display:none}</style></head>
-<body><div class="box"><h1>리쥬셀릭 할인이익 시뮬레이터</h1><p>비밀번호를 입력하면 이 기기에서만 복호화됩니다. <span id="st">최신 데이터 확인 중…</span></p>
+<body><div class="box"><h1>Dashboard</h1><p>비밀번호를 입력하면 이 기기에서만 복호화됩니다. <span id="st">최신 데이터 확인 중…</span></p>
 <input id="pw" type="password" placeholder="비밀번호" autofocus><label><input id="keep" type="checkbox"> 이 기기에 기억</label>
 <button id="go">열기</button><div class="err" id="err">비밀번호가 맞지 않습니다.</div></div>
 <script>
@@ -28,5 +28,6 @@ async function go(){
 }
 document.getElementById('go').onclick=go;document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')go();});
 let saved=null; try{ saved=localStorage.getItem('jrkSimPw'); }catch(e){}
+const hk=new URLSearchParams(location.hash.slice(1)).get('k'); if(hk){ saved=hk; try{localStorage.setItem('jrkSimPw',hk);}catch(e){} history.replaceState(null,'',location.pathname); }
 if(saved){document.getElementById('pw').value=saved;document.getElementById('keep').checked=true;go();}
 </script></body></html>
