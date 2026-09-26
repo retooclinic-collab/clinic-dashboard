@@ -125,6 +125,7 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
     <button class="sbn" id="nav-daily" onclick="goTab('daily')">📋 수납 내역</button>
     <button class="sbn" id="nav-trend" onclick="goTab('trend')">📈 종합 분석</button>
     <button class="sbn" id="nav-bank" onclick="goTab('bank')">🏦 입출금</button>
+    <button class="sbn" id="nav-recon" onclick="goTab('recon')">💰 수납대사</button>
     <button class="sbn" id="nav-card" onclick="goTab('card')">💳 카드지출</button>
     <button class="sbn" id="nav-inv" onclick="goTab('inv')">📦 재고자산</button>
     <button class="sbn" id="nav-cloud" onclick="goTab('cloud')">☁ 저장 현황</button>
@@ -347,6 +348,22 @@ input:focus,select:focus{border-color:#3b82f6;background:#fff;}
       &bull; <b>조회기간 한계</b> &mdash; 은행 스크래핑은 카드처럼 과거 일정 기간까지만(하나 약 18개월, 부산 약 12개월). 오늘부터 매일 수집분은 영구 누적<br>
       <span style="color:#cbd5e1;">&mdash; 은행 입출금 자동연동 파이프라인 &middot; 최종 업데이트 2026-06</span>
     </div>
+  </div>
+
+  <!-- 💰 수납대사 탭 (2026-09-26) — 계산은 gtf/recon_store.py, 여기는 읽기만 -->
+  <div id="tab-recon" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+      <div><h2 style="font-size:20px;font-weight:800;margin-bottom:3px;">💰 수납대사</h2><p style="color:#64748b;font-size:13px;">실수령(VAN·통장·GTF·제로페이) = 상담리스트 = Vegas · 매일 22:05 마감판 · 다음 진료일 09:40 확정판</p></div>
+      <div class="no-print" style="display:flex;gap:6px;align-items:center;">
+        <button class="btn btn-o btn-sm" onclick="reconStep(1)" title="이전 날짜">◀</button>
+        <select id="recon-date" style="width:auto;min-width:230px;" onchange="reconPick(this.value)"></select>
+        <button class="btn btn-o btn-sm" onclick="reconStep(-1)" title="다음 날짜">▶</button>
+        <button class="btn btn-o btn-sm" onclick="renderReconTab(true)">↻ 새로고침</button>
+      </div>
+    </div>
+    <div id="recon-body"><div class="muted" style="padding:20px;">불러오는 중…</div></div>
+    <div class="sdiv">입금예정 ↔ 통장 실입금 · 미입금</div>
+    <div id="recon-settle"></div>
   </div>
 
   <!-- 카드지출 탭 -->
@@ -788,6 +805,12 @@ try {
     const arr = []; snap.forEach(function(d){ arr.push(d.data()); });
     return arr;
   };
+
+  // ── 💰 수납대사 (2026-09-26): gtf/recon_store.py 가 서비스계정으로 쓴 결과를 읽기만 (규칙: 원장 읽기 전용) ──
+  window.fbGetReconIndex = async function(){ var x=await getDoc(doc(db,'recon_meta','index')); return x.exists()?x.data():{dates:{}}; };
+  window.fbGetReconMeta = async function(name){ var x=await getDoc(doc(db,'recon_meta',name)); return x.exists()?x.data():null; };
+  window.fbGetRecon = async function(d){ var x=await getDoc(doc(db,'recon_daily',d)); return x.exists()?x.data():null; };
+  window.fbGetSettleHist = async function(n){ var snap=await getDocs(query(collection(db,'recon_settle_hist'),orderBy('date','desc'),limit(n||30))); var a=[]; snap.forEach(function(x){a.push(x.data());}); return a; };
 
   // ── 관리자: 감사로그 조회 ──
   window.fbGetAuditLog = async function(limitN) {
@@ -2868,7 +2891,7 @@ function drawInvChart(hist){
 }
 
 function goTab(t){
-  ['an','daily','trend','cloud','cfg','admin','card','bank','inv'].forEach(function(id){
+  ['an','daily','trend','cloud','cfg','admin','card','bank','inv','recon'].forEach(function(id){
     var el=document.getElementById('tab-'+id);
     if(el)el.style.display=t===id?'block':'none';
     var nav=document.getElementById('nav-'+id);
@@ -2879,9 +2902,180 @@ function goTab(t){
   if(t==='admin')renderAdminTab();
   if(t==='card')renderCardTab();
   if(t==='bank')renderBankTab();
+  if(t==='recon')renderReconTab(false);
   if(t==='inv')renderInvTab();
   if(t==='daily'){ if(!_dailyAllItems.length) loadAllDaily(); else if(!_dailyFiltered.length && _dailyAllItems.length) applyDailyFilter(); }
 }
+
+/* === 💰 수납대사 탭 (2026-09-26) ===
+   gtf/recon_store.py 가 매일 저장한 recon_daily/{날짜} · recon_meta/settlement · recon_settle_hist 를 읽기만 한다.
+   계산은 전부 PC(서비스계정) 쪽. 포털은 표시만 — 규칙: 원장 계정 읽기 전용(Firestore rules). */
+var _recon={dates:null,kinds:{},cur:null,cache:{},settle:null,hist:null,settleAll:false};
+function _rw(n){ return n==null?'—':Math.round(n).toLocaleString('ko-KR'); }
+function _rd(n){ if(n==null) return '—'; if(n===0) return '0'; return (n>0?'+':'')+Math.round(n).toLocaleString('ko-KR'); }
+function _resc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+var _RV={ok:['✅','#16a34a','일치'],boundary:['≈','#d97706','예약금 날짜경계'],warn:['⚠️','#dc2626','확인 필요'],info:['ℹ️','#64748b','참고']};
+function _rv(v){ if(!v) return '<span style="color:#cbd5e1;">—</span>'; var x=_RV[v]||['','#64748b',v]; return '<span style="color:'+x[1]+';font-weight:700;white-space:nowrap;">'+x[0]+' '+x[2]+'</span>'; }
+function _rdiffc(n,v){ if(n==null) return '<span style="color:#cbd5e1;">—</span>'; var c=(n===0)?'#94a3b8':(v==='warn'?'#dc2626':(v==='boundary'?'#d97706':'#475569')); return '<span style="color:'+c+';font-weight:'+(n?700:400)+';">'+_rd(n)+'</span>'; }
+var _RPAL=['#dbeafe','#dcfce7','#fef3c7','#fce7f3','#e0e7ff','#ccfbf1','#fee2e2','#ede9fe','#ffedd5','#e2e8f0'];
+function _rpill(x){
+  if(x.m==null){ if(x.amount===0) return '<span style="color:#94a3b8;font-size:11px;">'+_resc(x.note||'취소')+'</span>'; return '<span style="background:#fee2e2;color:#b91c1c;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;">짝 없음</span>'; }
+  return '<span style="background:'+_RPAL[(x.m-1)%_RPAL.length]+';color:#334155;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:600;">#'+x.m+(x.mk&&x.mk!=='1:1'?' '+x.mk:'')+'</span>';
+}
+function _rdow(d){ return '일월화수목금토'[new Date(d+'T00:00:00').getDay()]; }
+
+async function renderReconTab(force){
+  var box=document.getElementById('recon-body'); if(!box) return;
+  if(!window.fbGetReconIndex){ box.innerHTML='<div class="warn">Firebase 연결 필요</div>'; return; }
+  try{
+    if(force||!_recon.dates){
+      var idx=await window.fbGetReconIndex();
+      _recon.kinds=(idx&&idx.dates)||{};
+      _recon.dates=Object.keys(_recon.kinds).sort().reverse();
+      if(force) _recon.cache={};
+    }
+    if(force||!_recon.settle){ _recon.settle=await window.fbGetReconMeta('settlement'); _recon.hist=await window.fbGetSettleHist(30); }
+    var sel=document.getElementById('recon-date');
+    if(sel) sel.innerHTML=_recon.dates.map(function(d){ var k=_recon.kinds[d]||{}; var ic=({ok:'✅',boundary:'≈',warn:'⚠️'})[k.v]||''; return '<option value="'+d+'">'+d+' ('+_rdow(d)+') '+ic+(k.kind?' · '+_resc(k.kind):'')+'</option>'; }).join('');
+    if(!_recon.cur||_recon.dates.indexOf(_recon.cur)<0) _recon.cur=_recon.dates[0]||null;
+    if(sel&&_recon.cur) sel.value=_recon.cur;
+    await reconLoadDay(_recon.cur);
+    reconRenderSettle();
+  }catch(e){ box.innerHTML='<div class="warn">수납대사 불러오기 실패: '+_resc(e.message||e)+'</div>'; }
+}
+async function reconPick(d){ _recon.cur=d; await reconLoadDay(d); }
+async function reconStep(delta){
+  if(!_recon.dates||!_recon.dates.length) return;
+  var i=_recon.dates.indexOf(_recon.cur)+delta; if(i<0||i>=_recon.dates.length) return;
+  _recon.cur=_recon.dates[i]; var sel=document.getElementById('recon-date'); if(sel) sel.value=_recon.cur;
+  await reconLoadDay(_recon.cur);
+}
+async function reconLoadDay(d){
+  var box=document.getElementById('recon-body'); if(!box) return;
+  if(!d){ box.innerHTML='<div class="card muted">아직 저장된 대사가 없습니다. (매일 22:05 자동 저장)</div>'; return; }
+  box.innerHTML='<div class="muted" style="padding:20px;">'+d+' 불러오는 중…</div>';
+  var doc=_recon.cache[d]; if(!doc){ doc=await window.fbGetRecon(d); _recon.cache[d]=doc; }
+  if(!doc){ box.innerHTML='<div class="card muted">'+d+' 대사 문서가 없습니다.</div>'; return; }
+  box.innerHTML=reconDayHtml(doc);
+}
+function reconToggle(k){ var el=document.getElementById('recon-dd-'+k); if(!el) return; var on=el.style.display==='none'; el.style.display=on?'':'none'; var t=document.getElementById('recon-tri-'+k); if(t) t.textContent=on?'▼':'▶'; }
+
+function reconDayHtml(doc){
+  var h='';
+  var meta=[];
+  meta.push('<b>'+_resc(doc.kind||'')+'</b> · 계산 '+_resc((doc.generatedAt||'').replace('T',' ').slice(0,16)));
+  meta.push('상담리스트: '+_resc(doc.sheetSrc||'—')+(doc.sheetRows?(' '+doc.sheetRows+'행'):''));
+  if(doc.vegas) meta.push('Vegas 서버 취득 '+_resc(String(doc.vegas.capturedAt||'').replace('T',' ').slice(0,16)));
+  h+='<div style="font-size:12px;color:#64748b;margin-bottom:10px;">'+meta.join(' &nbsp;·&nbsp; ')+'</div>';
+  if(doc.errors&&doc.errors.length) h+='<div class="warn">⚠️ 데이터 못 받은 소스: '+doc.errors.map(_resc).join(' / ')+' — 이 소스가 들어간 줄은 0으로 보일 수 있습니다.</div>';
+
+  // ① 루트별 3축
+  h+='<div class="card" style="padding:16px 18px;"><div style="font-weight:800;font-size:14px;margin-bottom:2px;">루트별 대사 <span style="font-weight:400;color:#94a3b8;font-size:11px;">실수령 = 외부 공식 기록(VAN·통장·GTF·제로페이) · 행을 누르면 건별 짝맞춤</span></div>';
+  h+='<table><thead><tr><th>루트</th><th class="r">실수령</th><th class="r">상담리스트</th><th class="r">차이(리스트−실수령)</th><th>판정</th><th>비고</th></tr></thead><tbody>';
+  (doc.routes||[]).forEach(function(r){
+    var tx=(doc.tx||{})[r.key]||{real:[],sheet:[]};
+    var nUn=tx.real.filter(function(x){return x.m==null&&x.amount;}).length+tx.sheet.filter(function(x){return x.m==null&&x.amount;}).length;
+    h+='<tr style="cursor:pointer;" onclick="reconToggle(\''+r.key+'\')"><td><span id="recon-tri-'+r.key+'" style="color:#94a3b8;">▶</span> <b>'+_resc(r.label)+'</b>'+(nUn?' <span style="color:#dc2626;font-size:11px;">짝 없음 '+nUn+'</span>':'')+'</td>'
+      +'<td class="r">'+_rw(r.real)+'</td><td class="r">'+_rw(r.sheet)+'</td><td class="r">'+_rdiffc(r.diff,r.v)+'</td><td>'+_rv(r.v)+'</td><td style="font-size:11px;color:#94a3b8;">'+_resc(r.note||'')+'</td></tr>';
+    h+='<tr id="recon-dd-'+r.key+'" style="display:none;"><td colspan="6" style="background:#f8fafc;padding:10px 12px;">'+reconDrill(tx)+'</td></tr>';
+  });
+  var tdiff=(doc.sheetTotal==null)?null:doc.sheetTotal-doc.realTotal;
+  h+='<tr class="rowtotal"><td><b>합계</b></td><td class="r bold">'+_rw(doc.realTotal)+'</td><td class="r bold">'+_rw(doc.sheetTotal)+'</td><td class="r">'+_rdiffc(tdiff,tdiff===0?'ok':(tdiff!=null&&Math.abs(tdiff)%33000===0&&Math.abs(tdiff)<=99000?'boundary':'warn'))+'</td><td></td><td style="font-size:11px;color:#94a3b8;">'+(doc.sheetOther?('리스트의 다른 날 결제분 기재 '+_rw(doc.sheetOther)+'원 포함'):'')+'</td></tr>';
+  if(doc.vegas){ var vd=doc.vegas.total-doc.realTotal, vs=(doc.sheetTotal==null)?null:doc.vegas.total-doc.sheetTotal;
+    h+='<tr class="rowtotal"><td><b>Vegas 수납 합계</b></td><td class="r" colspan="2" style="font-weight:700;">'+_rw(doc.vegas.total)+'</td><td class="r">실수령 대비 '+_rdiffc(vd,vd===0?'ok':'warn')+(vs!=null?'<br>리스트 대비 '+_rdiffc(vs,vs===0?'ok':'warn'):'')+'</td><td>'+(vs===0?_rv('ok'):(vs==null?'':_rv('warn')))+'</td><td style="font-size:11px;color:#94a3b8;">'+(vs?'데스크(Vegas)·상담팀(리스트) 입력 대조 필요':'Vegas는 건별이 없어 합계로만 비교')+'</td></tr>'; }
+  h+='</tbody></table>';
+  if(doc.checks&&doc.checks.length){ h+='<div style="margin-top:12px;padding:10px 12px;background:#f8fafc;border-radius:8px;font-size:12px;line-height:1.8;color:#334155;">'+doc.checks.map(function(c){return '<div>'+_resc(c)+'</div>';}).join('')+'</div>'; }
+  h+='</div>';
+
+  // ② Vegas 세부
+  if(doc.vegas&&doc.vegas.rows){
+    h+='<div class="card" style="padding:16px 18px;"><div style="font-weight:800;font-size:14px;margin-bottom:2px;">Vegas 수단별 대조 <span style="font-weight:400;color:#94a3b8;font-size:11px;">직원은 위챗·알리·제로를 Vegas에 카드로 입력 · 현금 4항목은 각각 외부 기록과 맞춤</span></div>';
+    h+='<table><thead><tr><th>항목</th><th class="r">Vegas</th><th class="r">외부 실측</th><th class="r">차이(Vegas−실측)</th><th>판정</th><th>실측 기준</th></tr></thead><tbody>';
+    doc.vegas.rows.forEach(function(r){ h+='<tr><td>'+_resc(r.label)+'</td><td class="r">'+_rw(r.vegas)+'</td><td class="r">'+_rw(r.real)+'</td><td class="r">'+_rdiffc(r.diff,r.v)+'</td><td>'+_rv(r.v)+'</td><td style="font-size:11px;color:#94a3b8;">'+_resc(r.note||'')+'</td></tr>'; });
+    h+='</tbody></table>'+(doc.vegas.refund?'<div style="font-size:11px;color:#94a3b8;margin-top:6px;">Vegas 카드 '+_rw(doc.vegas.card)+' · 환불 '+_rw(doc.vegas.refund)+'</div>':'')+'</div>';
+  } else if(doc.vegasNote){ h+='<div class="warn">Vegas: '+_resc(doc.vegasNote)+'</div>'; }
+  return h;
+}
+function reconDrill(tx){
+  function side(title,rows,isReal){
+    var s='<div style="flex:1;min-width:300px;"><div style="font-weight:700;font-size:12px;margin-bottom:4px;">'+title+' <span style="color:#94a3b8;font-weight:400;">'+rows.length+'건 · '+_rw(rows.reduce(function(a,x){return a+(x.amount||0);},0))+'원</span></div>';
+    if(!rows.length) return s+'<div style="font-size:11px;color:#94a3b8;">없음</div></div>';
+    s+='<table style="font-size:12px;background:#fff;border-radius:8px;"><tbody>';
+    rows.forEach(function(x){
+      var un=(x.m==null&&x.amount);
+      s+='<tr style="'+(un?'background:#fff1f2;':'')+'">'+(isReal
+        ?'<td style="padding:4px 8px;color:#64748b;white-space:nowrap;">'+_resc(x.t||'')+'</td><td style="padding:4px 8px;">'+_resc(x.src||'')+(x.who?' <span style="color:#94a3b8;">'+_resc(x.who)+'</span>':'')+'</td>'
+        :'<td style="padding:4px 8px;color:#64748b;white-space:nowrap;">'+_resc(String(x.row).indexOf('#')>=0?x.row:(x.row+'행'))+'</td><td style="padding:4px 8px;">'+_resc(x.method||'')+' <span style="color:#94a3b8;">'+_resc(x.cat1||'')+'</span></td>')
+        +'<td style="padding:4px 8px;text-align:right;font-weight:600;'+(x.amount<0?'color:#dc2626;':'')+'">'+_rw(x.amount===0&&x.amount_orig?x.amount_orig:x.amount)+'</td>'
+        +'<td style="padding:4px 8px;">'+_rpill(x)+(x.note&&x.m!=null?' <span style="color:#94a3b8;font-size:11px;">'+_resc(x.note)+'</span>':(x.note&&x.amount?' <span style="color:#94a3b8;font-size:11px;">'+_resc(x.note)+'</span>':''))+'</td></tr>';
+    });
+    return s+'</tbody></table></div>';
+  }
+  var real=(tx.real||[]).slice().sort(function(a,b){return (a.t||'')<(b.t||'')?-1:1;});
+  var sh=(tx.sheet||[]).slice();
+  return '<div style="display:flex;gap:14px;flex-wrap:wrap;">'+side('실수령 건별',real,true)+side('상담리스트 건별',sh,false)+'</div>'
+    +'<div style="font-size:11px;color:#94a3b8;margin-top:6px;">같은 번호 = 금액으로 짝지은 거래 · 분할 = 리스트 1행을 여러 번 결제 · 합산 = 여러 행을 한 번에 결제 · 짝 없음 = 한쪽에만 있음(확인 대상)</div>';
+}
+
+function reconRenderSettle(){
+  var box=document.getElementById('recon-settle'); if(!box) return;
+  var s=_recon.settle;
+  if(!s){ box.innerHTML='<div class="card muted">입금예정 스냅샷이 아직 없습니다. (매일 09:40·11:30·22:05 자동)</div>'; return; }
+  var S=s.summary||{};
+  function kc(t,v,sub,col){ return '<div class="kpi" style="border-top-color:'+(col||'#e2e8f0')+';"><div class="kpi-l">'+t+'</div><div class="kpi-v" style="'+(col?'color:'+col+';':'')+'">'+_rw(v)+'<span style="font-size:12px;font-weight:600;color:#94a3b8;"> 원</span></div>'+(sub?'<div style="font-size:11px;color:#94a3b8;margin-top:3px;">'+sub+'</div>':'')+'</div>'; }
+  var od=(S.overdue||[]);
+  var h='<div style="font-size:12px;color:#64748b;margin-bottom:8px;">기준일 '+_resc(s.asOf)+' · 계산 '+_resc((s.generatedAt||'').replace('T',' ').slice(0,16))+' · 통장 최신 거래일 <b>'+_resc(s.bankLastDate||'—')+'</b></div>';
+  if(s.bankLastDate&&s.bankLastDate<s.asOf){ h+='<div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">※ 통장 수집은 '+_resc(s.bankLastDate)+'까지 — 그 뒤 날짜의 입금은 아직 수집 전이라 "예정/미입금"으로 보일 수 있습니다(휴일이면 정상).</div>'; }
+  if(s.errors&&s.errors.length) h+='<div class="warn">⚠️ '+s.errors.map(_resc).join(' / ')+'</div>';
+  h+='<div class="kgrid">'
+    +kc('미입금 잔액 합계',S.total,'승인됐지만 아직 통장에 안 들어온 돈','#0f172a')
+    +kc('카드 · 입금일 확정',S.card_scheduled,'VAN 입금예정(수수료 차감)','#3b82f6')
+    +kc('카드 · 입금일 미정',S.card_unscheduled,'매입 전 승인액(수수료 차감 전)','#94a3b8')
+    +kc('위챗·알리 정산예정',(S.gtf_scheduled||0)+(S.gtf_unsettled||0),(S.gtf_unsettled?'정산 전 거래 '+_rw(S.gtf_unsettled)+' 포함':'GTF 지급예정액'),'#10b981')
+    +'<div class="kpi" style="border-top-color:'+(od.length?'#dc2626':'#16a34a')+';"><div class="kpi-l">입금일 지났는데 안 들어옴</div><div class="kpi-v" style="color:'+(od.length?'#dc2626':'#16a34a')+';">'+(od.length?od.length+'건':'없음 ✅')+'</div></div>'
+    +'</div>';
+  if(od.length) h+='<div class="warn" style="background:#fef2f2;border-color:#fecaca;color:#b91c1c;">⚠️ 입금일이 지났는데 통장에 없음/부족: '+od.map(_resc).join(' · ')+'</div>';
+
+  var rows=[].concat((s.card||[]).map(function(r){return Object.assign({kind:'카드'},r);}),(s.gtf||[]).map(function(r){return Object.assign({kind:'위챗·알리'},r);}));
+  rows.sort(function(a,b){ return a.date<b.date?1:(a.date>b.date?-1:(a.kind<b.kind?-1:1)); });
+  var cut=(function(){ var d=new Date(s.asOf+'T00:00:00'); d.setDate(d.getDate()-7); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); })();
+  var shown=_recon.settleAll?rows:rows.filter(function(r){ return r.date>=cut||!/^입금/.test(r.status); });
+  var SC={'입금':'#16a34a','입금(보류분 포함)':'#16a34a','입금(승인 대조)':'#16a34a','예정':'#2563eb','오늘 예정':'#2563eb','미입금':'#dc2626','부족':'#dc2626','초과':'#d97706','VAN 예정 없음':'#64748b'};
+  h+='<div class="card" style="padding:16px 18px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div style="font-weight:800;font-size:14px;">입금(예정)일별 대조 <span style="font-weight:400;color:#94a3b8;font-size:11px;">카드=스마트로 VAN 입금예정 · 위챗·알리=GTF 정산내역 ↔ 통장 실입금</span></div>'
+    +'<button class="btn btn-o btn-sm no-print" onclick="_recon.settleAll=!_recon.settleAll;reconRenderSettle();">'+(_recon.settleAll?'최근 7일만':'전체 '+rows.length+'건 보기')+'</button></div>';
+  h+='<table><thead><tr><th>입금(예정)일</th><th>구분</th><th>대상</th><th class="r">매출(승인−취소)</th><th class="r">수수료</th><th class="r">입금예정</th><th class="r">통장 실입금</th><th>상태</th><th>비고</th></tr></thead><tbody>';
+  var lastD='';
+  shown.forEach(function(r){
+    var c=SC[r.status]||'#475569';
+    var note=r.note||(r.kind==='위챗·알리'&&r.trFrom?('거래 '+r.trFrom.slice(5)+(r.trTo&&r.trTo!==r.trFrom?'~'+r.trTo.slice(5):'')):'')||(r.hold?('보류 '+_rw(r.hold)):'');
+    var sep=(r.date!==lastD&&lastD)?'border-top:2px solid #f1f5f9;':''; lastD=r.date;
+    h+='<tr style="'+sep+'"><td style="white-space:nowrap;">'+_resc(r.date)+' <span style="color:#94a3b8;">'+_rdow(r.date)+'</span></td><td style="color:#64748b;">'+r.kind+'</td><td><b>'+_resc(r.who)+'</b></td>'
+      +'<td class="r">'+_rw(r.sales)+'</td><td class="r" style="color:#94a3b8;">'+_rw(r.fee)+'</td><td class="r">'+_rw(r.expected)+'</td>'
+      +'<td class="r" style="font-weight:700;">'+(r.got?_rw(r.got):'<span style="color:#cbd5e1;">—</span>')+(r.gotAt?'<div style="font-size:10px;color:#94a3b8;font-weight:400;">'+_resc(r.gotAt)+'</div>':'')+'</td>'
+      +'<td><span style="color:'+c+';font-weight:700;white-space:nowrap;">'+_resc(r.status)+'</span></td><td style="font-size:11px;color:#94a3b8;">'+_resc(note)+'</td></tr>';
+  });
+  h+='</tbody></table></div>';
+
+  var un=s.cardUnscheduled||[], gu=s.gtfUnsettled||[];
+  if(un.length||gu.length){
+    h+='<div class="card" style="padding:16px 18px;"><div style="font-weight:800;font-size:14px;margin-bottom:6px;">아직 입금일이 안 잡힌 승인 <span style="font-weight:400;color:#94a3b8;font-size:11px;">매입 전(보통 승인 D+1~2에 입금일 확정) · 롯데는 VAN이 입금정보를 안 줘서 통장 입금으로 직접 맞춤(수수료≈2.2% 추정)</span></div>';
+    h+='<table><thead><tr><th>승인일</th><th>구분</th><th>대상</th><th class="r">승인액</th><th class="r">추정 입금액</th><th>비고</th></tr></thead><tbody>';
+    un.slice().sort(function(a,b){return a.date<b.date?-1:1;}).forEach(function(x){ h+='<tr><td>'+_resc(x.date)+'</td><td style="color:#64748b;">카드</td><td>'+_resc(x.who)+'</td><td class="r">'+_rw(x.amount)+'</td><td class="r" style="color:#94a3b8;">'+(x.est?_rw(x.est):'—')+'</td><td>'+(x.late?'<span style="color:#dc2626;font-weight:700;">⚠️ 오래됨 — 매입 누락/보류 확인</span>':'')+'</td></tr>'; });
+    gu.forEach(function(x){ h+='<tr><td>'+_resc(x.date)+'</td><td style="color:#64748b;">위챗·알리</td><td>'+_resc(x.who)+'</td><td class="r">'+_rw(x.amount)+'</td><td class="r" style="color:#94a3b8;">—</td><td style="font-size:11px;color:#94a3b8;">GTF 정산 전</td></tr>'; });
+    h+='</tbody></table></div>';
+  }
+  var hist=_recon.hist||[];
+  if(hist.length){
+    h+='<div class="card" style="padding:16px 18px;"><div style="font-weight:800;font-size:14px;margin-bottom:6px;">미입금 잔액 추이 <span style="font-weight:400;color:#94a3b8;font-size:11px;">하루 마지막 스냅샷 기준</span></div><table><thead><tr><th>날짜</th><th class="r">합계</th><th class="r">카드 확정</th><th class="r">카드 미정</th><th class="r">위챗·알리</th><th class="r">연체</th></tr></thead><tbody>';
+    hist.slice(0,14).forEach(function(x){ h+='<tr><td>'+_resc(x.date)+'</td><td class="r bold">'+_rw(x.total)+'</td><td class="r">'+_rw(x.card_scheduled)+'</td><td class="r">'+_rw(x.card_unscheduled)+'</td><td class="r">'+_rw((x.gtf_scheduled||0)+(x.gtf_unsettled||0))+'</td><td class="r" style="'+(x.overdueCount?'color:#dc2626;font-weight:700;':'')+'">'+(x.overdueCount||0)+'</td></tr>'; });
+    h+='</tbody></table></div>';
+  }
+  box.innerHTML=h;
+}
+
+/* 주소 끝이 #recon 이면(자비스 허브 링크) 로그인 후 수납대사 탭으로 바로 연다 */
+(function(){ if(location.hash!=='#recon') return; var n=0; var iv=setInterval(function(){ n++; var sh=document.getElementById('shell');
+  if(sh&&sh.style.display!=='none'&&window.fbGetReconIndex){ clearInterval(iv); goTab('recon'); } else if(n>600) clearInterval(iv); },500); })();
 
 /* === 카드 지출 탭 === */
 var _cardCharts={}, _cardRows=null, _cardGran='month';
