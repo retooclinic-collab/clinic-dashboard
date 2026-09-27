@@ -808,7 +808,9 @@ window.loadDraftList = async function(){
     const docs2 = [];
     snap.forEach(d => docs2.push({id:d.id, ...d.data()}));
     docs2.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+    let hiddenConfirmed = 0;
     docs2.forEach(d => {
+      if(d.confirmedAt && !window._showConfirmedDrafts){ hiddenConfirmed++; return; } // 2026-09-28
       const rowCount = (d.rows||[]).length;
       const date = d.targetDate || '날짜미정';
       const created = d.createdAt ? new Date(d.createdAt.seconds*1000).toLocaleString('ko') : '';
@@ -818,6 +820,7 @@ window.loadDraftList = async function(){
       html += `<div><span style="font-weight:700;color:var(--text)">${date}</span> <span style="color:var(--accent);font-size:12px">${rowCount}건</span></div>`;
       html += `<span style="font-size:11px;color:var(--muted)">${created}</span></div>`;
       if(d.summary) html += `<div style="font-size:11px;color:var(--sub);margin-top:4px">${d.summary}</div>`;
+      if(d.confirmedAt) html += `<div style="margin-top:6px;font-size:11px;font-weight:700;color:var(--green)">✅ 확정됨 ${String(d.confirmedAt).replace(/[<>&]/g,'')} · ${Number(d.confirmedCount)||0}건 저장 — 다시 확정하면 중복</div>`; // 2026-09-28
       // ⚠️ 파싱 후 상담리스트 변경 배지 (2026-09-27, retoo-parse-eve §1-b가 sheetChange 필드를 씀)
       if(d.sheetChange){
         const sc = d.sheetChange;
@@ -829,6 +832,7 @@ window.loadDraftList = async function(){
       html += `<button onclick="event.stopPropagation();deleteDraftById('${d.id}')" style="padding:0 14px;background:var(--red);color:#fff;border:none;border-radius:0 12px 12px 0;font-size:16px;cursor:pointer;opacity:0.7;transition:opacity .2s" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.7'" title="초안 삭제">🗑</button>`;
       html += `</div>`;
     });
+    if(hiddenConfirmed || window._showConfirmedDrafts) html += `<div onclick="window._showConfirmedDrafts=!window._showConfirmedDrafts;window.loadDraftList()" style="text-align:center;font-size:12px;color:var(--muted);padding:10px 0;cursor:pointer">${window._showConfirmedDrafts ? '✅ 확정된 초안 숨기기' : '✅ 확정된 초안 ' + hiddenConfirmed + '개 숨김 — 눌러서 보기'}</div>`; // 2026-09-28
     container.innerHTML = html;
   } catch(e){
     console.error('draft list error:', e);
@@ -841,6 +845,7 @@ window.loadDraft = async function(draftId){
     const snap = await getDoc(doc(db, 'draft_imports', draftId));
     if(!snap.exists()){ window.showToast && showToast('초안을 찾을 수 없어요','error'); return; }
     const data = snap.data();
+    window._currentDraftMeta = {confirmedAt: data.confirmedAt||null, confirmedCount: data.confirmedCount||0}; // 2026-09-28
     window._draftRows = (data.rows||[]).map(r => {
       // Claude 세션이 다른 필드명으로 저장했을 수 있으므로 정규화
       const row = {...r, _parseSource:'claude-draft', _origColAmt:r.amount};
@@ -907,15 +912,31 @@ window.deleteDraftById = async function(draftId){
 window.confirmDraftImport = async function(){
   if(!window._isAdmin){ window.showToast && showToast('관리자만 저장할 수 있어요','error'); return; }
   if(!window._draftRows || !window._draftRows.length){ window.showToast && showToast('저장할 데이터가 없어요','error'); return; }
+  // ★ 2026-09-28 수정(세션 4e80e2): 예전엔 window._importRows(여기)만 보고 판정했는데 confirmImport가 비우는 건
+  //   일반 스크립트의 let _importRows라 조건이 영영 거짓 → 초안이 안 지워져 원장이 수동 삭제했다.
+  //   이제: 전부 저장 성공 → 초안에 '확정됨' 표시(원본 보관, 목록에서 숨김) / 한 건이라도 실패 → 초안 유지 + 경고.
+  const meta = window._currentDraftMeta || {};
+  if(meta.confirmedAt && !confirm(`이 초안은 이미 확정됐습니다 (${meta.confirmedAt}, ${meta.confirmedCount||0}건).\n다시 저장하면 수납리스트에 중복으로 들어갑니다. 그래도 저장할까요?`)) return;
   window._importRows = window._draftRows;
-  await window.confirmImport();
-  if(window._currentDraftId && window._importRows.length === 0){
+  const res = await window.confirmImport();
+  if(!window._currentDraftId || !res) return;
+  if(res.failed === 0 && res.saved > 0 && res.saved === res.total){
     try {
-      await deleteDoc(doc(db, 'draft_imports', window._currentDraftId));
-      window.showToast && showToast('초안이 저장 후 삭제되었습니다','success');
-    } catch(e){ console.error('draft delete error:', e); }
-    window._currentDraftId = null;
+      await updateDoc(doc(db, 'draft_imports', window._currentDraftId), {
+        confirmedAt: new Date().toLocaleString('ko'),
+        confirmedCount: res.saved,
+        confirmedBy: (auth && auth.currentUser && auth.currentUser.email) || ''
+      });
+      window.showToast && showToast('✅ 확정 완료 — 초안은 확정됨으로 표시되어 목록에서 숨겨집니다(원본 보관)','success');
+    } catch(e){
+      console.error('draft confirm-mark error:', e);
+      window.showToast && showToast('저장은 됐지만 초안 확정 표시 실패 — 초안을 수동으로 정리하세요','error');
+    }
+    window._currentDraftId = null; window._currentDraftMeta = null;
     window.closeDraftPreview && closeDraftPreview();
+    window.loadDraftList && window.loadDraftList();
+  } else {
+    window.showToast && showToast(`⚠️ ${res.total}건 중 ${res.failed}건 저장 실패 — 초안을 그대로 둡니다. 실패 건 확인 후 처리하세요`,'error');
   }
 };
 </script>
@@ -6360,6 +6381,7 @@ async function confirmImport(){
   progress.style.display='block';
 
   let saved=0, failed=0;
+  const _total = _importRows.length; // 2026-09-28: 결과 반환용(초안 확정 판정)
   for(let i=0; i<_importRows.length; i++){
     const r = _importRows[i];
     progress.textContent = `저장 중... ${i+1}/${_importRows.length}`;
@@ -6433,6 +6455,7 @@ async function confirmImport(){
       if(currentMode === 'list') applyGroupFilter();
     }, 2500);
   }
+  return {saved, failed, total:_total}; // 2026-09-28: confirmDraftImport가 전부 성공했을 때만 초안을 '확정됨' 처리
 }
 
 function clearImport(){
@@ -6458,7 +6481,9 @@ async function loadDraftList(){
     const docs = [];
     snap.forEach(d => docs.push({id:d.id, ...d.data()}));
     docs.sort((a,b) => (b.createdAt?.seconds||0) - (a.createdAt?.seconds||0));
+    let hiddenConfirmed = 0;
     docs.forEach(d => {
+      if(d.confirmedAt && !window._showConfirmedDrafts){ hiddenConfirmed++; return; } // 2026-09-28
       const rowCount = (d.rows||[]).length;
       const date = d.targetDate || '날짜미정';
       const created = d.createdAt ? new Date(d.createdAt.seconds*1000).toLocaleString('ko') : '';
@@ -6468,6 +6493,7 @@ async function loadDraftList(){
       html += `<span style="font-size:11px;color:var(--muted)">${created}</span>`;
       html += `</div>`;
       if(d.summary) html += `<div style="font-size:11px;color:var(--sub);margin-top:4px">${d.summary}</div>`;
+      if(d.confirmedAt) html += `<div style="margin-top:6px;font-size:11px;font-weight:700;color:var(--green)">✅ 확정됨 ${String(d.confirmedAt).replace(/[<>&]/g,'')} · ${Number(d.confirmedCount)||0}건 저장 — 다시 확정하면 중복</div>`; // 2026-09-28
       // ⚠️ 파싱 후 상담리스트 변경 배지 (2026-09-27, retoo-parse-eve §1-b가 sheetChange 필드를 씀)
       if(d.sheetChange){
         const sc = d.sheetChange;
@@ -6477,6 +6503,7 @@ async function loadDraftList(){
       }
       html += `</div>`;
     });
+    if(hiddenConfirmed || window._showConfirmedDrafts) html += `<div onclick="window._showConfirmedDrafts=!window._showConfirmedDrafts;window.loadDraftList()" style="text-align:center;font-size:12px;color:var(--muted);padding:10px 0;cursor:pointer">${window._showConfirmedDrafts ? '✅ 확정된 초안 숨기기' : '✅ 확정된 초안 ' + hiddenConfirmed + '개 숨김 — 눌러서 보기'}</div>`; // 2026-09-28
     container.innerHTML = html;
   } catch(e){
     console.error('draft list error:', e);
