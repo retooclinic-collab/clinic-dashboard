@@ -818,6 +818,13 @@ window.loadDraftList = async function(){
       html += `<div><span style="font-weight:700;color:var(--text)">${date}</span> <span style="color:var(--accent);font-size:12px">${rowCount}건</span></div>`;
       html += `<span style="font-size:11px;color:var(--muted)">${created}</span></div>`;
       if(d.summary) html += `<div style="font-size:11px;color:var(--sub);margin-top:4px">${d.summary}</div>`;
+      // ⚠️ 파싱 후 상담리스트 변경 배지 (2026-09-27, retoo-parse-eve §1-b가 sheetChange 필드를 씀)
+      if(d.sheetChange){
+        const sc = d.sheetChange;
+        const esc = v => String(v==null?'':v).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+        const man = w => (Math.round((Number(w)||0)/1000)/10).toLocaleString('ko');
+        html += `<div style="margin-top:6px;padding:6px 8px;border-radius:8px;background:rgba(239,68,68,.12);color:var(--red);font-size:11px;font-weight:700;line-height:1.5">⚠️ 파싱 후 상담리스트 변경됨 — 시트 ${esc(sc.sheetRows)}행 ${man(sc.sheetSumWon)}만 / 초안 ${esc(sc.draftRows)}행 ${man(sc.draftSumWon)}만 · 확정 전 재파싱 필요 <span style="font-weight:400;color:var(--muted)">(${esc(sc.detectedAt)})</span></div>`;
+      }
       html += `</div>`;
       html += `<button onclick="event.stopPropagation();deleteDraftById('${d.id}')" style="padding:0 14px;background:var(--red);color:#fff;border:none;border-radius:0 12px 12px 0;font-size:16px;cursor:pointer;opacity:0.7;transition:opacity .2s" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.7'" title="초안 삭제">🗑</button>`;
       html += `</div>`;
@@ -6461,6 +6468,13 @@ async function loadDraftList(){
       html += `<span style="font-size:11px;color:var(--muted)">${created}</span>`;
       html += `</div>`;
       if(d.summary) html += `<div style="font-size:11px;color:var(--sub);margin-top:4px">${d.summary}</div>`;
+      // ⚠️ 파싱 후 상담리스트 변경 배지 (2026-09-27, retoo-parse-eve §1-b가 sheetChange 필드를 씀)
+      if(d.sheetChange){
+        const sc = d.sheetChange;
+        const esc = v => String(v==null?'':v).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+        const man = w => (Math.round((Number(w)||0)/1000)/10).toLocaleString('ko');
+        html += `<div style="margin-top:6px;padding:6px 8px;border-radius:8px;background:rgba(239,68,68,.12);color:var(--red);font-size:11px;font-weight:700;line-height:1.5">⚠️ 파싱 후 상담리스트 변경됨 — 시트 ${esc(sc.sheetRows)}행 ${man(sc.sheetSumWon)}만 / 초안 ${esc(sc.draftRows)}행 ${man(sc.draftSumWon)}만 · 확정 전 재파싱 필요 <span style="font-weight:400;color:var(--muted)">(${esc(sc.detectedAt)})</span></div>`;
+      }
       html += `</div>`;
     });
     container.innerHTML = html;
