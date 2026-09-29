@@ -143,16 +143,48 @@ def to_doc(org, t):
         "updatedAt": firestore.SERVER_TIMESTAMP,
     }
 
+
+def load_id_map(col):
+    """★2026-09-29 중복적재 방지: 이미 저장된 결제의 문서ID를 재사용하기 위한 지도.
+    문서ID 해시에 가맹점명이 들어가서, 카드사가 가맹점명을 나중에 바꿔 보내면 같은 결제가 새 문서로 또 저장됐다(승인번호 동일 2문서).
+    키 = (카드사·날짜·시각·금액·승인번호·취소구분). 승인번호가 다르면 다른 결제이므로 같은 금액 2회 결제는 그대로 각각 저장된다.
+    조회 실패 시 예전 동작(해시ID)으로 계속 진행 — 수집이 멈추면 안 된다."""
+    m = {}
+    try:
+        from google.cloud.firestore_v1 import FieldFilter
+        since = (datetime.date.today() - datetime.timedelta(days=LOOKBACK + 3)).isoformat()
+        q = col.where(filter=FieldFilter("date", ">=", since)).select(["org", "date", "time", "amount", "approvalNo", "cancelYN"])
+        for d in q.stream():
+            x = d.to_dict() or {}
+            ap = str(x.get("approvalNo") or "").strip()
+            if not ap:
+                continue
+            k = (x.get("org"), x.get("date"), str(x.get("time") or ""), int(x.get("amount") or 0), ap, x.get("cancelYN"))
+            m.setdefault(k, d.id)
+    except Exception as e:
+        print("[경고] 기존 문서 조회 실패 — 문서ID 재사용 없이 진행:", e, flush=True)
+    return m
+
+def resolve_id(idmap, did, doc):
+    """같은 결제가 이미 있으면 그 문서ID를, 없으면 새 ID를 등록해 쓴다(같은 실행 안의 중복도 함께 흡수)."""
+    ap = str(doc.get("approvalNo") or "").strip()
+    if not ap:
+        return did
+    k = (doc.get("org"), doc.get("date"), str(doc.get("time") or ""), int(doc.get("amount") or 0), ap, doc.get("cancelYN"))
+    return idmap.setdefault(k, did)
+
 def main():
     db = init_db()
     codef = make_codef()
     col = db.collection(COLLECTION)
+    idmap = load_id_map(col)
     total, written = 0, 0
     batch = db.batch(); n = 0
     for org in ORG_NAME:
         print("수집:", ORG_NAME[org], flush=True)
         for t in fetch_org(codef, org):
             did, doc = to_doc(org, t)
+            did = resolve_id(idmap, did, doc)
             batch.set(col.document(did), doc, merge=True)
             total += 1; n += 1
             if n >= 400:
