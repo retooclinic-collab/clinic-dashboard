@@ -1961,13 +1961,30 @@ function cfHit(r,arr){var s=(r.counterparty||'')+' '+(r.desc||'');return arr.som
 var CF_TAX_KW=['특징','특별징수','서울주민','시주민','구주민','지방소득','위택스','wetax','국고','국세','지방세','공과금'];
 function cfTax(r){var c=r.category||'';if(c==='세금/공과/수수료')return true;if(c&&c!=='기타지출'&&c!=='기타수입')return false;/* 급여·에이전시 등 다른 분류는 건드리지 않음(예: 국세청 납부 원천세=인건비) */var s=((r.counterparty||'')+' '+(r.desc||'')).toLowerCase();return CF_TAX_KW.some(function(k){return s.indexOf(k)>=0;});}
 function cfSelf(r){var cp=(r.counterparty||'');var s=cp+' '+(r.desc||'');return (cp.indexOf('김재림')>=0&&!cfTax(r))||(cp==='청담리투의원'&&s.indexOf('타행송금')>=0)||(s.indexOf('제이알케이')>=0&&(r.amount||0)>=50000000);}
+/* 착오송금 반환 상계 (2026-09-29): 같은 거래처가 30일 안에 '같은 금액'을 되돌려준 입금이 있으면, 짝이 되는 출금 1건은 비용에서 제외한다.
+   사례: 메디치골드 2026-07-03 27,986,800 출금 → 07-07 같은 금액 입금(반환). 반환 입금은 어차피 비용 집계에서 빠지므로(출금만 집계) 짝 출금도 같이 빼야 순비용이 맞다.
+   자전거래(cfSelf)는 대상 아님. 금액이 원 단위까지 같아야만 짝짓는다(보수적). */
+function cfRefundedOuts(rows){
+  var out=new Set();
+  var norm=function(r){return String(r.counterparty||'').replace(/\s+/g,'');};
+  var day=function(r){return new Date(String(r.date||'').slice(0,10)+'T00:00:00Z').getTime();};
+  var outs=rows.filter(function(r){return r.inout==='출금'&&(r.amount||0)>0&&!cfSelf(r)&&norm(r);}).sort(function(a,b){return day(a)-day(b);});
+  var ins=rows.filter(function(r){return r.inout==='입금'&&(r.amount||0)>0&&!cfSelf(r)&&norm(r);}).sort(function(a,b){return day(a)-day(b);});
+  var used=new Set();
+  ins.forEach(function(i){
+    var hit=null;
+    for(var k=outs.length-1;k>=0;k--){var o=outs[k];if(used.has(o))continue;if(norm(o)!==norm(i)||o.amount!==i.amount)continue;var dd=(day(i)-day(o))/86400000;if(dd<0||dd>30)continue;hit=o;break;}
+    if(hit){used.add(hit);out.add(hit);}
+  });
+  return out;
+}
 function cfMonthKey(lbl){var m=String(lbl||'').match(/(\d{4})\D*?(\d{1,2})\s*월/);if(!m)return null;return m[1]+'-'+('0'+m[2]).slice(-2);}
 function getFixedExCard(){var t=getFixedTotal();var list=(typeof getFixedList==='function')?getFixedList():[];var ci=0;list.forEach(function(f){if(f&&!f.isSep&&/삼성카드/.test(f.name||''))ci+=(f.amount||0);});return t-ci;}
 async function cfLoad(force){
   try{
     if(force){window._cfCard=null;window._cfBank=null;}
-    if(!window._cfCard && window.fbGetCardExpenses){var c=await window.fbGetCardExpenses();var cm={};c.forEach(function(r){if(r.cancelYN!=='정상')return;var k=r.month||((r.date||'').slice(0,7));cm[k]=(cm[k]||0)+(r.amount||0);});window._cfCard=cm;}
-    if(!window._cfBank && window.fbGetBankTransactions){/* 월별 집계라 이력이 필요하다. 단 전체는 과하므로 최근 13개월로 제한 — 표에 뜨는 달은 전부 덮는다. */var _cd=new Date();_cd.setMonth(_cd.getMonth()-12);_cd.setDate(1);var _cf=_cd.getFullYear()+'-'+('0'+(_cd.getMonth()+1)).slice(-2)+'-01';var b=await window.fbGetBankTransactions(_cf);var bm={};b.forEach(function(r){if(r.inout!=='출금'||!r.month)return;var k=r.month,a=r.amount||0;if(!bm[k])bm[k]={all:0,noself:0,op:0,ag:0,self:0,capex:0,cardpay:0,tax:0};var o=bm[k];o.all+=a;if(cfSelf(r)){o.self+=a;return;}o.noself+=a;if(cfTax(r))o.tax+=a;if(r.category==='에이전시수수료'||cfHit(r,CF_AGENCY)){o.ag+=a;return;}if(cfHit(r,CF_CAPEX)){o.capex+=a;return;}o.op+=a;if(r.category==='카드대금출금')o.cardpay+=a;});window._cfBank=bm;}
+    if(!window._cfCard && window.fbGetCardExpenses){var c=_dedupeCard(await window.fbGetCardExpenses());/* 2026-09-29: 카드지출 탭과 같은 중복제거 — 같은 결제가 2문서로 적재된 건(가맹점명 갱신 재적재 등)을 이중 집계하던 문제. 탭 합계와 항상 일치해야 한다 */var cm={};c.forEach(function(r){if(r.cancelYN!=='정상')return;var k=r.month||((r.date||'').slice(0,7));cm[k]=(cm[k]||0)+(r.amount||0);});window._cfCard=cm;}
+    if(!window._cfBank && window.fbGetBankTransactions){/* 월별 집계라 이력이 필요하다. 단 전체는 과하므로 최근 13개월로 제한 — 표에 뜨는 달은 전부 덮는다. */var _cd=new Date();_cd.setMonth(_cd.getMonth()-12);_cd.setDate(1);var _cf=_cd.getFullYear()+'-'+('0'+(_cd.getMonth()+1)).slice(-2)+'-01';var b=await window.fbGetBankTransactions(_cf);var bm={};var _rf=cfRefundedOuts(b);b.forEach(function(r){if(r.inout!=='출금'||!r.month)return;if(_rf.has(r))return;var k=r.month,a=r.amount||0;if(!bm[k])bm[k]={all:0,noself:0,op:0,ag:0,self:0,capex:0,cardpay:0,tax:0};var o=bm[k];o.all+=a;if(cfSelf(r)){o.self+=a;return;}o.noself+=a;if(cfTax(r))o.tax+=a;if(r.category==='에이전시수수료'||cfHit(r,CF_AGENCY)){o.ag+=a;return;}if(cfHit(r,CF_CAPEX)){o.capex+=a;return;}o.op+=a;if(r.category==='카드대금출금')o.cardpay+=a;});window._cfBank=bm;}
   }catch(e){console.warn('cfLoad',e);}
 }
 function cfPickMonths(){var pick={};(G.arc||[]).forEach(function(a){var k=cfMonthKey(a.displayLabel||a.label);if(!k)return;var isSL=/상담리스트/.test(a.displayLabel||a.label||'');if(!pick[k]||(isSL&&!pick[k].isSL)||((isSL===pick[k].isSL)&&((a.savedAt||'')>(pick[k].a.savedAt||'')))){pick[k]={a:a,isSL:isSL};}});return pick;}
