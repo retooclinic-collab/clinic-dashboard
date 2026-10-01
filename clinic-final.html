@@ -1014,10 +1014,10 @@ var DEFAULT_PROCEDURES={
 /* ★ 수수료율 SSOT = E:\Claude\Projects\클로드 Cowork\수수료율_진실표.md (2026-09-03 원장 확정)
    요율 키는 두 형태: 'cat1' 또는 'cat1|cat2'. cat2 키가 있으면 cat1보다 우선한다.
    type: 'percent'(비율) | 'fixed'(고정액) | 'pctfix'(비율 + 월 고정액) */
-var ROUTE_VER=4;   // ↑ 올리면 다음 로드 때 아래 기본 요율을 강제 재적용(사용자 추가 경로는 보존)
+var ROUTE_VER=5;   // ↑ 올리면 다음 로드 때 아래 기본 요율을 강제 재적용(사용자 추가 경로는 보존)
 var DEFAULT_ROUTES={
   '중국(기타)':{type:'percent',value:22},
-  '중국(마)':{type:'percent',value:25},
+  '중국(마)':{type:'pctfix',value:25,fixed:2800000},   // 2026-10-02 원장 확정: 비주얼제이 수수료 25% + 매월 지원금 280만(이체에 합산되어 나감 — 6월 정산서로 원 단위 확인)
   '중국(강)':{type:'percent',value:25},
   '중국(따)':{type:'percent',value:25},
   '일본(통)':{type:'pctfix',value:10,fixed:3300000},
