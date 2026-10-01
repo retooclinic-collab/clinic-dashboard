@@ -806,6 +806,8 @@ try {
     return arr;
   };
 
+  // ── 에이전시 역정산표용 (2026-10-02): 미확정 파싱 초안(draft_imports) — 확정 전 날짜의 발생수수료 추정에만 쓴다(문서 수십 개) ──
+  window.fbGetDraftImports = async function(){ const snap=await getDocs(collection(db,'draft_imports')); const a=[]; snap.forEach(function(x){a.push(x.data());}); return a; };
   // ── 💰 수납대사 (2026-09-26): gtf/recon_store.py 가 서비스계정으로 쓴 결과를 읽기만 (규칙: 원장 읽기 전용) ──
   window.fbGetReconIndex = async function(){ var x=await getDoc(doc(db,'recon_meta','index')); return x.exists()?x.data():{dates:{}}; };
   window.fbGetReconMeta = async function(name){ var x=await getDoc(doc(db,'recon_meta',name)); return x.exists()?x.data():null; };
@@ -2065,6 +2067,127 @@ async function cfFill(){
   try{box.innerHTML=cfBuildTable();}catch(e){box.innerHTML='<div class="card" style="color:#ef4444;">현금흐름 렌더 오류: '+e.message+'</div>';}
 }
 
+/* ═══ 🔁 에이전시 역정산표 (2026-10-02, 원장 지시) ═══
+   발생월(그 달 경로 매출 × 요율) ↔ 실제 이체(통장 출금, lag 개월 뒤)를 에이전시별로 짝지어 차액·누적잔액을 본다.
+   · 기준액(에이전시 청구 관행·원장 규칙 2026-10-01): 결제액 − 지정비(결제내역 글의 '지정비N') − 예약금만 낸 행(차트 없음) − 상담비/상담만 단독행.
+     내원 환자의 '예약금제외' 금액은 다시 더하지 않는다(미원 실청구와 원 단위 일치 검증: 9월 39,901,000).
+   · 매출: 확정 consultations 우선, 그 날짜가 확정 전이면 draft_imports 초안 행으로 대신(표에 '초안' 표시 = 미확정 추정치).
+   · 이체: 수집기가 붙인 vendorMemo 1순위, 없으면 거래처 키워드. 착오송금 반환 짝(cfRefundedOuts)·deletedAt 행 제외.
+   · 요율: 설정(cfg.routes) → DEFAULT_ROUTES, 거래일 기준 이력(routeConfAt). 일본(통) 월 고정액은 매출이 있는 달에 1회.
+   · 읽기 비용: 버튼을 눌렀을 때만 consultations(2026-04~)·초안·통장(2026-04~)을 1회 읽고 캐시. */
+var AGR_LIST=[
+  {name:'중국(마)',c1:'중국(마)',c2:null,memo:['중마'],kw:['비주얼제이','에스큐뷰티'],lag:1},
+  {name:'중국(강)',c1:'중국(강)',c2:null,memo:['중강'],kw:['메디치골드'],lag:1},
+  {name:'중국(따)',c1:'중국(따)',c2:null,memo:['중따'],kw:['아이메이'],lag:1},
+  {name:'미원',c1:'중국(기타)',c2:'미원',memo:['미원'],kw:['목금미여','글로우업','이새롬'],lag:1},
+  {name:'다우시',c1:'중국(기타)',c2:'다우시',memo:['다우시'],kw:['TAOXI'],lag:1},
+  {name:'편화',c1:'중국(기타)',c2:'편화',memo:['편화'],kw:['JIN TAIGEN'],lag:0},
+  {name:'일본(통)',c1:'일본(통)',c2:null,memo:['일본통'],kw:['박선하','비요네즈'],lag:1},
+  {name:'라미타',c1:'중국(기타)',c2:'라미타',memo:['라미타'],kw:['HAN DAN'],lag:1},
+  {name:'ky여행사',c1:'중국(기타)',c2:'ky여행사',memo:['ky여행사'],kw:['HAN RUNQI'],lag:1},
+  {name:'리플래인',c1:'인도네시아',c2:null,memo:['리플래인'],kw:['리플래인'],lag:0}
+];
+var AGR_FROM='2026-04-01', AGR_TOL=0.015;
+function agrMonthAdd(m,n){var y=+m.slice(0,4),mo=+m.slice(5,7)-1+n;y+=Math.floor(mo/12);mo=((mo%12)+12)%12;return y+'-'+('0'+(mo+1)).slice(-2);}
+function agrBase(r){
+  var amt=parseFloat(r.amount)||0;
+  var it=(r.treatments||[]).map(function(x){return x&&x.item;});
+  if(!r.chart&&it.indexOf('예약금')>=0)return 0;
+  if(amt<=3.3&&it.every(function(i){return i==='예약금'||i==='상담만'||i==='상담비';}))return 0;
+  var pt=String(r.paymentText||r.payText||'').split('[상담내용]')[0], jz=0;
+  (pt.match(/지정비\s*[\d.]+/g)||[]).forEach(function(s){jz+=parseFloat(s.replace(/[^\d.]/g,''))||0;});
+  return Math.max(0,amt-jz)*10000;
+}
+function agrOf(r){
+  var c1=normRoute(r.cat1), c2=normCat2(r.cat2);
+  for(var i=0;i<AGR_LIST.length;i++){var a=AGR_LIST[i];if(c1===a.c1&&(a.c2===null||c2===a.c2))return a;}
+  return null;
+}
+function agrBankAgency(b){
+  var s=((b.counterparty||'')+' '+(b.desc||'')).toLowerCase();
+  for(var i=0;i<AGR_LIST.length;i++){var a=AGR_LIST[i];
+    if(b.vendorMemo&&a.memo.indexOf(b.vendorMemo)>=0)return a;
+    if(a.kw.some(function(k){return s.indexOf(k.toLowerCase())>=0;}))return a;}
+  return null;
+}
+async function agrLoad(force){
+  if(window._agr&&!force)return window._agr;
+  var today=new Date(), tISO=today.getFullYear()+'-'+('0'+(today.getMonth()+1)).slice(-2)+'-'+('0'+today.getDate()).slice(-2);
+  var cons=(await window.fbGetConsultations(AGR_FROM,tISO)).filter(function(r){return !r.deletedAt&&r.type!=='vip';});
+  var have={};cons.forEach(function(r){have[r.date]=1;});
+  var drafts=[];
+  try{(await window.fbGetDraftImports()).forEach(function(d){if(d.confirmedAt)return;(d.rows||[]).forEach(function(r){if(r&&r.date&&r.date>=AGR_FROM&&!have[r.date]){r._draft=1;drafts.push(r);}});});}catch(e){console.warn('agr drafts',e);}
+  var bank=(await window.fbGetBankTransactions(AGR_FROM)).filter(function(b){return !b.deletedAt;});
+  window._agr={rows:cons.concat(drafts),bank:bank,at:new Date()};
+  return window._agr;
+}
+function agrCompute(D){
+  var cfg2=loadCfg(), routes=Object.assign({},DEFAULT_ROUTES,cfg2.routes||{}), rcfg={routes:routes};/* 설정에 cat2 요율이 없어도 기본표(DEFAULT_ROUTES)로 cat2 요율을 찾는다 */
+  var acc={};/* name -> month -> {base,comm,n,draft,fixed} */
+  D.rows.forEach(function(r){
+    var a=agrOf(r); if(!a||!r.date)return;
+    var m=r.date.slice(0,7), key=routeKey(r.cat1,r.cat2,rcfg), rc=routes[key]||routes[a.c1];
+    var base=agrBase(r);
+    acc[a.name]=acc[a.name]||{};
+    var o=(acc[a.name][m]=acc[a.name][m]||{base:0,comm:0,n:0,draft:0,fixed:0,rc:rc,d:r.date});
+    o.base+=base; o.comm+=rc?routeComm(rc,base,false,r.date):0; o.n++; if(r._draft)o.draft++;
+  });
+  Object.keys(acc).forEach(function(n){Object.keys(acc[n]).forEach(function(m){var o=acc[n][m];o.fixed=o.rc?routeFixedAt(o.rc,o.d):0;o.comm+=o.fixed;});});
+  var rf=cfRefundedOuts(D.bank), pay={}, unk=[];
+  D.bank.forEach(function(b){
+    if(b.inout!=='출금'||rf.has(b)||cfSelf(b))return;
+    var a=agrBankAgency(b);
+    if(!a){if(b.category==='에이전시수수료')unk.push(b);return;}
+    /* 다음 달 지급 에이전시가 25일 이후 이체하면 '지난달 몫'인지 '이번 달 몫을 월말에 미리 준 것'인지 애매하다
+       (미원 9월분 9/30 지급 vs 중국(따) 5월분 6/29 지급). → 두 달 중 발생 수수료가 이체액에 더 가까운 달에 붙인다. */
+    var bm=String(b.date).slice(0,7), am=agrMonthAdd(bm,-a.lag);
+    if(a.lag&&am>=AGR_FROM.slice(0,7)&&+String(b.date).slice(8,10)>=25){var A0=acc[a.name]||{}, cP=(A0[am]||{}).comm||0, cC=(A0[bm]||{}).comm||0; if(Math.abs((b.amount||0)-cC)<Math.abs((b.amount||0)-cP))am=bm;}
+    if(am<AGR_FROM.slice(0,7))return;
+    pay[a.name]=pay[a.name]||{};
+    (pay[a.name][am]=pay[a.name][am]||[]).push(b);
+  });
+  return {acc:acc,pay:pay,unk:unk};
+}
+function agrIntro(){
+  var box=document.getElementById('ag-recon-section'); if(!box)return;
+  if(window._agr){agrRender();return;}
+  box.innerHTML='<div class="sdiv">🔁 에이전시 역정산표 <span style="font-size:10px;color:#cbd5e1;">(발생 수수료 ↔ 실제 이체)</span></div><div class="card" style="font-size:13px;color:#475569;">에이전시별로 <b>그 달 매출 × 요율(발생)</b>과 <b>통장에서 실제 나간 이체</b>를 짝지어 차액·누적 잔액을 봅니다. 상담 DB·초안·통장을 한 번 읽어요.<br><button onclick="agrRender(true)" style="margin-top:10px;padding:8px 16px;border-radius:8px;border:none;background:#0ea5e9;color:#fff;font-weight:700;cursor:pointer;">🔁 역정산표 불러오기</button></div>';
+}
+async function agrRender(force){
+  var box=document.getElementById('ag-recon-section'); if(!box)return;
+  box.innerHTML='<div class="card" style="color:#94a3b8;font-size:13px;">🔁 에이전시 역정산 계산 중…</div>';
+  var R;
+  try{R=agrCompute(await agrLoad(force));}catch(e){box.innerHTML='<div class="card" style="color:#ef4444;">역정산 오류: '+e.message+'</div>';return;}
+  var now=new Date(), nowM=now.getFullYear()+'-'+('0'+(now.getMonth()+1)).slice(-2), day=now.getDate();
+  var W=function(n){return Math.round(n).toLocaleString('ko-KR');};
+  var h='<div class="sdiv">🔁 에이전시 역정산표 <span style="font-size:10px;color:#cbd5e1;">(원 · 발생=그 달 매출×요율 · 이체=통장 출금)</span> <button onclick="agrRender(true)" style="font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;">새로고침</button></div>';
+  h+='<div class="card" style="font-size:12px;color:#64748b;line-height:1.7;">기준액 = 결제액 − 지정비 − 예약금만 낸 행 − 상담비 단독행 (에이전시 청구 관행). 이체는 발생월로 되돌려 붙임(편화=당월, 나머지=다음 달). <b>누적잔액</b> = 누적 발생 − 누적 이체 (+면 덜 줬거나 아직 안 줌, −면 더 줌). 상태: 차액 ±'+(AGR_TOL*100)+'% 이내 ✅. <span style="color:#b45309;">초안</span> = 아직 확정 안 된 날짜를 파싱 초안으로 추정(누락 날짜가 있으면 발생이 작게 나옴).</div>';
+  var months=[];for(var m=AGR_FROM.slice(0,7);m<=nowM;m=agrMonthAdd(m,1))months.push(m);
+  AGR_LIST.forEach(function(a){
+    var A=R.acc[a.name]||{}, P=R.pay[a.name]||{};
+    if(!Object.keys(A).length&&!Object.keys(P).length)return;
+    var cumA=0,cumP=0,rowsH='';
+    months.forEach(function(m){
+      var o=A[m]||{base:0,comm:0,n:0,draft:0,fixed:0}, ps=P[m]||[], pt=ps.reduce(function(s,b){return s+(b.amount||0);},0);
+      if(!o.n&&!pt)return;
+      cumA+=o.comm; cumP+=pt;
+      var diff=pt-o.comm, payM=agrMonthAdd(m,a.lag), st;
+      if(m>=nowM) st='<span style="color:#0ea5e9;">진행중</span>';
+      else if(!pt&&payM===nowM&&day<=15) st='<span style="color:#64748b;">⏳지급예정</span>';
+      else if(!pt) st='<span style="color:#ef4444;font-weight:700;">⚠미지급</span>';
+      else if(o.comm>0&&Math.abs(diff)/o.comm<=AGR_TOL) st='<span style="color:#10b981;">✅</span>';
+      else st='<span style="color:#ea580c;font-weight:700;">⚠'+(o.comm>0?(diff>0?'+':'')+(diff/o.comm*100).toFixed(1)+'%':'발생없음')+'</span>';
+      if(o.draft&&pt) st+=' <span style="color:#b45309;font-size:10px;">(초안 기준)</span>';
+      var pl=ps.map(function(b){return String(b.date).slice(5,10)+' '+W(b.amount);}).join('<br>')||'-';
+      rowsH+='<tr><td><b>'+m+'</b>'+(o.draft?' <span style="color:#b45309;font-size:10px;">초안'+o.draft+'</span>':'')+'</td><td class="r">'+W(o.base)+'</td><td class="r" style="color:#ea580c;">'+W(o.comm)+(o.fixed?'<br><span style="font-size:10px;color:#94a3b8;">고정 '+W(o.fixed)+' 포함</span>':'')+'</td><td class="r" style="font-size:12px;">'+pl+'</td><td class="r" style="color:'+(diff>=0?'#475569':'#ef4444')+';">'+(pt?W(diff):'-')+'</td><td class="r" style="font-weight:700;color:'+(cumA-cumP>=0?'#0369a1':'#ef4444')+';">'+W(cumA-cumP)+'</td><td>'+st+'</td></tr>';
+    });
+    h+='<details class="card" style="padding:10px 12px;"><summary style="cursor:pointer;font-weight:700;">'+a.name+' <span style="font-size:12px;color:#94a3b8;font-weight:400;">('+(a.lag?'다음 달 지급':'당월 지급')+' · 누적 발생 '+W(cumA)+' / 이체 '+W(cumP)+')</span> <span style="float:right;color:'+(cumA-cumP>=0?'#0369a1':'#ef4444')+';">잔액 '+W(cumA-cumP)+'</span></summary>';
+    h+='<div style="overflow-x:auto;"><table style="font-size:12px;min-width:680px;margin-top:8px;"><thead><tr><th>발생월</th><th class="r">기준액</th><th class="r">발생수수료</th><th class="r">실제 이체(일자·금액)</th><th class="r">차액(이체−발생)</th><th class="r">누적잔액</th><th>상태</th></tr></thead><tbody>'+rowsH+'</tbody></table></div></details>';
+  });
+  if(R.unk.length){h+='<div class="card" style="font-size:12px;color:#b45309;">⚠ 에이전시수수료로 분류됐지만 어느 에이전시인지 모르는 출금 '+R.unk.length+'건: '+R.unk.map(function(b){return String(b.date).slice(0,10)+' '+(b.counterparty||'')+' '+W(b.amount||0);}).join(' · ')+' → collector_bank.py VENDOR_MEMO / 이 표 AGR_LIST에 추가 필요</div>';}
+  box.innerHTML=h;
+}
+
 /* ═══ 종합 분석 탭 ═══ */
 function renderTrendTab(){
   var el=document.getElementById('trend-content');
@@ -2091,7 +2214,7 @@ function renderTrendTab(){
   var h='';
 
   // ── 월별 수납 총액 추이 ──
-  h+='<div id="cf-section" style="margin-bottom:14px;"></div>';h+='<div class="sdiv">월별 총 수납 추이</div>';
+  h+='<div id="cf-section" style="margin-bottom:14px;"></div>';h+='<div id="ag-recon-section" style="margin-bottom:14px;"></div>';h+='<div class="sdiv">월별 총 수납 추이</div>';
   h+='<div class="card" style="overflow-x:auto;">';
   var fixedTotal=getFixedTotal(); // 현재 설정 고정비 (매월 동일)
   h+='<table style="font-size:13px;"><thead><tr><th>월</th><th class="r">총 수납</th><th class="r">재료비</th><th class="r">수수료</th><th class="r">고정비</th><th class="r">추정 순매출</th><th class="r">순이익률</th><th class="r">내원 건수</th></tr></thead><tbody>';
@@ -2151,6 +2274,7 @@ function renderTrendTab(){
 
   el.innerHTML=h;
   try{cfFill();}catch(e){console.warn('cfFill',e);}
+  try{agrIntro();}catch(e){console.warn('agrIntro',e);}
 }
 
 function K(l,v,c){return'<div class="kpi" style="border-top-color:'+c+'"><div class="kpi-l">'+l+'</div><div class="kpi-v">'+v+'</div></div>'}
