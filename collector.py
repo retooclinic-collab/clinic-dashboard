@@ -119,11 +119,22 @@ def fetch_org(codef, org):
         time.sleep(1)
     return rows
 
+def _num(v):
+    """'1,234' / '74.23' / '' 모두 안전하게 숫자로."""
+    try:
+        return float(str(v if v is not None else "0").replace(",", "").strip() or 0)
+    except ValueError:
+        return 0.0
+
 def to_doc(org, t):
     date = t.get("resUsedDate","")
     tm   = t.get("resUsedTime","")
     merch= str(t.get("resMemberStoreName","")).strip().rstrip("\\")
-    amt  = int(t.get("resUsedAmount","0") or 0)
+    # 2026-10-18 해외승인(통화≠KRW)은 금액이 '74.23' 같은 소수로 와서 int() 크래시 → 수집 전체 중단되던 버그 수정.
+    amt_raw = _num(t.get("resUsedAmount","0"))
+    cur  = str(t.get("resAccountCurrency") or "KRW").strip() or "KRW"
+    foreign = cur not in ("KRW", "원")
+    amt  = int(round(amt_raw))
     appr = t.get("resApprovalNo","")
     key  = f"{org}|{date}|{tm}|{amt}|{merch}|{appr}"
     did  = hashlib.sha1(key.encode("utf-8")).hexdigest()
@@ -133,13 +144,16 @@ def to_doc(org, t):
         "date": f"{date[:4]}-{date[4:6]}-{date[6:8]}" if len(date)==8 else date,
         "month": f"{date[:4]}-{date[4:6]}" if len(date)>=6 else "",
         "time": tm, "merchant": merch, "upjong": t.get("resMemberStoreType",""),
-        "amount": amt, "category": categorize(merch, t.get("resMemberStoreType","")),
+        "amount": amt, "amountRaw": amt_raw,
+        "category": ("해외결제(확인)" if foreign else categorize(merch, t.get("resMemberStoreType",""))),
         "paymentType": {"1":"일시불","2":"할부","3":"기타"}.get(t.get("resPaymentType",""),""),
         "installment": t.get("resInstallmentMonth",""),
         "cancelYN": cancel, "approvalNo": appr,
         "corpNo": t.get("resMemberStoreCorpNo",""),
         "cardNoMasked": t.get("resCardNo",""),
-        "currency": t.get("resAccountCurrency","KRW"),
+        "currency": cur, "foreign": foreign,
+        # 해외승인은 원화 청구액·환율 등 카드사별 추가 필드를 그대로 보존(나중에 원화 확정용)
+        "raw": ({k: str(v) for k, v in t.items() if v not in ("", None)} if foreign else None),
         "updatedAt": firestore.SERVER_TIMESTAMP,
     }
 
