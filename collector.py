@@ -94,6 +94,15 @@ def fetch_org(codef, org):
     mst = "3" if hd_conf else "1"     # 3=가맹점+부가세(결제확정), 1=실시간승인
     back = min(LOOKBACK, int(max_m * 30))
     start = today - datetime.timedelta(days=back)
+    # 2026-10-19 카드번호 필수 카드사(하나): codef_private/<org>.cards = [{cardNo, cardPassword}] 카드별로 따로 조회
+    conf = CARD_CONF.get(org, {})
+    cards = conf.get("cards") or ([conf] if conf.get("cardNo") else [None])
+    rows = []
+    for card in cards:
+        rows += _fetch_card(codef, org, start, today, mst, card)
+    return rows
+
+def _fetch_card(codef, org, start, today, mst, card):
     rows, ws = [], start
     while ws < today:
         we = min(ws + datetime.timedelta(days=60), today)
@@ -103,9 +112,9 @@ def fetch_org(codef, org):
         if org == "0302":
             p["cardNo"] = HD_CARDNO
             p["cardPassword"] = encrypt_rsa(HD_CARDPW, PUBLIC_KEY) if HD_CARDPW else ""
-        elif CARD_CONF.get(org, {}).get("cardNo"):
-            p["cardNo"] = CARD_CONF[org]["cardNo"]
-            pw = CARD_CONF[org].get("cardPassword") or ""
+        elif card:
+            p["cardNo"] = card["cardNo"]
+            pw = card.get("cardPassword") or ""
             p["cardPassword"] = encrypt_rsa(pw, PUBLIC_KEY) if pw else ""
         r = None
         for attempt in range(3):   # CODEF 연결 끊김(RemoteDisconnected) 등 일시 오류 재시도
@@ -119,8 +128,8 @@ def fetch_org(codef, org):
         code = (r.get("result") or {}).get("code")
         if code != "CF-00000":
             res = r.get('result') or {}
-            print(f"  [{ORG_NAME.get(org,org)}] {ws}~{we} {code}: {res.get('message')} | extra: {res.get('extraMessage')}", flush=True)
-            ORG_ERRORS[ORG_NAME.get(org, org)] = f"{code}: {res.get('message')} {res.get('extraMessage') or ''}".strip()
+            print(f"  [{ORG_NAME.get(org,org)}{'…'+card['cardNo'][-4:] if card else ''}] {ws}~{we} {code}: {res.get('message')} | extra: {res.get('extraMessage')}", flush=True)
+            ORG_ERRORS[ORG_NAME.get(org, org) + (f"(…{card['cardNo'][-4:]})" if card else "")] = f"{code}: {res.get('message')} {res.get('extraMessage') or ''}".strip()
         d = r.get("data"); d = [d] if isinstance(d, dict) else (d or [])
         rows += d
         ws = we + datetime.timedelta(days=1)
