@@ -86,6 +86,9 @@ def make_codef():
     c.public_key = PUBLIC_KEY
     return c
 
+def conf_probe(org):
+    return bool((CARD_CONF.get(org) or {}).get("probe"))
+
 def fetch_org(codef, org):
     today = datetime.date.today()
     max_m = MAX_MONTHS.get(org, 6)
@@ -102,7 +105,28 @@ def fetch_org(codef, org):
         rows += _fetch_card(codef, org, start, today, mst, card)
     return rows
 
+def probe_card(codef, org, card):
+    """codef_private/<org>.probe=true면 7일 창으로 파라미터 조합을 시험해 첫 성공 조합을 card에 반영(비밀값 출력 없음)."""
+    t = datetime.date.today(); s = t - datetime.timedelta(days=7)
+    pw = card.get("cardPassword") or ""
+    variants = [("plain+pw/0", card["cardNo"], pw, "0"), ("plain+pw/1", card["cardNo"], pw, "1"),
+                ("rsa+pw/0", encrypt_rsa(card["cardNo"], PUBLIC_KEY), pw, "0"), ("none/1", "", "", "1")]
+    for name, no, cpw, inq in variants:
+        p = {"organization":org,"connectedId":CONNECTED_ID,"birthDate":BIRTHDATE,"startDate":s.strftime("%Y%m%d"),
+             "endDate":t.strftime("%Y%m%d"),"orderBy":"0","inquiryType":inq,"memberStoreInfoType":"1",
+             "cardNo":no,"cardPassword":encrypt_rsa(cpw, PUBLIC_KEY) if cpw else ""}
+        try:
+            res = json.loads(codef.request_product(PATH, SVC, p)).get("result") or {}
+        except Exception as e:
+            res = {"code": "EXC", "message": repr(e)[:80]}
+        print(f"  probe {ORG_NAME.get(org,org)}…{card['cardNo'][-4:]} {name}: {res.get('code')} {res.get('message')} | {res.get('extraMessage')}", flush=True)
+        if res.get("code") == "CF-00000":
+            card["_variant"] = (name, no, cpw, inq); return
+        time.sleep(1)
+
 def _fetch_card(codef, org, start, today, mst, card):
+    if card and conf_probe(org) and "_variant" not in card:
+        probe_card(codef, org, card)
     rows, ws = [], start
     while ws < today:
         we = min(ws + datetime.timedelta(days=60), today)
@@ -112,6 +136,9 @@ def _fetch_card(codef, org, start, today, mst, card):
         if org == "0302":
             p["cardNo"] = HD_CARDNO
             p["cardPassword"] = encrypt_rsa(HD_CARDPW, PUBLIC_KEY) if HD_CARDPW else ""
+        elif card and card.get("_variant"):
+            _, p["cardNo"], cpw, p["inquiryType"] = card["_variant"]
+            p["cardPassword"] = encrypt_rsa(cpw, PUBLIC_KEY) if cpw else ""
         elif card:
             p["cardNo"] = card["cardNo"]
             p["inquiryType"] = card.get("inquiryType", "0")   # 0=개별카드 조회(카드번호 지정)
