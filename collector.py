@@ -29,6 +29,7 @@ SVC = ServiceType.PRODUCT if ENV in ("api","prod","product") else ServiceType.DE
 ORG_NAME = {"0301":"KB국민","0302":"현대","0303":"삼성","0305":"IBK기업(비씨)","0311":"롯데","0313":"하나","0306":"신한"}
 MAX_MONTHS = {"0301":12,"0303":12,"0313":18,"0311":6,"0302":3,"0305":9,"0306":12}
 PATH = "/v1/kr/card/p/account/approval-list"
+ORG_ERRORS = {}  # 2026-10-19 기관별 오류 기록 → card_sync_log.errors (하나 CF-12401이 2주 넘게 조용히 묻혔던 것 재발 방지)
 
 # ---------- 분류 규칙 ----------
 VENDOR = {
@@ -112,7 +113,9 @@ def fetch_org(codef, org):
             ws = we + datetime.timedelta(days=1); continue
         code = (r.get("result") or {}).get("code")
         if code != "CF-00000":
-            print(f"  [{ORG_NAME.get(org,org)}] {ws}~{we} {code}: {(r.get('result') or {}).get('message')}", flush=True)
+            res = r.get('result') or {}
+            print(f"  [{ORG_NAME.get(org,org)}] {ws}~{we} {code}: {res.get('message')} | extra: {res.get('extraMessage')}", flush=True)
+            ORG_ERRORS[ORG_NAME.get(org, org)] = f"{code}: {res.get('message')} {res.get('extraMessage') or ''}".strip()
         d = r.get("data"); d = [d] if isinstance(d, dict) else (d or [])
         rows += d
         ws = we + datetime.timedelta(days=1)
@@ -192,6 +195,11 @@ def main():
     codef = make_codef()
     col = db.collection(COLLECTION)
     idmap = load_id_map(col)
+    try:  # 등록 기관 목록(비밀값 없음) — 연결 끊김 진단용
+        al = (json.loads(codef.get_account_list(SVC, {"connectedId": CONNECTED_ID})).get("data") or {}).get("accountList") or []
+        print("등록 기관:", [(a.get("organization"), a.get("businessType"), a.get("loginType")) for a in al if isinstance(a, dict)], flush=True)
+    except Exception as e:
+        print("등록 기관 조회 실패:", repr(e)[:120], flush=True)
     total, written = 0, 0
     batch = db.batch(); n = 0
     for org in ORG_NAME:
@@ -208,8 +216,9 @@ def main():
     # 실행 로그 기록
     db.collection("card_sync_log").add({
         "ranAt": firestore.SERVER_TIMESTAMP, "env": ENV,
-        "lookbackDays": LOOKBACK, "upserted": written,
+        "lookbackDays": LOOKBACK, "upserted": written, "errors": ORG_ERRORS,
     })
+    if ORG_ERRORS: print("기관 오류:", ORG_ERRORS, flush=True)
     print(f"\n완료: {written}건 upsert (collection={COLLECTION})", flush=True)
 
 if __name__ == "__main__":
