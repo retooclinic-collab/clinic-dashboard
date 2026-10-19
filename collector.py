@@ -159,6 +159,10 @@ def _fetch_card(codef, org, start, today, mst, card):
         if r is None:
             ws = we + datetime.timedelta(days=1); continue
         code = (r.get("result") or {}).get("code")
+        if code == "CF-00016":   # 앞 요청(타임아웃 난 것)이 CODEF에서 아직 처리 중 → 잠시 후 1회 재요청
+            time.sleep(45)
+            try: r = codef_call(codef, PATH, p); code = (r.get("result") or {}).get("code")
+            except Exception as e: print("  CF-00016 재요청 실패:", repr(e)[:80], flush=True)
         if code != "CF-00000":
             res = r.get('result') or {}
             print(f"  [{ORG_NAME.get(org,org)}{'…'+card['cardNo'][-4:] if card else ''}] {ws}~{we} {code}: {res.get('message')} | extra: {res.get('extraMessage')} | tx: {res.get('transactionId')}", flush=True)
@@ -173,8 +177,8 @@ def _fetch_card(codef, org, start, today, mst, card):
 
 class _Timeout(Exception): pass
 
-def codef_call(codef, path, params, sec=90):
-    """2026-10-19 CODEF 응답이 안 와 실행이 38분 멈춘 일 → 호출마다 90초 제한(리눅스 러너 SIGALRM)."""
+def codef_call(codef, path, params, sec=240):
+    """2026-10-19 CODEF 응답이 안 와 실행이 38분 멈춘 일 → 호출마다 240초 제한(신한은 90초 넘게 걸릴 때 있음)(리눅스 러너 SIGALRM)."""
     def _h(*_): raise _Timeout(f"CODEF {sec}s timeout")
     old = signal.signal(signal.SIGALRM, _h); signal.alarm(sec)
     try:
