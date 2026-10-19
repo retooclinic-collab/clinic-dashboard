@@ -205,6 +205,28 @@ def resolve_id(idmap, did, doc):
     k = (doc.get("org"), doc.get("date"), str(doc.get("time") or ""), int(doc.get("amount") or 0), ap, doc.get("cancelYN"))
     return idmap.setdefault(k, did)
 
+def relink_accounts(db, codef):
+    """2026-10-19 하나카드가 계정 로그인에 cardNo 필수(CF-12401 reqCardNo)로 바뀜 → 원장이 로컬 스크립트로 넣은
+    codef_private/<org>_login {id, password[, cardPassword]}로 CODEF 계정을 cardNo 포함해 갱신하고, 비밀번호는 즉시 삭제."""
+    for d in db.collection("codef_private").stream():
+        if not d.id.endswith("_login"): continue
+        org = d.id[:-6]; x = d.to_dict() or {}
+        if not (x.get("id") and x.get("password")): continue
+        cards = (CARD_CONF.get(org) or {}).get("cards") or []
+        item = {"countryCode":"KR","businessType":"CD","clientType":"P","organization":org,"loginType":"1",
+                "id":x["id"],"password":encrypt_rsa(x["password"], PUBLIC_KEY),"birthDate":BIRTHDATE}
+        if cards: item["cardNo"] = cards[0]["cardNo"]
+        if x.get("cardPassword"): item["cardPassword"] = encrypt_rsa(x["cardPassword"], PUBLIC_KEY)
+        try:
+            r = json.loads(codef.update_account(SVC, {"connectedId": CONNECTED_ID, "accountList": [item]}))
+            res = r.get("result") or {}; dd = r.get("data") or {}
+            print(f"계정 갱신 {ORG_NAME.get(org,org)}: {res.get('code')} {res.get('message')} | 실패:",
+                  [ {k: f.get(k) for k in ("code","message","extraMessage")} for f in (dd.get("errorList") or dd.get("failList") or []) if isinstance(f, dict)], flush=True)
+        except Exception as e:
+            print(f"계정 갱신 {org} 예외:", repr(e)[:150], flush=True)
+        d.reference.update({"password": firestore.DELETE_FIELD, "cardPassword": firestore.DELETE_FIELD,
+                            "lastTriedAt": firestore.SERVER_TIMESTAMP})
+
 def main():
     db = init_db()
     codef = make_codef()
@@ -214,6 +236,7 @@ def main():
         for d in db.collection("codef_private").stream():
             CARD_CONF[d.id] = d.to_dict() or {}
         print("카드번호 설정:", sorted(CARD_CONF), flush=True)
+        relink_accounts(db, codef)
     except Exception as e:
         print("codef_private 조회 실패:", repr(e)[:120], flush=True)
     try:  # 등록 기관 목록(비밀값 없음) — 연결 끊김 진단용
