@@ -114,6 +114,7 @@ def _fetch_card(codef, org, start, today, mst, card):
             p["cardPassword"] = encrypt_rsa(HD_CARDPW, PUBLIC_KEY) if HD_CARDPW else ""
         elif card:
             p["cardNo"] = card["cardNo"]
+            p["inquiryType"] = card.get("inquiryType", "0")   # 0=개별카드 조회(카드번호 지정)
             pw = card.get("cardPassword") or ""
             p["cardPassword"] = encrypt_rsa(pw, PUBLIC_KEY) if pw else ""
         r = None
