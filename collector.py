@@ -156,7 +156,7 @@ def _fetch_card(codef, org, start, today, mst, card):
         code = (r.get("result") or {}).get("code")
         if code != "CF-00000":
             res = r.get('result') or {}
-            print(f"  [{ORG_NAME.get(org,org)}{'…'+card['cardNo'][-4:] if card else ''}] {ws}~{we} {code}: {res.get('message')} | extra: {res.get('extraMessage')}", flush=True)
+            print(f"  [{ORG_NAME.get(org,org)}{'…'+card['cardNo'][-4:] if card else ''}] {ws}~{we} {code}: {res.get('message')} | extra: {res.get('extraMessage')} | tx: {res.get('transactionId')}", flush=True)
             ORG_ERRORS[ORG_NAME.get(org, org) + (f"(…{card['cardNo'][-4:]})" if card else "")] = f"{code}: {res.get('message')} {res.get('extraMessage') or ''}".strip()
         d = r.get("data"); d = [d] if isinstance(d, dict) else (d or [])
         # 2026-10-19 CODEF 공지: 조회 결과 없음이면 data={"commSession":...} 객체로 옴 → 결제 행이 아니므로 버림
