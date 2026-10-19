@@ -133,8 +133,11 @@ def _fetch_card(codef, org, start, today, mst, card):
         p = {"organization":org,"connectedId":CONNECTED_ID,"birthDate":BIRTHDATE,
              "startDate":ws.strftime("%Y%m%d"),"endDate":we.strftime("%Y%m%d"),
              "orderBy":"0","inquiryType":"1","memberStoreInfoType":mst,"cardNo":"","cardPassword":""}
-        for k, v in ((CARD_CONF.get(org) or {}).get("params") or {}).items():
-            p[k] = {"$BIRTH8": BIRTHDATE, "$BIRTH6": BIRTHDATE[2:]}.get(v, v)   # 생년월일은 시크릿에서 치환   # 2026-10-19 카드사별 추가 파라미터(롯데 패치 후 userName 필수 CF-12851)
+        cf = CARD_CONF.get(org) or {}
+        rrn = BIRTHDATE[2:] + str(cf.get("rrnBack") or "")   # 주민번호 = 시크릿 생년월일 6자리 + 비공개 설정 뒤 7자리
+        for k, v in (cf.get("params") or {}).items():
+            p[k] = {"$BIRTH8": BIRTHDATE, "$BIRTH6": BIRTHDATE[2:], "$RRN": rrn,
+                    "$RRN_RSA": encrypt_rsa(rrn, PUBLIC_KEY)}.get(v, v)   # 2026-10-19 카드사별 추가 파라미터(롯데 패치 후 userName 필수 CF-12851)
         if org == "0302":
             p["cardNo"] = HD_CARDNO
             p["cardPassword"] = encrypt_rsa(HD_CARDPW, PUBLIC_KEY) if HD_CARDPW else ""
