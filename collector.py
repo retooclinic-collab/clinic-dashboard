@@ -6,7 +6,7 @@
 - Firebase Firestore(card_expenses)에 중복 없이 저장(upsert)
 환경변수(깃허브 시크릿)로 모든 설정 주입. 코드에 비밀정보 없음.
 """
-import os, json, time, datetime, hashlib, sys
+import os, json, time, datetime, hashlib, sys, signal
 from easycodefpy import Codef, ServiceType
 from easycodefpy.util import encrypt_rsa
 import firebase_admin
@@ -116,7 +116,7 @@ def probe_card(codef, org, card):
              "endDate":t.strftime("%Y%m%d"),"orderBy":"0","inquiryType":inq,"memberStoreInfoType":"1",
              "cardNo":no,"cardPassword":encrypt_rsa(cpw, PUBLIC_KEY) if cpw else ""}
         try:
-            res = json.loads(codef.request_product(PATH, SVC, p)).get("result") or {}
+            res = codef_call(codef, PATH, p).get("result") or {}
         except Exception as e:
             res = {"code": "EXC", "message": repr(e)[:80]}
         print(f"  probe {ORG_NAME.get(org,org)}…{card['cardNo'][-4:]} {name}: {res.get('code')} {res.get('message')} | {res.get('extraMessage')}", flush=True)
@@ -147,7 +147,7 @@ def _fetch_card(codef, org, start, today, mst, card):
         r = None
         for attempt in range(3):   # CODEF 연결 끊김(RemoteDisconnected) 등 일시 오류 재시도
             try:
-                r = json.loads(codef.request_product(PATH, SVC, p)); break
+                r = codef_call(codef, PATH, p); break
             except Exception as e:
                 print(f"  [{ORG_NAME.get(org,org)}] {ws}~{we} 요청 실패({attempt+1}/3): {repr(e)[:120]}", flush=True)
                 time.sleep(10 * (attempt + 1))
@@ -165,6 +165,17 @@ def _fetch_card(codef, org, start, today, mst, card):
         ws = we + datetime.timedelta(days=1)
         time.sleep(1)
     return rows
+
+class _Timeout(Exception): pass
+
+def codef_call(codef, path, params, sec=90):
+    """2026-10-19 CODEF 응답이 안 와 실행이 38분 멈춘 일 → 호출마다 90초 제한(리눅스 러너 SIGALRM)."""
+    def _h(*_): raise _Timeout(f"CODEF {sec}s timeout")
+    old = signal.signal(signal.SIGALRM, _h); signal.alarm(sec)
+    try:
+        return json.loads(codef.request_product(path, SVC, params))
+    finally:
+        signal.alarm(0); signal.signal(signal.SIGALRM, old)
 
 def _num(v):
     """'1,234' / '74.23' / '' 모두 안전하게 숫자로."""
