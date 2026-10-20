@@ -86,6 +86,11 @@ def make_codef():
     c.public_key = PUBLIC_KEY
     return c
 
+def card_no(org, no):
+    """2026-10-12 CODEF 공지: 하나카드(0313) 아이디 로그인 cardNo = 카드번호 앞 4 + 뒤 4 (8자리, 예 12341234). 16자리 전체를 넣으면 CF-12401 reqCardNo 지속."""
+    no = "".join(ch for ch in str(no or "") if ch.isdigit())
+    return no[:4] + no[-4:] if org == "0313" and len(no) > 8 else no
+
 def conf_probe(org):
     return bool((CARD_CONF.get(org) or {}).get("probe"))
 
@@ -109,7 +114,8 @@ def probe_card(codef, org, card):
     """codef_private/<org>.probe=true면 7일 창으로 파라미터 조합을 시험해 첫 성공 조합을 card에 반영(비밀값 출력 없음)."""
     t = datetime.date.today(); s = t - datetime.timedelta(days=7)
     pw = card.get("cardPassword") or ""
-    variants = [("plain+pw/0", card["cardNo"], pw, "0"), ("plain+pw/1", card["cardNo"], pw, "1"),
+    variants = [("8+pw/0", card_no(org, card["cardNo"]), pw, "0"), ("8+pw/1", card_no(org, card["cardNo"]), pw, "1"),
+                ("plain+pw/0", card["cardNo"], pw, "0"), ("plain+pw/1", card["cardNo"], pw, "1"),
                 ("rsa+pw/0", encrypt_rsa(card["cardNo"], PUBLIC_KEY), pw, "0"), ("none/1", "", "", "1")]
     for name, no, cpw, inq in variants:
         p = {"organization":org,"connectedId":CONNECTED_ID,"birthDate":BIRTHDATE,"startDate":s.strftime("%Y%m%d"),
@@ -146,7 +152,7 @@ def _fetch_card(codef, org, start, today, mst, card):
             _, p["cardNo"], cpw, p["inquiryType"] = card["_variant"]
             p["cardPassword"] = encrypt_rsa(cpw, PUBLIC_KEY) if cpw else ""
         elif card:
-            p["cardNo"] = card["cardNo"]
+            p["cardNo"] = card_no(org, card["cardNo"])
             p["inquiryType"] = card.get("inquiryType", "0")   # 0=개별카드 조회(카드번호 지정)
             pw = card.get("cardPassword") or ""
             p["cardPassword"] = encrypt_rsa(pw, PUBLIC_KEY) if pw else ""
@@ -301,7 +307,9 @@ def relink_accounts(db, codef):
         cards = (CARD_CONF.get(org) or {}).get("cards") or []
         item = {"countryCode":"KR","businessType":"CD","clientType":"P","organization":org,"loginType":"1",
                 "id":x["id"],"password":encrypt_rsa(x["password"], PUBLIC_KEY),"birthDate":BIRTHDATE}
-        if cards: item["cardNo"] = cards[0]["cardNo"]
+        if cards:   # 로그인 카드 = 원장이 입력한 카드비번(앞 2자리)과 같은 비번을 가진 카드
+            lc = next((c for c in cards if x.get("cardPassword") and c.get("cardPassword") == x["cardPassword"]), cards[0])
+            item["cardNo"] = card_no(org, lc["cardNo"])
         if x.get("cardPassword"): item["cardPassword"] = encrypt_rsa(x["cardPassword"], PUBLIC_KEY)
         try:
             r = json.loads(codef.update_account(SVC, {"connectedId": CONNECTED_ID, "accountList": [item]}))
