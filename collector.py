@@ -137,7 +137,8 @@ def _fetch_card(codef, org, start, today, mst, card):
         rrn = BIRTHDATE[2:] + str(cf.get("rrnBack") or "")   # 주민번호 = 시크릿 생년월일 6자리 + 비공개 설정 뒤 7자리
         for k, v in (cf.get("params") or {}).items():
             p[k] = {"$BIRTH8": BIRTHDATE, "$BIRTH6": BIRTHDATE[2:], "$RRN": rrn,
-                    "$RRN_RSA": encrypt_rsa(rrn, PUBLIC_KEY)}.get(v, v)   # 2026-10-19 카드사별 추가 파라미터(롯데 패치 후 userName 필수 CF-12851)
+                    "$RRN_RSA": encrypt_rsa(rrn, PUBLIC_KEY),
+                    "$ID7": rrn[:7], "$ID7_RSA": encrypt_rsa(rrn[:7], PUBLIC_KEY)}.get(v, v)   # 2026-10-19 카드사별 추가 파라미터(롯데 패치 후 userName 필수 CF-12851) · 2026-10-20 헥토 회신: 카드(개인) 승인내역 identity = 생년월일 6 + 뒷자리 첫째 1
         if org == "0302":
             p["cardNo"] = HD_CARDNO
             p["cardPassword"] = encrypt_rsa(HD_CARDPW, PUBLIC_KEY) if HD_CARDPW else ""
