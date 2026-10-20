@@ -293,6 +293,8 @@ def relink_accounts(db, codef):
     """2026-10-19 하나카드가 계정 로그인에 cardNo 필수(CF-12401 reqCardNo)로 바뀜 → 원장이 로컬 스크립트로 넣은
     codef_private/<org>_login {id, password[, cardPassword]}로 CODEF 계정을 cardNo 포함해 갱신하고, 비밀번호는 즉시 삭제."""
     for d in db.collection("codef_private").stream():
+        if d.id.endswith("_cert"):
+            relink_cert(db, codef, d); continue
         if not d.id.endswith("_login"): continue
         org = d.id[:-6]; x = d.to_dict() or {}
         if not (x.get("id") and x.get("password")): continue
@@ -310,6 +312,35 @@ def relink_accounts(db, codef):
             print(f"계정 갱신 {org} 예외:", repr(e)[:150], flush=True)
         d.reference.update({"password": firestore.DELETE_FIELD, "cardPassword": firestore.DELETE_FIELD,
                             "lastTriedAt": firestore.SERVER_TIMESTAMP})
+
+def relink_cert(db, codef, d):
+    """2026-10-20 헥토 회신: 롯데 개인 아이디 로그인은 조회마다 문자 추가인증 필수 → 무인 수집은 공동인증서 로그인으로.
+    원장이 로컬 스크립트로 넣은 codef_private/<org>_cert {derFile, keyFile(base64), password}로 CODEF 계정을 인증서 방식으로 바꾸고,
+    인증서·암호 사본은 즉시 삭제. 성공하면 아이디 로그인용 추가 파라미터(identity·telecom 등)는 params_idlogin으로 치워둔다."""
+    org = d.id[:-5]; x = d.to_dict() or {}
+    if not (x.get("derFile") and x.get("keyFile") and x.get("password")): return
+    item = {"countryCode":"KR","businessType":"CD","clientType":"P","organization":org,"loginType":"0",
+            "derFile":x["derFile"],"keyFile":x["keyFile"],"password":encrypt_rsa(x["password"], PUBLIC_KEY),"birthDate":BIRTHDATE}
+    def _try(fn, label, acc=item):
+        try:
+            r = json.loads(fn(SVC, {"connectedId": CONNECTED_ID, "accountList": [acc]}))
+        except Exception as e:
+            print(f"인증서 {label} {ORG_NAME.get(org,org)} 예외:", repr(e)[:150], flush=True); return False
+        res = r.get("result") or {}; dd = r.get("data") or {}
+        fails = [{k: f.get(k) for k in ("code","message","extraMessage")} for f in (dd.get("errorList") or []) if isinstance(f, dict)]
+        print(f"인증서 {label} {ORG_NAME.get(org,org)}: {res.get('code')} {res.get('message')} | 성공 {len(dd.get('successList') or [])} 실패:", fails, flush=True)
+        return res.get("code") == "CF-00000" and not fails
+    ok = _try(codef.update_account, "갱신")
+    if not ok:   # 같은 기관 아이디 계정이 인증서로 안 바뀌면 지우고 새로 등록
+        _try(codef.delete_account, "기존삭제", {k: item[k] for k in ("countryCode","businessType","clientType","organization")} | {"loginType":"1"})
+        ok = _try(codef.add_account, "등록")
+    d.reference.update({"derFile": firestore.DELETE_FIELD, "keyFile": firestore.DELETE_FIELD, "password": firestore.DELETE_FIELD,
+                        "result": "ok" if ok else "fail", "lastTriedAt": firestore.SERVER_TIMESTAMP})
+    if ok:
+        conf = CARD_CONF.get(org) or {}
+        if conf.get("params"):
+            db.collection("codef_private").document(org).update({"params_idlogin": conf["params"], "params": firestore.DELETE_FIELD})
+            conf.pop("params", None)
 
 DB = None
 
