@@ -330,8 +330,13 @@ def relink_cert(db, codef, d):
         fails = [{k: f.get(k) for k in ("code","message","extraMessage")} for f in (dd.get("errorList") or []) if isinstance(f, dict)]
         print(f"인증서 {label} {ORG_NAME.get(org,org)}: {res.get('code')} {res.get('message')} | 성공 {len(dd.get('successList') or [])} 실패:", fails, flush=True)
         return res.get("code") == "CF-00000" and not fails
-    ok = _try(codef.update_account, "갱신")
-    if not ok:   # 같은 기관 아이디 계정이 인증서로 안 바뀌면 지우고 새로 등록
+    try:   # 2026-10-21 계정이 이미 지워진 기관은 update_account가 CF-00000을 내고도 아무것도 안 함 → 목록에 없으면 바로 등록
+        al = (json.loads(codef.get_account_list(SVC, {"connectedId": CONNECTED_ID})).get("data") or {}).get("accountList") or []
+        exists = any(isinstance(a, dict) and a.get("organization") == org for a in al)
+    except Exception:
+        exists = True
+    ok = _try(codef.update_account, "갱신") if exists else _try(codef.add_account, "등록")
+    if not ok and exists:   # 같은 기관 아이디 계정이 인증서로 안 바뀌면 지우고 새로 등록
         _try(codef.delete_account, "기존삭제", {k: item[k] for k in ("countryCode","businessType","clientType","organization")} | {"loginType":"1"})
         ok = _try(codef.add_account, "등록")
     d.reference.update({"derFile": firestore.DELETE_FIELD, "keyFile": firestore.DELETE_FIELD, "password": firestore.DELETE_FIELD,
