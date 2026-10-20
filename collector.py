@@ -310,6 +310,7 @@ def relink_accounts(db, codef):
         if cards:   # 로그인 카드 = 원장이 입력한 카드비번(앞 2자리)과 같은 비번을 가진 카드
             lc = next((c for c in cards if x.get("cardPassword") and c.get("cardPassword") == x["cardPassword"]), cards[0])
             item["cardNo"] = lc["cardNo"]   # 계정 등록은 13~16자리 전체(8자리면 CF-13104 (13-16))
+            if x.get("cardNoRsa"): item["cardNo"] = encrypt_rsa(lc["cardNo"], PUBLIC_KEY)
         if x.get("cardPassword"): item["cardPassword"] = encrypt_rsa(x["cardPassword"], PUBLIC_KEY)
         # 2026-10-21 update_account는 CF-00000을 내고도 실제 반영 안 되는 경우가 있음(롯데에서 확인) → recreate=true면 삭제 후 새로 등록
         steps = [("삭제", codef.delete_account, {k: item[k] for k in ("countryCode","businessType","clientType","organization","loginType")}),
@@ -322,7 +323,7 @@ def relink_accounts(db, codef):
                       [ {k: f.get(k) for k in ("code","message","extraMessage")} for f in (dd.get("errorList") or dd.get("failList") or []) if isinstance(f, dict)], flush=True)
             except Exception as e:
                 print(f"계정 {label} {org} 예외:", repr(e)[:150], flush=True)
-        d.reference.update({"password": firestore.DELETE_FIELD, "cardPassword": firestore.DELETE_FIELD, "recreate": firestore.DELETE_FIELD,
+        d.reference.update({"password": firestore.DELETE_FIELD, "cardPassword": firestore.DELETE_FIELD, "recreate": firestore.DELETE_FIELD, "cardNoRsa": firestore.DELETE_FIELD,
                             "lastTriedAt": firestore.SERVER_TIMESTAMP})
 
 def relink_cert(db, codef, d):
