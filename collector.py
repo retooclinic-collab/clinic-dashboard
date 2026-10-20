@@ -164,6 +164,8 @@ def _fetch_card(codef, org, start, today, mst, card):
             time.sleep(45)
             try: r = codef_call(codef, PATH, p); code = (r.get("result") or {}).get("code")
             except Exception as e: print("  CF-00016 재요청 실패:", repr(e)[:80], flush=True)
+        if code == "CF-03002":   # 2026-10-20 롯데: 휴대폰 문자 추가인증(2-way)
+            r = two_way(codef, org, p, r); code = (r.get("result") or {}).get("code")
         if code != "CF-00000":
             res = r.get('result') or {}
             print(f"  [{ORG_NAME.get(org,org)}{'…'+card['cardNo'][-4:] if card else ''}] {ws}~{we} {code}: {res.get('message')} | extra: {res.get('extraMessage')} | tx: {res.get('transactionId')}", flush=True)
@@ -175,6 +177,38 @@ def _fetch_card(codef, org, start, today, mst, card):
         ws = we + datetime.timedelta(days=1)
         time.sleep(1)
     return rows
+
+def two_way(codef, org, p, r):
+    """2026-10-20 롯데(0311)가 조회 때 휴대폰 문자 추가인증(CF-03002)을 요구.
+    codef_private/<org>.twoWayOnce=true일 때만: 대기 상태를 codef_private/<org>_2way에 쓰고, 클로드가 원장 카톡으로 받은 인증번호를
+    그 문서 authNo에 넣으면(최대 270초 대기) 2차 요청. 평소 실행(플래그 없음)은 기다리지 않고 오류로 남긴다. 인증번호는 쓰고 바로 지움."""
+    d = r.get("data") or {}
+    print(f"  [{ORG_NAME.get(org,org)}] 추가인증 요구: method={d.get('method')} extraInfo키={sorted((d.get('extraInfo') or {}).keys())} "
+          f"키={sorted(k for k in d if k not in ('jti','jobIndex','threadIndex','twoWayTimestamp'))}", flush=True)
+    if not (CARD_CONF.get(org) or {}).get("twoWayOnce") or DB is None:
+        return r
+    ref = DB.collection("codef_private").document(f"{org}_2way")
+    ref.set({"status": "waiting", "method": d.get("method"), "at": firestore.SERVER_TIMESTAMP})
+    DB.collection("codef_private").document(org).update({"twoWayOnce": firestore.DELETE_FIELD})
+    code = None
+    for _ in range(54):
+        time.sleep(5)
+        code = (ref.get().to_dict() or {}).get("authNo")
+        if code: break
+    ref.update({"authNo": firestore.DELETE_FIELD, "status": "got" if code else "timeout"})
+    if not code:
+        print("  추가인증 번호 대기 시간 초과", flush=True); return r
+    q = dict(p); q[d.get("method") or "smsAuthNo"] = str(code)
+    q["is2Way"] = True
+    q["twoWayInfo"] = {k: d.get(k) for k in ("jobIndex", "threadIndex", "jti", "twoWayTimestamp")}
+    try:
+        r2 = json.loads(codef.request_certification(PATH, SVC, q))
+    except Exception as e:
+        print("  추가인증 요청 실패:", repr(e)[:120], flush=True); return r
+    res = r2.get("result") or {}
+    print(f"  추가인증 결과: {res.get('code')} {res.get('message')} | {res.get('extraMessage')}", flush=True)
+    ref.update({"status": res.get("code")})
+    return r2
 
 class _Timeout(Exception): pass
 
@@ -277,8 +311,11 @@ def relink_accounts(db, codef):
         d.reference.update({"password": firestore.DELETE_FIELD, "cardPassword": firestore.DELETE_FIELD,
                             "lastTriedAt": firestore.SERVER_TIMESTAMP})
 
+DB = None
+
 def main():
-    db = init_db()
+    global DB
+    db = DB = init_db()
     codef = make_codef()
     col = db.collection(COLLECTION)
     idmap = load_id_map(col)
