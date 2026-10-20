@@ -345,7 +345,10 @@ def relink_cert(db, codef, d):
         return res.get("code") == "CF-00000" and not fails
     try:   # 2026-10-21 계정이 이미 지워진 기관은 update_account가 CF-00000을 내고도 아무것도 안 함 → 목록에 없으면 바로 등록
         al = (json.loads(codef.get_account_list(SVC, {"connectedId": CONNECTED_ID})).get("data") or {}).get("accountList") or []
-        exists = any(isinstance(a, dict) and a.get("organization") == org for a in al)
+        mine = [a for a in al if isinstance(a, dict) and a.get("organization") == org]
+        exists = any(a.get("loginType") == "0" for a in mine)   # 이미 인증서 계정이면 갱신(인증서 갱신·암호 변경)
+        if mine and not exists:   # 아이디 계정만 있으면 update는 무동작일 수 있음 → 지우고 등록
+            _try(codef.delete_account, "기존삭제", {k: item[k] for k in ("countryCode","businessType","clientType","organization")} | {"loginType":"1"})
     except Exception:
         exists = True
     ok = _try(codef.update_account, "갱신") if exists else _try(codef.add_account, "등록")
