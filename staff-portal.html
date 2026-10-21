@@ -1159,7 +1159,7 @@ let TREATMENT_ITEMS = [
   '엑소좀','플라즈마엑소좀','MOXI','엑스인젝터',
   '티타튠','티타튠max',
   '리쥬셀릭크림','리쥬셀릭앰플','리쥬셀릭선물세트',
-  'NAD','백옥','미라젯쥬베룩','알라딘필','문신제거','쥬베룩스킨',
+  'NAD','백옥','미라젯쥬베룩','알라딘필','문신제거','쥬베룩스킨','쥬베룩샤인',
   '조각주사','마운자로 2.5','마운자로 5.0','마운자로 7.5','마운자로 10.0',
   '피부관리','고압산소',
   '적립금차감','선납금차감','상품권차감','할인차감','적립금',
@@ -1177,7 +1177,7 @@ const CHARGE_PRICE = {
   '티타튠':132, '티타튠max':165,
   '리쥬란':55, '리쥬란HB':49.5, '리쥬란아이':55,
   '힐로웨이브':66, '미라젯':38.5, '미라젯쥬베룩':99,
-  '쥬베룩볼륨':38.5, '쥬베룩아이':49.5, '쥬베룩스킨':71.5,
+  '쥬베룩볼륨':38.5, '쥬베룩아이':49.5, '쥬베룩스킨':71.5, '쥬베룩샤인':66,
   '쥬브아셀':88, '쥬브아셀3%':88, '쥬브아셀8%':88, '쥬브아셀V':88, '리투오':88, '릴리이드':44,
   '엠페이스':88, '오푸스':55,
   '포텐자(펌핑)':71.5, '포텐자(모공)':44, '포텐자(기미)':44,
@@ -1251,7 +1251,8 @@ const _ITEM_KEYWORDS = {
   '미라젯':/미라젯(?!쥬베룩|리쥬란|쥬브아셀|리투오)/i,
   '쥬베룩':/콜라겐\s*샤워/i,
   '쥬베룩스킨':/쥬베룩\s*스킨/i,
-  '쥬베룩볼륨':/쥬베룩(?!\s*(?:아이|스킨))|쥬볼/i, '쥬베룩아이':/쥬베룩\s*아이/i,
+  '쥬베룩샤인':/쥬베룩\s*샤인/i,  // 2026-10-22 원장 결정: 별개 정식항목
+  '쥬베룩볼륨':/쥬베룩(?!\s*(?:아이|스킨|샤인))|쥬볼/i, '쥬베룩아이':/쥬베룩\s*아이/i,
   '쥬브아셀3%':/쥬브아셀\s*3\s*%/i, '쥬브아셀8%':/쥬브아셀\s*8\s*%/i, '쥬브아셀V':/쥬브아셀\s*[vV]/i,
   '쥬브아셀':/쥬브아셀(?!\s*(?:3\s*%|8\s*%|[vV]))/i, '리투오':/리투오/i, '릴리이드':/릴리이드/i,
   '엠페이스':/엠페(?:이스)?/i, '오푸스':/오푸스/i,
@@ -2139,7 +2140,7 @@ const AI_PARSER_SYSTEM_PROMPT = `당신은 청담리투의원(한국 피부과/�
 온다:99, 온다(바디):99,
 리쥬란:55, 리쥬란HB:49.5, 리쥬란아이:55,
 힐로웨이브:66, 미라젯:38.5, 미라젯쥬베룩:99,
-쥬베룩볼륨:38.5, 쥬베룩아이:49.5, 쥬베룩스킨:71.5, 쥬베룩:38.5,
+쥬베룩볼륨:38.5, 쥬베룩아이:49.5, 쥬베룩스킨:71.5, 쥬베룩샤인:66, 쥬베룩:38.5,
 쥬브아셀:88, 쥬브아셀3%:88, 쥬브아셀8%:88, 쥬브아셀V:88, 리투오:88, 릴리이드:44,
 엠페이스:88, 오푸스:55, 스킨바이브:60.5,
 포텐자(펌핑):71.5, 포텐자(모공):44, 포텐자(기미):44,
@@ -2177,6 +2178,7 @@ VIP할인혜택(별도 필드)
 코레지,코레지셀핏 → 코레지셀핏
 쥬볼 → 쥬베룩볼륨
 콜라겐샤워 → 쥬베룩
+쥬베룩샤인 → 쥬베룩샤인 (★별개 정식항목. 쥬베룩/쥬베룩볼륨으로 병합 금지 — 미라젯이 같이 있어도 쥬베룩볼륨으로 바꾸지 말 것)
 튠페,튠페이스 → 튠페이스
 제네시스ptt,제네시스+ptt → 제네시스+PTT
 피코토닝,듀얼토닝,피코(단독) → 듀얼피코
@@ -3708,22 +3710,32 @@ function localParse(raw){
 
   // ── 쥬베룩스킨 ──
   const jbskinM = raw.match(/쥬베룩\s*스킨.*?(\d+)\s*회/i);
+  const jbskinB = raw.match(/쥬베룩\s*스킨\s*(\d+)\s*병/i);  // 2026-10-22: 'N병' = qty N (parsing-rules 1-6)
   if(jbskinM) results.push({item:'쥬베룩스킨', qty: parseInt(jbskinM[1])});
+  else if(jbskinB) results.push({item:'쥬베룩스킨', qty: parseInt(jbskinB[1])});
   else if(/쥬베룩\s*스킨/i.test(raw)) results.push({item:'쥬베룩스킨', qty:1});
+
+  // ── 쥬베룩샤인 (2026-10-22 원장 결정: 별개 정식항목 — 쥬베룩/쥬베룩볼륨으로 병합 금지, 미라젯 동반이어도 그대로) ──
+  const jbshineM = raw.match(/쥬베룩\s*샤인[^,+\n]*?(\d+)\s*회/i);
+  const jbshineB = raw.match(/쥬베룩\s*샤인\s*(\d+)\s*병/i);
+  if(jbshineM) results.push({item:'쥬베룩샤인', qty: parseInt(jbshineM[1])});
+  else if(jbshineB) results.push({item:'쥬베룩샤인', qty: parseInt(jbshineB[1])});
+  else if(/쥬베룩\s*샤인/i.test(raw)) results.push({item:'쥬베룩샤인', qty:1});
 
   // ── 쥬베룩 (단독, 볼륨/아이/스킨이 아닌 일반 쥬베룩) ──
   // 미라젯이 같이 있으면 쥬베룩 = 쥬베룩볼륨으로 처리 (미라젯쥬베룩 콤보)
   const _hasMjAnywhere = /미라젯/i.test(raw);
   const _hasJbSkin = /쥬베룩\s*스킨/i.test(raw);
+  const _rawNoShine = raw.replace(/쥬베룩\s*샤인/gi, '');  // 쥬베룩샤인은 위에서 처리 → 단독 쥬베룩 감지에서 제외
   if(!jbvChangeContext && !_egHasJbv && !_hasPumpJbv && !(/쥬베룩\s*볼륨/i.test(raw)) && !(/쥬베룩\s*아이/i.test(raw)) && !_hasJbSkin && !hasMjJbv){
-    const jbCc = raw.match(/쥬베룩\s*(\d+)\s*cc/i);
-    const jbBottle = raw.match(/쥬베룩\s*(\d+)\s*병/i);
-    const jbQtyM = raw.match(/쥬베룩\s*(\d+)\s*회/i);
+    const jbCc = _rawNoShine.match(/쥬베룩\s*(\d+)\s*cc/i);
+    const jbBottle = _rawNoShine.match(/쥬베룩\s*(\d+)\s*병/i);
+    const jbQtyM = _rawNoShine.match(/쥬베룩\s*(\d+)\s*회/i);
     const _jbItemName = _hasMjAnywhere ? '쥬베룩볼륨' : '쥬베룩';
     if(jbCc) results.push({item:_jbItemName, qty:1});
     else if(jbBottle) results.push({item:_jbItemName, qty: parseInt(jbBottle[1])});
     else if(jbQtyM) results.push({item:_jbItemName, qty: parseInt(jbQtyM[1])});
-    else if(/쥬베룩/i.test(raw) && !(/미라젯\s*쥬베룩/i.test(raw))) results.push({item:_jbItemName, qty:1});
+    else if(/쥬베룩/i.test(_rawNoShine) && !(/미라젯\s*쥬베룩/i.test(_rawNoShine))) results.push({item:_jbItemName, qty:1});
   }
 
   // ── 쥬브아셀 (쥬브아셀N병 안에 미라젯 포함되면 미라젯도 추출) ──
@@ -4437,6 +4449,7 @@ function localParse(raw){
       if(/리쥬란/.test(t)) return [{item:'리쥬란', qty}];
       if(/쥬베룩.*아이/.test(t)) return [{item:'쥬베룩아이', qty:1}];
       if(/쥬베룩.*스킨/.test(t)) return [{item:'쥬베룩스킨', qty:1}];
+      if(/쥬베룩.*샤인/.test(t)) return [{item:'쥬베룩샤인', qty:1}];
       if(/쥬베룩|쥬볼/.test(t)) return [{item:'쥬베룩볼륨', qty:1}];
       if(/쥬브아셀/.test(t)) return [{item:'쥬브아셀', qty}];
       if(/미라젯/.test(t)) return [{item:'미라젯', qty}];
