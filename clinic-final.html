@@ -869,7 +869,24 @@ try {
 
   // ── 설정값 저장/불러오기 ──
   window.fbSaveSettings = async function(s) {
-    try { await setDoc(settingsDoc, s); }
+    try {
+      // ★ 보존 가드(2026-10-22): 서버에 단가>0인 시술을 로컬의 0/누락값으로 덮어쓰지 않는다.
+      //   6/25 입력 재료비 단가 32개가 서버에서 0으로 유실된 사고 재발 방지. 단가를 의도적으로 0으로 바꾸려면 클로드에 요청.
+      try {
+        const cur = await getDoc(settingsDoc);
+        if (cur.exists()) {
+          const sp = (cur.data() || {}).procedures || {};
+          s = Object.assign({}, s); s.procedures = Object.assign({}, s.procedures || {});
+          Object.keys(sp).forEach(function(k){
+            const sv = sp[k], lv = s.procedures[k];
+            const spr = (sv && typeof sv === 'object') ? sv.price : sv;
+            const lpr = (lv && typeof lv === 'object') ? lv.price : lv;
+            if ((spr > 0) && !(lpr > 0)) s.procedures[k] = sv;
+          });
+        }
+      } catch(e2) { console.warn('fbSaveSettings guard skipped:', e2 && e2.code); }
+      await setDoc(settingsDoc, s);
+    }
     catch(e) { console.error('fbSaveSettings:', e); }
   };
   window.fbLoadSettings = async function() {
@@ -5739,7 +5756,9 @@ window.onFbReady = function(){
     // Firebase에서 설정값 불러오기
     if(window.fbLoadSettings){
     window.fbLoadSettings().then(function(cfg){
-      if(!cfg) cfg={};
+      // ★ 서버 로드 실패/문서 없음(null)이면 기본값을 서버에 되쓰지 않는다(2026-10-22, 재료비 단가 유실 재발 방지)
+      var _srvMissing=(cfg===null);
+      if(!cfg){ try{ cfg=JSON.parse(localStorage.getItem(SKEY)||'null')||{}; }catch(e){ cfg={}; } }
       // ★ 재고자산 매핑/단가/추가항목: 로컬이 더 최신(미동기화 입력)이면 서버값으로 덮어쓰지 않고 보존
       try{
         var _loc=JSON.parse(localStorage.getItem(SKEY)||'null');
@@ -5759,7 +5778,7 @@ window.onFbReady = function(){
       migrateRoutes(cfg);
       if(!cfg.fixedCosts||!cfg.fixedCosts.length)cfg.fixedCosts=DEFAULT_FIXED.map(function(f){return Object.assign({},f)});
       localStorage.setItem(SKEY,JSON.stringify(cfg));
-      window.fbSaveSettings(cfg);
+      if(!_srvMissing) window.fbSaveSettings(cfg);
       renderCfgUI();renderFixedDisplay();renderSummary();
       try{ syncProcsFromConsultations(true); }catch(e){}
     });
