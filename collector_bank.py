@@ -212,6 +212,8 @@ def fetch_fx_trans(codef, org, account_no, currency):
         if code != "CF-00000":
             print(f"  [{ORG_NAME.get(org,org)} 외화 {account_no[-4:]} {currency}] {ws}~{we} {code}: {(r.get('result') or {}).get('message')}", flush=True)
             if code == "CF-00012": _LIMIT_HIT.append(1)
+            if code == "CF-00401":   # 10-28 외화 거래내역 상품 권한 미개통(헥토 계약) — 나머지 기간 호출 생략
+                print("    (외화 거래내역 상품 권한 없음 → 잔액만 jrk_bank_accounts에 기록)", flush=True); break
         data = r.get("data") or {}
         hist = (data.get("resTrHistoryList") or []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
         acur = str(data.get("resAccountCurrency") or currency).upper() if isinstance(data, dict) else currency
@@ -427,6 +429,20 @@ def main():
         if not accts:
             print(f"  [{ORG_NAME[org]}] 보유계좌 없음/조회실패 — 건너뜀", flush=True)
             continue
+        if JRK_MODE:   # 계좌별 현재잔액 스냅샷(외화는 거래내역 상품 권한 없어도 잔액은 계좌목록으로 옴, 10-28 CF-00401)
+            try:
+                for a in accts:
+                    cur = (a.get("currencies") or ["KRW"])[0] if a.get("fx") else "KRW"
+                    try: bal = float(str(a.get("balance") or "0").replace(",", ""))
+                    except: bal = 0.0
+                    rate = fx_rate(cur, datetime.date.today().strftime("%Y-%m-%d")) if cur != "KRW" else 1.0
+                    db.collection("jrk_bank_accounts").document(f"{org}_{a['no'][-4:]}_{cur}").set({
+                        "bank": ORG_NAME.get(org, org), "org": org, "accountNoMasked": a["no"], "name": a["name"], "currency": cur,
+                        "isForeign": cur != "KRW", "balance": int(round(bal * rate)) if rate else 0,
+                        "balanceForeign": bal if cur != "KRW" else None, "fxRate": rate if cur != "KRW" else None,
+                        "updatedAt": firestore.SERVER_TIMESTAMP}, merge=True)
+            except Exception as e:
+                print("  (잔액 스냅샷 실패:", repr(e)[:100], ")", flush=True)
         for a in accts:
             print(f"  계좌 …{a['no'][-4:]} ({a['name']}{' 외화 ' + '/'.join(a['currencies']) if a.get('fx') else ''})", flush=True)
             acnt = 0
