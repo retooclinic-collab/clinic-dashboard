@@ -38,13 +38,27 @@ ORG_ONLY    = os.environ.get("BANK_ORG_ONLY", "")     # 지정 시 해당 은행
 ACCT_SUFFIX = os.environ.get("BANK_ACCT_SUFFIX", "")  # 지정 시 계좌번호 끝자리 일치만
 _LIMIT_HIT = []  # CF-00012(일일 호출한도) 도달 여부 기록
 
+# 2026-10-28 JRK(법인) 확장 — 새 인증서 connectedId 전환 + 외화계좌·타행 수집 (통합관제-006).
+#   JRK 모드 = 컬렉션이 jrk_* 일 때만. 병원(bank_transactions) 동작은 그대로.
+#   설정은 Firestore codef_private/jrk_bank_conf (클라이언트 접근 불가, 관리자 SDK만):
+#     connectedId = 새 인증서로 만든 connectedId (있으면 시크릿 JRK_CONNECTED_ID 대신 사용)
+#     orgs        = 수집할 은행코드 목록 (yml의 BANK_ORG_ONLY=0081 대신)
+#   인증서 등록은 codef_private/jrk_bank_cert {derFile,keyFile,password[,probeOrgs]} — 로컬 스크립트가 넣고 수집기가 쓰고 즉시 삭제.
+#   외화 계좌: 기존 필드(amount·balanceAfter)는 항상 원화(외화는 거래일 ECB 환율 근사 환산), 외화 원값은 *Foreign·currency 필드.
+JRK_MODE = COLLECTION.startswith("jrk_")
+PATH_FX_TRANS = f"/v1/kr/bank/{SCOPE}/exchange/transaction-list"
+BANK_NAMES = {"0002":"산업","0003":"기업","0004":"국민","0007":"수협","0011":"농협","0020":"우리","0023":"SC제일",
+              "0027":"씨티","0031":"대구","0032":"부산","0034":"광주","0035":"제주","0037":"전북","0039":"경남",
+              "0045":"새마을","0048":"신협","0071":"우체국","0081":"하나","0088":"신한","0089":"케이"}
+_FX_CACHE = {}
+
 OUT_VENDOR = {
  # ★에이전시수수료 = 환자유치 에이전시 지급수수료(출금). 반드시 최상단 — '의료재료'(메디치골드의 '메디' 겹침)·
  #   '거래처이체'(주식회사)·'기타지출'보다 먼저 선매칭해야 오분류 방지.
  #   경로↔수취인 매핑 확정 (2026-08-12, 세션 a3f889 + 원장정정): 아이메이=중따, 비주얼제이=중마,
- #   메디치골드=중강, JIN TAIGEN=편화, HONGKONG TAOXI=다우시, 목금미여=미원, 박선하(비요네즈)=일본통, HAN RUNQI=ky여행사(추정)
+ #   메디치골드=중강, JIN TAIGEN=편화, HONGKONG TAOXI=다우시, 목금미여=미원(2026-10~ 글로우업서울/이새롬), 박선하(비요네즈)=일본통, HAN RUNQI=ky여행사(추정)
  #   2026-09-01 동기화: clinic-final.html CF_AGENCY에만 있던 비요네즈·에스큐뷰티·HAN DAN·신화월드투어 추가(양쪽 목록 드리프트 해소).
- "에이전시수수료":["아이메이","비주얼제이","메디치골드","jin taigen","taoxi","목금미여","박선하","han runqi","비요네즈","에스큐뷰티","han dan","신화월드투어"],
+ "에이전시수수료":["아이메이","비주얼제이","메디치골드","jin taigen","taoxi","목금미여","글로우업","이새롬","박선하","han runqi","비요네즈","에스큐뷰티","han dan","신화월드투어"],
  "카드대금출금":["kb국민카드","국민카드","현대카드","삼성카드","롯데카드","하나카드","비씨","bc카드","신한카드","우리카드","카드대금","카드결제"],
  # ★HU YAXIN = 직원 호아신 월급여(수수료 아님, 인건비). 2026-08-12 원장확정.
  "급여/4대보험":["급여","상여","월급","4대보험","건강보험","국민연금","고용보험","산재","원천세","갑근세","퇴직","hu yaxin"],
@@ -87,6 +101,8 @@ VENDOR_MEMO = {
  "jin taigen": "편화",
  "taoxi": "다우시",
  "목금미여": "미원",
+ "글로우업": "미원",   # 2026-10-01 원장확정: 미원 상호변경 → 글로우업서울(우리 1005-304-799500, 통장명의 이새롬)
+ "이새롬": "미원",
  "박선하": "일본통",
  "han runqi": "ky여행사",
  "han dan": "라미타",   # 2026-09-01 원장확정
@@ -143,9 +159,21 @@ def list_accounts(codef, org):
     elif isinstance(data, list):
         accts = data
     out = []
+    fx_nos = set()
+    if JRK_MODE and isinstance(data, dict):   # 외화계좌는 resForeignCurrency에 통화와 함께 옴 → 외화 거래내역 API로 따로 수집
+        for a in (data.get("resForeignCurrency") or []):
+            no = str(_g(a, "resAccount", "resAccountNo", "resAccountDisplay")).strip()
+            if not no: continue
+            fx_nos.add(no)
+            cur = str(_g(a, "resAccountCurrency", default="")).strip().upper()
+            out.append({"no":no, "name":str(_g(a,"resAccountName","resAccountNickName","resAccountDeposit")),
+                        "balance":_g(a,"resAccountBalance", default="0"), "fx":True,
+                        "currencies":[c.strip() for c in cur.replace("/",",").split(",") if c.strip()] or ["USD"]})
     for a in accts:
         no = _g(a, "resAccount", "resAccountNo", "resAccountDisplay")
         nm = str(_g(a,"resAccountName","resAccountNickName","resAccountDeposit"))
+        if str(no).strip() in fx_nos:
+            continue
         if no and ACCT_SUFFIX and not str(no).endswith(ACCT_SUFFIX):
             continue
         if no and not any(k in nm.lower() for k in SKIP_ACCT):
@@ -154,6 +182,45 @@ def list_accounts(codef, org):
         elif no:
             print(f"    (스킵: {no[-4:]} {nm} — 수시입출 아님)", flush=True)
     return out
+
+def fx_rate(cur, date_s):
+    """거래일(YYYY-MM-DD) 1통화→원 ECB 환율(frankfurter, 휴일이면 직전 영업일). 실패 시 None."""
+    if not cur or cur == "KRW": return 1.0
+    k = (cur, date_s)
+    if k not in _FX_CACHE:
+        rate = None
+        try:
+            import requests
+            r = requests.get(f"https://api.frankfurter.app/{date_s}", params={"from":cur, "to":"KRW"}, timeout=15)
+            rate = float(r.json()["rates"]["KRW"])
+        except Exception as e:
+            print(f"    (환율 조회 실패 {cur} {date_s}: {repr(e)[:80]})", flush=True)
+        _FX_CACHE[k] = rate
+    return _FX_CACHE[k]
+
+def fetch_fx_trans(codef, org, account_no, currency):
+    """외화 거래내역(/bank/b/exchange/transaction-list). 하나는 조회기간 제한 없음 → 90일 창으로 나눠 조회."""
+    today = datetime.date.today()
+    start = today - datetime.timedelta(days=min(LOOKBACK, 540))
+    rows, ws = [], start
+    while ws < today:
+        we = min(ws + datetime.timedelta(days=90), today)
+        p = {"organization":org, "connectedId":CONNECTED_ID, "account":account_no,
+             "startDate":ws.strftime("%Y%m%d"), "endDate":we.strftime("%Y%m%d"), "orderBy":"0", "currency":currency}
+        r = json.loads(codef.request_product(PATH_FX_TRANS, SVC, p))
+        code = (r.get("result") or {}).get("code")
+        if code != "CF-00000":
+            print(f"  [{ORG_NAME.get(org,org)} 외화 {account_no[-4:]} {currency}] {ws}~{we} {code}: {(r.get('result') or {}).get('message')}", flush=True)
+            if code == "CF-00012": _LIMIT_HIT.append(1)
+        data = r.get("data") or {}
+        hist = (data.get("resTrHistoryList") or []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+        acur = str(data.get("resAccountCurrency") or currency).upper() if isinstance(data, dict) else currency
+        for h in hist:
+            h["_currency"] = str(h.get("resAccountCurrency") or acur or currency).upper()
+        rows += hist
+        ws = we + datetime.timedelta(days=1)
+        time.sleep(1)
+    return rows
 
 def fetch_trans(codef, org, account_no, acctpw_enc):
     today = datetime.date.today()
@@ -197,10 +264,25 @@ def to_doc(org, account_no, account_name, t):
     def _num(x):
         try: return int(str(x).replace(",","").strip() or "0")
         except: return 0
-    out_n, in_n = _num(out_amt), _num(in_amt)
-    inout = "입금" if in_n > 0 else ("출금" if out_n > 0 else "기타")
-    amount = in_n if in_n > 0 else out_n
-    bal_after = _num(_g(t, "resAfterTranBalance", "resAccountBalance", "resAfterBalance", default="0"))
+    cur = t.get("_currency") or "KRW"
+    fx_extra = {}
+    if cur != "KRW":   # 외화: 소수 금액 → 원값은 *Foreign, 기존 필드는 거래일 환율로 원화 근사
+        def _f(x):
+            try: return float(str(x).replace(",","").strip() or "0")
+            except: return 0.0
+        out_f, in_f = _f(out_amt), _f(in_amt)
+        bal_f = _f(_g(t, "resAfterTranBalance", "resAccountBalance", "resAfterBalance", default="0"))
+        rate = fx_rate(cur, f"{date[:4]}-{date[4:6]}-{date[6:8]}") if len(date) == 8 else None
+        amt_f = in_f if in_f > 0 else out_f
+        inout = "입금" if in_f > 0 else ("출금" if out_f > 0 else "기타")
+        amount = int(round(amt_f * rate)) if rate else 0
+        bal_after = int(round(bal_f * rate)) if rate else 0
+        fx_extra = {"amountForeign": amt_f, "balanceAfterForeign": bal_f, "fxRate": rate, "fxSource": "ECB(frankfurter) 거래일 기준 근사"}
+    else:
+        out_n, in_n = _num(out_amt), _num(in_amt)
+        inout = "입금" if in_n > 0 else ("출금" if out_n > 0 else "기타")
+        amount = in_n if in_n > 0 else out_n
+        bal_after = _num(_g(t, "resAfterTranBalance", "resAccountBalance", "resAfterBalance", default="0"))
     descs = [str(_g(t, k, default="")).strip() for k in
              ("resAccountDesc1","resAccountDesc2","resAccountDesc3","resAccountDesc4")]
     descs = [d for d in descs if d]
@@ -221,9 +303,13 @@ def to_doc(org, account_no, account_name, t):
         counterparty = _d; break
     if not counterparty and descs: counterparty = descs[0]
     appr = str(_g(t, "resAccountTrNo", "resTrNo", default=""))
-    key  = f"{org}|{account_no}|{date}|{tm}|{amount}|{inout}|{bal_after}|{desc_join}|{appr}"
+    if cur != "KRW":   # 환율 재조회로 원화값이 바뀌어도 같은 문서가 되도록 외화 원값으로 키
+        key = f"{org}|{account_no}|{cur}|{date}|{tm}|{fx_extra['amountForeign']}|{inout}|{fx_extra['balanceAfterForeign']}|{desc_join}|{appr}"
+    else:
+        key = f"{org}|{account_no}|{date}|{tm}|{amount}|{inout}|{bal_after}|{desc_join}|{appr}"
     did  = hashlib.sha1(key.encode("utf-8")).hexdigest()
-    return did, {
+    extra = ({"currency": cur, "isForeign": cur != "KRW"} | fx_extra) if JRK_MODE else {}
+    return did, extra | {
         "account": f"{ORG_NAME.get(org, org)} {account_name}".strip(),
         "bank": ORG_NAME.get(org, org), "org": org,
         "accountNoMasked": account_no,
@@ -238,14 +324,102 @@ def to_doc(org, account_no, account_name, t):
         "updatedAt": firestore.SERVER_TIMESTAMP,
     }
 
+def _codef_call(fn, payload, label):
+    try:
+        r = json.loads(fn(SVC, payload))
+    except Exception as e:
+        print(f"  {label} 예외:", repr(e)[:150], flush=True); return {}, False, []
+    res = r.get("result") or {}; dd = r.get("data") or {}
+    fails = [{k: f.get(k) for k in ("organization","code","message","extraMessage")} for f in (dd.get("errorList") or []) if isinstance(f, dict)]
+    print(f"  {label}: {res.get('code')} {res.get('message')} | 성공 {len(dd.get('successList') or [])} 실패:", fails, flush=True)
+    return dd, (res.get("code") == "CF-00000" and not fails), fails
+
+def jrk_relink_cert(db, codef):
+    """codef_private/jrk_bank_cert {derFile,keyFile,password[,probeOrgs]}가 있으면 새 인증서로 '새 connectedId'를 만든다.
+    기존 connectedId(시크릿)는 건드리지 않음 → 실패해도 기존 수집 유지. 하나(0081) 계좌목록이 새 connectedId로 읽히면
+    jrk_bank_conf.connectedId로 전환. probeOrgs(타행)는 같은 인증서로 등록 시도 → 계좌가 나온 은행만 orgs에 추가.
+    인증서·암호 사본은 성공·실패 무관 즉시 삭제. (비밀값·계좌번호 전체는 로그에 안 찍음 — 레포 public)"""
+    ref = db.collection("codef_private").document("jrk_bank_cert")
+    snap = ref.get()
+    x = snap.to_dict() if snap.exists else None
+    if not (x and x.get("derFile") and x.get("keyFile") and x.get("password")): return
+    print("[JRK] 새 인증서로 connectedId 생성 시도", flush=True)
+    def item(org):
+        it = {"countryCode":"KR","businessType":"BK","clientType":"B","organization":org,"loginType":"0",
+              "derFile":x["derFile"],"keyFile":x["keyFile"],"password":encrypt_rsa(x["password"], PUBLIC_KEY)}
+        if BIRTHDATE: it["birthDate"] = BIRTHDATE
+        return it
+    report = {"triedAt": firestore.SERVER_TIMESTAMP, "orgs": {}}
+    try:
+        dd, ok, fails = _codef_call(codef.create_account, {"accountList":[item("0081")]}, "생성 하나(0081)")
+        new_cid = dd.get("connectedId")
+        report["orgs"]["0081"] = {"ok": ok, "fails": fails}
+        if ok and new_cid:
+            for org in (x.get("probeOrgs") or []):
+                _, ok2, f2 = _codef_call(codef.add_account, {"connectedId":new_cid, "accountList":[item(org)]}, f"추가 {BANK_NAMES.get(org,org)}({org})")
+                report["orgs"][org] = {"ok": ok2, "fails": f2}
+            found, accts_all = [], {}
+            for org in ["0081"] + [o for o in (x.get("probeOrgs") or []) if report["orgs"].get(o, {}).get("ok")]:
+                r = json.loads(codef.request_product(PATH_ACCOUNTS, SVC, {"organization":org, "connectedId":new_cid, "birthDate":BIRTHDATE}))
+                code = (r.get("result") or {}).get("code"); data = r.get("data") or {}
+                lst = []
+                if isinstance(data, dict):
+                    for kind in ("resDepositTrust","resForeignCurrency","resFund","resLoan","resInsurance"):
+                        for a in (data.get(kind) or []):
+                            if isinstance(a, dict):
+                                lst.append({"kind":kind, "no":str(_g(a,"resAccount","resAccountDisplay")), "name":str(_g(a,"resAccountName","resAccountNickName")),
+                                            "currency":str(_g(a,"resAccountCurrency", default="")), "balance":str(_g(a,"resAccountBalance", default=""))})
+                print(f"  계좌목록 {BANK_NAMES.get(org,org)}({org}) {code}: " + ", ".join(f"{a['kind']}:{a['name']}…{a['no'][-4:]} {a['currency']}" for a in lst), flush=True)
+                accts_all[org] = {"code": code, "accounts": lst}
+                if code == "CF-00000" and lst: found.append(org)
+            report["accounts"] = accts_all
+            if "0081" in found:
+                db.collection("codef_private").document("jrk_bank_conf").set(
+                    {"connectedId": new_cid, "orgs": found, "switchedAt": firestore.SERVER_TIMESTAMP, "certNote": "2026-10-22 발급 조회용 인증서"}, merge=True)
+                report["switched"] = True
+                print(f"[JRK] 새 connectedId로 전환 — 수집 은행 {found}", flush=True)
+            else:
+                report["switched"] = False
+                print("[JRK] 새 connectedId로 하나 계좌목록 실패 → 전환 안 함(기존 connectedId 유지)", flush=True)
+            report["newCidHead"] = new_cid[:6]
+    finally:
+        ref.set({"derFile": firestore.DELETE_FIELD, "keyFile": firestore.DELETE_FIELD, "password": firestore.DELETE_FIELD,
+                 "probeOrgs": firestore.DELETE_FIELD, "lastReport": report}, merge=True)
+
+def jrk_cleanup_old(db, codef, conf):
+    """conf.cleanupOldCid=true면 옛 connectedId(시크릿)의 하나 계정(옛 범용 인증서) 삭제 — 옛 인증서가 CODEF에 남지 않게."""
+    old = os.environ["CODEF_CONNECTED_ID"]
+    if not conf.get("cleanupOldCid") or not conf.get("connectedId") or conf["connectedId"] == old: return
+    _, ok, _ = _codef_call(codef.delete_account, {"connectedId": old, "accountList":[
+        {"countryCode":"KR","businessType":"BK","clientType":"B","organization":"0081","loginType":"0"}]}, "옛 connectedId 하나 계정 삭제")
+    db.collection("codef_private").document("jrk_bank_conf").set(
+        {"cleanupOldCid": firestore.DELETE_FIELD, "oldCidCleanup": "ok" if ok else "fail", "oldCidCleanupAt": firestore.SERVER_TIMESTAMP}, merge=True)
+
 def main():
+    global CONNECTED_ID
     db = init_db()
     codef = make_codef()
     col = db.collection(COLLECTION)
+    orgs = [ORG_ONLY] if ORG_ONLY else list(ORG_NAME)
+    if JRK_MODE:
+        try:
+            jrk_relink_cert(db, codef)
+            cs = db.collection("codef_private").document("jrk_bank_conf").get()
+            conf = cs.to_dict() if cs.exists else {}
+            if conf.get("connectedId"):
+                CONNECTED_ID = conf["connectedId"]
+                print(f"[JRK] connectedId = Firestore 설정({CONNECTED_ID[:6]}…)", flush=True)
+            if conf.get("orgs"):
+                orgs = list(conf["orgs"])
+            jrk_cleanup_old(db, codef, conf)
+        except Exception as e:
+            print("[JRK] 설정/인증서 처리 실패(기존 방식으로 수집):", repr(e)[:150], flush=True)
+        for o in orgs:
+            ORG_NAME.setdefault(o, BANK_NAMES.get(o, o))
     total = 0
     stats = {}   # 계좌명 -> {min, max, cnt}
     batch = db.batch(); n = 0
-    for org in ([ORG_ONLY] if ORG_ONLY else ORG_NAME):
+    for org in orgs:
         print("수집:", ORG_NAME[org], flush=True)
         acctpw_raw = os.environ.get(ACCTPW_KEY.get(org, ""), "")
         acctpw_enc = encrypt_rsa(acctpw_raw, PUBLIC_KEY) if acctpw_raw else ""
@@ -254,9 +428,13 @@ def main():
             print(f"  [{ORG_NAME[org]}] 보유계좌 없음/조회실패 — 건너뜀", flush=True)
             continue
         for a in accts:
-            print(f"  계좌 {a['no']} ({a['name']})", flush=True)
+            print(f"  계좌 …{a['no'][-4:]} ({a['name']}{' 외화 ' + '/'.join(a['currencies']) if a.get('fx') else ''})", flush=True)
             acnt = 0
-            for t in fetch_trans(codef, org, a["no"], acctpw_enc):
+            if a.get("fx"):
+                trs = [t for c in a["currencies"] for t in fetch_fx_trans(codef, org, a["no"], c)]
+            else:
+                trs = fetch_trans(codef, org, a["no"], acctpw_enc)
+            for t in trs:
                 did, doc = to_doc(org, a["no"], a["name"], t)
                 batch.set(col.document(did), doc, merge=True)
                 total += 1; n += 1; acnt += 1
