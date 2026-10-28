@@ -47,6 +47,7 @@ _LIMIT_HIT = []  # CF-00012(일일 호출한도) 도달 여부 기록
 #   외화 계좌: 기존 필드(amount·balanceAfter)는 항상 원화(외화는 거래일 ECB 환율 근사 환산), 외화 원값은 *Foreign·currency 필드.
 JRK_MODE = COLLECTION.startswith("jrk_")
 PATH_FX_TRANS = f"/v1/kr/bank/{SCOPE}/exchange/transaction-list"
+FX_TRANS_ON = os.environ.get("FX_TRANS_ON") == "1"   # 2026-10-28 원장 결정: 외화 거래내역 API 신청 안 함 → 잔액 스냅샷만. 켜려면 FX_TRANS_ON=1
 BANK_NAMES = {"0002":"산업","0003":"기업","0004":"국민","0007":"수협","0011":"농협","0020":"우리","0023":"SC제일",
               "0027":"씨티","0031":"대구","0032":"부산","0034":"광주","0035":"제주","0037":"전북","0039":"경남",
               "0045":"새마을","0048":"신협","0071":"우체국","0081":"하나","0088":"신한","0089":"케이"}
@@ -447,7 +448,7 @@ def main():
             print(f"  계좌 …{a['no'][-4:]} ({a['name']}{' 외화 ' + '/'.join(a['currencies']) if a.get('fx') else ''})", flush=True)
             acnt = 0
             if a.get("fx"):
-                trs = [t for c in a["currencies"] for t in fetch_fx_trans(codef, org, a["no"], c)]
+                trs = [t for c in a["currencies"] for t in fetch_fx_trans(codef, org, a["no"], c)] if FX_TRANS_ON else []
             else:
                 trs = fetch_trans(codef, org, a["no"], acctpw_enc)
             for t in trs:

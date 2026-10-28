@@ -374,6 +374,8 @@ DB = None
 BILL_PATH = "/v1/kr/card/p/account/billing-list"
 BILL_COLLECTION = os.environ.get("FIRESTORE_BILL_COLLECTION", "card_billing")
 BILL_RESULT = {}
+# 2026-10-28 원장 결정: 청구내역 API 신청 안 함(증액 X) → 기본 꺼짐. 다시 켜려면 환경변수 BILLING_ON=1.
+BILLING_ON = os.environ.get("BILLING_ON") == "1"
 
 # ---------- 청구내역(결제예정금액·결제예정일) ----------
 def _i(v):
@@ -497,7 +499,7 @@ def main():
     written = total
     bills = 0
     try:
-        bills = collect_billing(db, codef)
+        if BILLING_ON: bills = collect_billing(db, codef)
     except Exception as e:
         print("청구내역 단계 실패:", repr(e)[:120], flush=True)
     # 실행 로그 기록
