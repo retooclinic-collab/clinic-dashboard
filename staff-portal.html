@@ -2179,7 +2179,7 @@ VIP할인혜택(별도 필드)
 코레지,코레지셀핏 → 코레지셀핏
 쥬볼 → 쥬베룩볼륨
 콜라겐샤워 → 쥬베룩
-쥬베룩샤인 → 쥬베룩샤인 (★별개 정식항목. 쥬베룩/쥬베룩볼륨으로 병합 금지 — 미라젯이 같이 있어도 쥬베룩볼륨으로 바꾸지 말 것)
+쥬베룩샤인 → 쥬베룩샤인 (★별개 정식항목. 쥬베룩/쥬베룩볼륨/쥬베룩스킨으로 병합 금지 — 미라젯이 같이 있어도 쥬베룩볼륨으로 바꾸지 말 것. qty: 2cc=1개 → 쥬베룩샤인2cc=1, 4cc=2)
 튠페,튠페이스 → 튠페이스
 제네시스ptt,제네시스+ptt → 제네시스+PTT
 눈가피코 → 눈가피코 (★별개 정식항목. 듀얼피코·피코슈어로 바꾸지 말 것)
@@ -3720,8 +3720,10 @@ function localParse(raw){
   // ── 쥬베룩샤인 (2026-10-22 원장 결정: 별개 정식항목 — 쥬베룩/쥬베룩볼륨으로 병합 금지, 미라젯 동반이어도 그대로) ──
   const jbshineM = raw.match(/쥬베룩\s*샤인[^,+\n]*?(\d+)\s*회/i);
   const jbshineB = raw.match(/쥬베룩\s*샤인\s*(\d+)\s*병/i);
+  const jbshineC = raw.match(/쥬베룩\s*샤인\s*(\d+)\s*cc/i);  // 2026-10-31 원장: 2cc = 1개 (2cc→1, 4cc→2)
   if(jbshineM) results.push({item:'쥬베룩샤인', qty: parseInt(jbshineM[1])});
   else if(jbshineB) results.push({item:'쥬베룩샤인', qty: parseInt(jbshineB[1])});
+  else if(jbshineC) results.push({item:'쥬베룩샤인', qty: Math.max(1, Math.round(parseInt(jbshineC[1])/2))});
   else if(/쥬베룩\s*샤인/i.test(raw)) results.push({item:'쥬베룩샤인', qty:1});
 
   // ── 쥬베룩 (단독, 볼륨/아이/스킨이 아닌 일반 쥬베룩) ──
@@ -4457,7 +4459,10 @@ function localParse(raw){
       if(/리쥬란/.test(t)) return [{item:'리쥬란', qty}];
       if(/쥬베룩.*아이/.test(t)) return [{item:'쥬베룩아이', qty:1}];
       if(/쥬베룩.*스킨/.test(t)) return [{item:'쥬베룩스킨', qty:1}];
-      if(/쥬베룩.*샤인/.test(t)) return [{item:'쥬베룩샤인', qty:1}];
+      if(/쥬베룩.*샤인/.test(t)){  // 2026-10-31 원장: 2cc = 1개
+        const ccS = t.match(/샤인\s*(\d+)\s*cc/);
+        return [{item:'쥬베룩샤인', qty: ccS ? Math.max(1, Math.round(parseInt(ccS[1])/2)) : 1}];
+      }
       if(/눈가\s*피코/.test(t)) return [{item:'눈가피코', qty:1}];
       if(/쥬베룩|쥬볼/.test(t)) return [{item:'쥬베룩볼륨', qty:1}];
       if(/쥬브아셀/.test(t)) return [{item:'쥬브아셀', qty}];
