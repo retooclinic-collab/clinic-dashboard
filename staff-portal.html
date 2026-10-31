@@ -1823,7 +1823,9 @@ function distributePrices(treatments, total, rawText){
         // 한 행에 여러 사람(<OO님> 구간)을 묶어 결제했으면 사람 수만큼 (같은 사람 안 중복만 1개, 2026-11-01 원장)
         const __segs = String(rawText||'').split(/<[^<>\n]*님[^<>\n]*>/).filter(x=>x.trim());
         const __kw = __nm==='미라젯' ? /미라젯/i : /엑스\s*인젝터/i;
-        const __ppl = __segs.length>1 ? __segs.filter(x=>__kw.test(x)).length : 1;
+        // 'N회' 회차 패키지 미라젯은 위에서 따로 보존(qty=N) → 그 사람은 회차 미명시 줄 수에서 뺀다
+        const __pkg = new RegExp(__kw.source + /[^+\n/]*?\d+\s*회/.source, 'gi');
+        const __ppl = __segs.length>1 ? Math.min(__unit.length, __segs.filter(x=>__kw.test(x.replace(__pkg,''))).length) : 1;
         __p[__first] = {...__p[__first], qty:Math.max(1,__ppl), price:Math.round(__sum*100)/100};
         const __drop = new Set(__unit.slice(1));
         __p = __p.filter((t,i)=> !__drop.has(i));
