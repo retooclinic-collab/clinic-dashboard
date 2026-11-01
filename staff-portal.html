@@ -1832,6 +1832,22 @@ function distributePrices(treatments, total, rawText){
       }
     });
   }catch(e){ console.warn('mirajet merge err',e); }
+  // 미라젯쥬베룩 콤보 = 미라젯 정가(38.5×qty) + 나머지 쥬베룩볼륨 (2026-11-01 원장, 반반 배분 아님)
+  //   콤보 표기 1번 + 미라젯·쥬베룩볼륨 각 1줄(같은 qty)일 때만 — 쥬베룩볼륨이 따로 또 있으면 건드리지 않음
+  try{
+    const __mjI = __p.map((t,i)=> t.item==='미라젯' ? i : -1).filter(i=>i>=0);
+    const __jbI = __p.map((t,i)=> t.item==='쥬베룩볼륨' ? i : -1).filter(i=>i>=0);
+    if((String(rawText||'').match(/미라젯\s*쥬베룩/g)||[]).length===1 && __mjI.length===1 && __jbI.length===1){
+      const __m = __p[__mjI[0]], __j = __p[__jbI[0]];
+      const __q = Number(__m.qty)||1;
+      const __tot = (Number(__m.price)||0) + (Number(__j.price)||0);
+      const __mjStd = Math.round((CHARGE_PRICE['미라젯']??0)*__q*1000)/1000;
+      if((Number(__j.qty)||1)===__q && __tot > __mjStd){
+        __p[__mjI[0]] = {...__m, price:__mjStd};
+        __p[__jbI[0]] = {...__j, price:Math.round((__tot-__mjStd)*1000)/1000};
+      }
+    }
+  }catch(e){ console.warn('mirajet-jb split err',e); }
   // 쥬브아셀 미표기(generic) → 쥬브아셀V 기본 매핑 (2026-06-27, regex/AI 공통 후처리)
   try{ __p = __p.map(t => t.item==='쥬브아셀' ? {...t, item:'쥬브아셀V'} : t); }catch(e){ console.warn('jba->V err',e); }
   return __p;
@@ -5891,8 +5907,17 @@ function _applyRegexFallbackAndRenderTable(){
     if(!r.name) warnings.push({text:'이름없음', color:'#facc15'});
     if(treatCount === 0) warnings.push({text:'시술없음', color:'#facc15'});
     if(!r.cat1) warnings.push({text:'분류없음', color:'#facc15'});
+    // 결제수단만 바뀐 취소 후 재결제(2-22): 이 행 말고 원래 날짜 확정 행을 고쳐야 함 → 보라 배경 (2026-11-01 원장)
+    //   자동잡이 r.reviewFlag 를 적어 두면 그 문구, 아니면 결제내역의 "카드취소…재결제/전체결제" 표기로 감지
+    var _pt = String(r.payText||'').split('\n[')[0].replace(/\s/g,'');
+    var _orgDay = (_pt.match(/(\d{1,2})일결제/)||[])[1];
+    //   (당일 환불 후 재결제와 구분: "N일결제건"처럼 다른 날 결제를 가리킬 때만)
+    var _isOtherDay = _orgDay && parseInt(_orgDay,10) !== parseInt(String(r.date||'').slice(8,10),10);
+    var payChange = r.reviewFlag || (_isOtherDay && /(카드|카)취소/.test(_pt) && /재결제|전체결제/.test(_pt)
+      ? '결제수단 변경 재결제 — '+_orgDay+'일 확정 행을 새 결제수단으로 고치고 이 행은 삭제' : '');
+    if(payChange) warnings.push({text:payChange, color:'#c084fc'});
     var hasWarn = warnings.length > 0;
-    var rowBg = hasWarn && !sumOk ? '#1a1200' : (hasMisu ? '#1a0a0a' : '#0f172a');
+    var rowBg = payChange ? '#1e0f2e' : (hasWarn && !sumOk ? '#1a1200' : (hasMisu ? '#1a0a0a' : '#0f172a'));
     var warnBadge = hasWarn
       ? '<span style="font-size:10px;margin-left:6px">' + warnings.map(function(w){return '<span style="color:'+w.color+'">⚠ '+w.text+'</span>';}).join(' ') + '</span>'
       : '';
