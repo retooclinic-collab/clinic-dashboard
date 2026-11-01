@@ -4236,7 +4236,7 @@ function buildTreatmentTop15(cfg2){
       var qty=parseFloat(t.qty)||1;
       if(!tMap[nm]) tMap[nm]={qty:0, cnt:0, mat:0};
       tMap[nm].qty+=qty;
-      tMap[nm].cnt++;
+      tMap[nm].cnt+=(qty<0?-1:1);   // 환불 행(음수 수량)은 건수도 차감
       tMap[nm].mat+=getUnitPrice(nm, cfg2, (it.date||''))*qty;   // 거래일 기준 재료비
     });
   });
@@ -4358,13 +4358,13 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
       mix[staff][u.name].amt+=allocAmt;
       mix[staff][u.name].comm+=allocComm;
       mix[staff][u.name].mat+=matCost;
-      mix[staff][u.name].cnt++;
+      mix[staff][u.name].cnt+=(u.qty<0?-1:1);
       if(!mix._totals[u.name]) mix._totals[u.name]={cat:classifyTx(u.name), qty:0, amt:0, mat:0, comm:0, cnt:0};
       mix._totals[u.name].qty+=u.qty;
       mix._totals[u.name].amt+=allocAmt;
       mix._totals[u.name].comm+=allocComm;
       mix._totals[u.name].mat+=matCost;
-      mix._totals[u.name].cnt++;
+      mix._totals[u.name].cnt+=(u.qty<0?-1:1);
     });
   });
 
@@ -4616,7 +4616,7 @@ function renderDailyMixAnalysis(byStaff, tAmt, tNet, cfg2){
         var up=0;
         if(cfg2.procedures[name]) up=procPriceAt(cfg2.procedures[name], (it.date||''));
         if(!s.txMat[name]) s.txMat[name]={qty:0,mat:0,cnt:0};
-        s.txMat[name].qty+=qty; s.txMat[name].mat+=up*qty; s.txMat[name].cnt++;
+        s.txMat[name].qty+=qty; s.txMat[name].mat+=up*qty; s.txMat[name].cnt+=(qty<0?-1:1);
       });
     });
     var commRateA=sA.amt>0?sA.comm/sA.amt:0, commRateB=sB.amt>0?sB.comm/sB.amt:0;
