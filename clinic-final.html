@@ -1765,28 +1765,28 @@ function renderCrossTable(){
   var chans=Object.keys(chanSet).sort();
   if(!staffs.length||!chans.length){el.innerHTML='';return;}
 
-  // 열별 최대 객단가 계산 (하이라이트용)
-  var chanMax={};
+  // 열별 최고·최저 객단가 계산 (하이라이트용, 최저는 상담자 2명 이상 있는 경로만)
+  var chanMax={}, chanMin={}, chanN={};
   chans.forEach(function(c){
-    var maxAvg=0;
+    var maxAvg=0, minAvg=Infinity, n=0;
     staffs.forEach(function(s){
       var d=map[s]&&map[s][c];
-      if(d&&d.cnt){var avg=d.tot/d.cnt;if(avg>maxAvg)maxAvg=avg;}
+      if(d&&d.cnt){var avg=d.tot/d.cnt;n++;if(avg>maxAvg)maxAvg=avg;if(avg<minAvg)minAvg=avg;}
     });
-    chanMax[c]=maxAvg;
+    chanMax[c]=maxAvg; chanMin[c]=minAvg; chanN[c]=n;
   });
 
   var h='<div class="sdiv">④ 상담자 × 내원경로 교차 분석 <span style="font-size:10px;color:#cbd5e1;">(만원 단위)</span></div>';
   h+='<div class="card" style="overflow-x:auto;">';
   h+='<div style="font-size:14px;font-weight:700;margin-bottom:4px;">상담자별 내원경로 객단가 · 명수</div>';
-  h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">각 셀: 객단가(만원) / 명수 · <span style="color:#8b2500;font-weight:600;">■</span> 경로별 최고 객단가</div>';
+  h+='<div style="font-size:12px;color:#94a3b8;margin-bottom:14px;">각 셀: 객단가(만원) / 명수 · <span style="color:#7f1d1d;background:#fff1f0;font-weight:700;padding:0 4px;border-radius:3px;">빨강</span> 경로별 최고 객단가 · <span style="color:#1e3a8a;background:#dbeafe;font-weight:700;padding:0 4px;border-radius:3px;">파랑</span> 경로별 최저 객단가 (2명 이상 상담한 경로만) · 오른쪽 끝 = 최고/최저 칸 개수</div>';
   h+='<table style="font-size:12px;min-width:600px;">';
   h+='<thead><tr><th style="white-space:nowrap;">상담자</th>';
   chans.forEach(function(c){h+='<th class="r" style="white-space:nowrap;">'+esc(c)+'</th>';});
-  h+='<th class="r" style="color:#3b82f6;">전체</th></tr></thead><tbody>';
+  h+='<th class="r" style="color:#3b82f6;">전체</th><th class="r" style="white-space:nowrap;"><span style="color:#b91c1c;">최고</span>/<span style="color:#1d4ed8;">최저</span></th></tr></thead><tbody>';
 
   staffs.forEach(function(s){
-    var totalTot=0,totalCnt=0;
+    var totalTot=0,totalCnt=0,nMax=0,nMin=0;
     h+='<tr><td><b>'+esc(s)+'</b></td>';
     chans.forEach(function(c){
       var d=map[s]&&map[s][c];
@@ -1794,8 +1794,10 @@ function renderCrossTable(){
         totalTot+=d.tot; totalCnt+=d.cnt;
         var avg=d.tot/d.cnt;
         var avgM=(avg/10000).toFixed(1);
-        var isMax=chanMax[c]>0&&Math.abs(avg-chanMax[c])<0.01;
-        var style=isMax?'font-weight:700;color:#7f1d1d;background:#fff1f0;border-radius:4px;padding:1px 4px;':'font-weight:600;';
+        var isMax=chanN[c]>=2&&chanMax[c]>0&&Math.abs(avg-chanMax[c])<0.01;
+        var isMin=!isMax&&chanN[c]>=2&&Math.abs(avg-chanMin[c])<0.01;
+        if(isMax)nMax++; if(isMin)nMin++;
+        var style=isMax?'font-weight:700;color:#7f1d1d;background:#fff1f0;border-radius:4px;padding:1px 4px;':isMin?'font-weight:700;color:#1e3a8a;background:#dbeafe;border-radius:4px;padding:1px 4px;':'font-weight:600;';
         h+='<td class="r"><span style="'+style+'">'+avgM+'만</span><br><span style="color:#94a3b8;font-size:11px;">'+d.cnt+'명</span></td>';
       }else{
         h+='<td class="r" style="color:#e2e8f0;">-</td>';
@@ -1803,6 +1805,7 @@ function renderCrossTable(){
     });
     var tAvg=totalCnt?(totalTot/totalCnt/10000).toFixed(1):0;
     h+='<td class="r" style="color:#3b82f6;"><span style="font-weight:700;">'+tAvg+'만</span><br><span style="font-size:11px;">'+totalCnt+'명</span></td>';
+    h+='<td class="r" style="white-space:nowrap;font-weight:700;"><span style="color:#b91c1c;">'+nMax+'</span> / <span style="color:#1d4ed8;">'+nMin+'</span></td>';
     h+='</tr>';
   });
 
@@ -1819,7 +1822,7 @@ function renderCrossTable(){
   });
   var gAvg=grandCnt?(grandTot/grandCnt/10000).toFixed(1):0;
   h+='<td class="r" style="color:#3b82f6;"><b>'+gAvg+'만</b><br><span style="font-size:11px;">'+grandCnt+'명</span></td>';
-  h+='</tr>';
+  h+='<td></td></tr>';
   h+='</tbody></table></div>';
   el.innerHTML=h;
 }
