@@ -5910,12 +5910,23 @@ function _applyRegexFallbackAndRenderTable(){
     // 결제수단만 바뀐 취소 후 재결제(2-22): 이 행 말고 원래 날짜 확정 행을 고쳐야 함 → 보라 배경 (2026-11-01 원장)
     //   자동잡이 r.reviewFlag 를 적어 두면 그 문구, 아니면 결제내역의 "카드취소…재결제/전체결제" 표기로 감지
     var _pt = String(r.payText||'').split('\n[')[0].replace(/\s/g,'');
-    var _orgDay = (_pt.match(/(\d{1,2})일결제/)||[])[1];
+    var _orgM = _pt.match(/(?:(\d{1,2})\/)?(\d{1,2})일결제/)||[];
+    var _orgDay = _orgM[2];
     //   (당일 환불 후 재결제와 구분: "N일결제건"처럼 다른 날 결제를 가리킬 때만)
     var _isOtherDay = _orgDay && parseInt(_orgDay,10) !== parseInt(String(r.date||'').slice(8,10),10);
-    var payChange = r.reviewFlag || (_isOtherDay && /(카드|카)취소/.test(_pt) && /재결제|전체결제/.test(_pt)
-      ? '결제수단 변경 재결제 — '+_orgDay+'일 확정 행을 새 결제수단으로 고치고 이 행은 삭제' : '');
+    //   원래 결제가 지난달(M/D일결제의 M ≠ 이 행의 달)이면 원래 행 안 고침 → 이 날 +/− 두 행(합 0) 유지 (2026-11-01 원장, 양서진 9/5→10/24)
+    var _orgOtherMonth = _orgM[1] && parseInt(_orgM[1],10) !== parseInt(String(r.date||'').slice(5,7),10);
+    var payChange = _orgOtherMonth ? '' : (r.reviewFlag || (_isOtherDay && /(카드|카)취소/.test(_pt) && /재결제|전체결제/.test(_pt)
+      ? '결제수단 변경 재결제 — '+_orgDay+'일 확정 행을 새 결제수단으로 고치고 이 행은 삭제' : ''));
     if(payChange) warnings.push({text:payChange, color:'#c084fc'});
+    // 환불·취소(마이너스) 행 = 돌려준 시술명 + 마이너스 수량 (2-22, 2026-11-01 원장): 시술 개수·재료비가 상계되게
+    if((Number(r.amount)||0) < 0){
+      var _tx = r.treatments||[];
+      if(_tx.some(function(t){ return (t.item||'')==='환불'; }))
+        warnings.push({text:'환불 — 돌려준 시술명·마이너스 수량으로', color:'#facc15'});
+      else if(_tx.some(function(t){ return (Number(t.price)||0) < 0 && (Number(t.qty)||1) > 0; }))
+        warnings.push({text:'마이너스 행 — 수량도 마이너스로', color:'#facc15'});
+    }
     var hasWarn = warnings.length > 0;
     var rowBg = payChange ? '#1e0f2e' : (hasWarn && !sumOk ? '#1a1200' : (hasMisu ? '#1a0a0a' : '#0f172a'));
     var warnBadge = hasWarn
@@ -6323,7 +6334,7 @@ function renderIETreatList(idx){
     <div style="display:flex;align-items:center;gap:6px;background:#0f172a;border-radius:8px;padding:6px 10px;border:1px solid var(--border)">
       <span style="flex:1;font-size:12px;font-weight:600">${t.item||t.name||'?'}</span>
       <span style="font-size:11px;color:var(--muted)">수량</span>
-      <input type="number" value="${typeof t.qty==='number'?t.qty:(parseInt(t.qty)||1)}" min="0" step="1" style="width:44px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:3px 5px;text-align:center;outline:none"
+      <input type="number" value="${typeof t.qty==='number'?t.qty:(parseInt(t.qty)||1)}" step="1" style="width:44px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:3px 5px;text-align:center;outline:none"
         onchange="window._ieTreats[${i}].qty=parseFloat(this.value)||0;renderIETreatList(${idx})">
       <span style="font-size:11px;color:var(--muted)">가격</span>
       <input type="number" value="${t.price||0}" min="0" step="0.1" style="width:56px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--accent);font-size:12px;padding:3px 5px;text-align:right;outline:none"
