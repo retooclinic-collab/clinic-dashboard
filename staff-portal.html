@@ -5938,7 +5938,9 @@ function _applyRegexFallbackAndRenderTable(){
     html += '<td style="padding:6px;color:#a5f3fc;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (r.doctor||'-') + '</td>';
     var srcTag = r._parseSource === 'ai' ? '<span style="font-size:8px;color:#10b981;margin-left:2px">AI</span>' : '';
     html += '<td style="padding:6px;text-align:center"><span style="font-size:10px;padding:2px 6px;border:1px solid '+badgeColor+';border-radius:10px;color:'+badgeColor+';cursor:pointer" onclick="toggleImportTreat('+i+')">' + treatCount + (sumOk?'✓':'⚠') + srcTag + '</span></td>';
-    html += '<td style="padding:6px;white-space:nowrap"><button onclick="openImportEditModal('+i+')" style="font-size:10px;padding:3px 7px;background:#38bdf8;color:#0f172a;border:none;border-radius:7px;cursor:pointer;font-weight:700">수정</button> <button onclick="deleteImportRow('+i+')" style="font-size:10px;padding:3px 7px;background:#ef4444;color:#fff;border:none;border-radius:7px;cursor:pointer;font-weight:700">삭제</button></td>';
+    html += '<td style="padding:6px;white-space:nowrap"><button onclick="openImportEditModal('+i+')" style="font-size:10px;padding:3px 7px;background:#38bdf8;color:#0f172a;border:none;border-radius:7px;cursor:pointer;font-weight:700">수정</button> <button onclick="deleteImportRow('+i+')" style="font-size:10px;padding:3px 7px;background:#ef4444;color:#fff;border:none;border-radius:7px;cursor:pointer;font-weight:700">삭제</button>'
+      + (payChange ? '<br><button onclick="fixPayChangeRow('+i+')" style="margin-top:4px;font-size:10px;padding:3px 7px;background:#c084fc;color:#1e0f2e;border:none;border-radius:7px;cursor:pointer;font-weight:700">원래 행 정정+삭제</button>' : '')
+      + '</td>';
     html += '</tr>';
 
     // 시술 펼침 행
@@ -5998,6 +6000,82 @@ function _rerenderPreview(){
    getElementById는 첫 번째(숨겨진 원본)만 잡으므로 전부 대상으로 처리. */
 function _treatRowEls(idx){
   return document.querySelectorAll('[id="import-treat-' + idx + '"]');
+}
+
+/* ── 결제수단 변경 재결제(2-22): 원래 날짜 확정 행을 새 결제수단 전체로 정정 + 이 차트의 초안 행 삭제 (2026-11-01 원장) ──
+   새 결제 합계 = 원래 행 결제 합계(미수 포함)일 때만 진행. 안 맞거나 원래 행이 1개가 아니면 아무것도 안 고침. */
+async function fixPayChangeRow(idx){
+  const r = _importRows[idx]; const fb = window._fb;
+  if(!r || !fb) return;
+  const chart = String(r.chart||'').trim();
+  if(!chart || !r.date){ alert('차트번호·날짜가 없어 원래 행을 찾을 수 없습니다.'); return; }
+  // 원래 날짜: 자동잡이 적은 reviewOrigDate, 없으면 결제내역의 "N일결제" (오늘보다 크면 지난달)
+  let orig = r.reviewOrigDate || '';
+  if(!orig){
+    const d = parseInt((String(r.payText||'').replace(/\s/g,'').match(/(\d{1,2})일결제/)||[])[1], 10);
+    if(!d){ alert('결제내역에서 원래 결제일(N일결제)을 찾지 못했습니다.'); return; }
+    let y = +r.date.slice(0,4), m = +r.date.slice(5,7);
+    if(d > +r.date.slice(8,10)){ m -= 1; if(m < 1){ m = 12; y -= 1; } }
+    orig = y + '-' + String(m).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+  }
+  // 새 결제수단 = 이 차트 초안 행들 중 플러스 결제(미수 제외)
+  const sibIdx = _importRows.map((x,i)=> String(x.chart||'').trim()===chart ? i : -1).filter(i=>i>=0);
+  const newItems = [];
+  sibIdx.forEach(i => ((_importRows[i].paymentMethods||{}).items||[]).forEach(p => {
+    const a = Number(p.amt)||0;
+    if(a > 0 && p.method !== '미수'){
+      const ex = newItems.find(n=>n.method===p.method);
+      if(ex) ex.amt = Math.round((ex.amt+a)*1000)/1000; else newItems.push({amt:a, method:p.method});
+    }
+  }));
+  const newSum = Math.round(newItems.reduce((s,p)=>s+p.amt,0)*1000)/1000;
+  if(!newItems.length){ alert('초안 행에서 새 결제수단을 찾지 못했습니다.'); return; }
+  let snap;
+  try {
+    snap = await fb.getDocs(fb.query(fb.collection(fb.db,'consultations'), fb.where('chart','==',chart), fb.where('date','==',orig)));
+  } catch(e){ alert('원래 행 조회 실패: '+e.message); return; }
+  const found = snap.docs.map(d=>({id:d.id, ...d.data()})).filter(c=>!c.deleted && !c.deletedAt);
+  if(found.length !== 1){ alert(orig+' 차트 '+chart+' 확정 행이 '+found.length+'개라 자동 정정하지 않습니다. 직접 고쳐 주세요.'); return; }
+  const c = found[0];
+  const oldItems = (c.paymentMethods||{}).items||[];
+  const oldSum = Math.round(oldItems.reduce((s,p)=>s+(Number(p.amt)||0),0)*1000)/1000;
+  if(Math.abs(oldSum - newSum) > 0.01){
+    alert('금액이 안 맞아 자동 정정하지 않습니다.\n원래 행 결제 합계(미수 포함) '+oldSum+' / 새 결제 '+newSum+'\n직접 확인해 주세요.'); return;
+  }
+  const fmt = it => it.map(p=>p.method+' '+p.amt).join(' + ');
+  if(!confirm(`${c.name||''}(${chart}) ${orig} 확정 행을 고칩니다.\n\n결제수단: ${fmt(oldItems)}\n→ ${fmt(newItems)}\n금액: ${c.amount} → ${newSum}\n\n그리고 이 날짜 초안의 차트 ${chart} 행 ${sibIdx.length}개를 삭제합니다. 진행할까요?`)) return;
+  const after = {
+    amount: newSum,
+    paymentMethods: {items: newItems},
+    paymentText: (c.paymentText||'') + '\n[정정메모]\n' + r.date.slice(5).replace('-','/') + ' ' + fmt(oldItems.filter(p=>p.method!=='미수')) + ' 취소 후 전체 ' + fmt(newItems) + ' 재결제 → ' + orig.slice(5).replace('-','/') + ' 행 정정, 후일자 행 없음'
+  };
+  const by = window._fbUser?.email || '';
+  try {
+    await fb.updateDoc(fb.doc(fb.db,'consultations',c.id), {...after, updatedAt:new Date().toISOString(), updatedBy:by});
+    await fb.setDoc(fb.doc(fb.db,'audit_log',Date.now().toString()), {
+      action:'update', targetId:c.id,
+      before:{amount:c.amount, paymentMethods:c.paymentMethods||null, paymentText:c.paymentText||''},
+      after, by, byUid: window._fbUser?.uid || '', reason:'결제수단 변경 재결제 정정(초안 '+r.date+' 버튼)',
+      at:new Date().toISOString(), serverTs: fb.serverTimestamp()
+    });
+  } catch(e){ alert('원래 행 정정 실패(아무것도 지우지 않음): '+e.message); return; }
+  // 초안에서 이 차트 행 전부 삭제 (원래 행 정정 성공 후에만)
+  _importRows = _importRows.filter(x => String(x.chart||'').trim() !== chart);
+  const draftId = _currentDraftId || window._currentDraftId;
+  try {
+    if(draftId){
+      if(_importRows.length > 0) await fb.updateDoc(fb.doc(fb.db,'draft_imports',draftId), {rows:_importRows, updatedAt:fb.serverTimestamp()});
+      else { await fb.deleteDoc(fb.doc(fb.db,'draft_imports',draftId)); _currentDraftId = null; window._currentDraftId = null; }
+    }
+  } catch(e){ showToast('원래 행은 정정됨 — 초안 행 삭제 저장 실패: '+e.message,'error'); }
+  if(_importRows.length > 0) _rerenderPreview();
+  else {
+    document.getElementById('import-preview').style.display = 'none';
+    document.getElementById('import-preview-body').innerHTML = '';
+    var _dpb = document.getElementById('draft-preview-body'); if(_dpb) _dpb.innerHTML = '';
+    var _dpw = document.getElementById('draft-preview'); if(_dpw) _dpw.style.display = 'none';
+  }
+  showToast(orig+' 행 정정 + 초안 '+sibIdx.length+'행 삭제 완료','success');
 }
 
 /* ── 미리보기 행 삭제 ── */
