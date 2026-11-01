@@ -2367,9 +2367,9 @@ qty = cc수. 1cc→1, 2cc→2
 ━━━━━━━━━━━━━━━━━━━━━━━━
 10. 결제/VIP/적립금
 ━━━━━━━━━━━━━━━━━━━━━━━━
-결제방식: 카=카드, 현/자진=현금(자진), 알리=알리페이, 위챗=위챗, 이체/현영=이체(현영), 제로=제로페이
+결제방식: 카=카드, 현/현금/자진=현금, 알리=알리페이, 위챗=위챗, 이체/계좌=계좌이체, 제로=제로페이 (현영=현금영수증은 수단 아님: 현+현영=현금, 이체·계좌+현영=계좌이체, 현영 단독=현금. 현금과 계좌이체는 절대 섞지 말 것)
 "=447.7(카)" → totalAmount=447.7, 카드
-"=100(현,자진)" → totalAmount=100, 현금(자진)
+"=100(현,자진)" → totalAmount=100, 현금
 복합: "=200(카,위챗)" → 2가지 결제수단
 "미수N" → misu=N
 VIP 등급별 할인: VIP500→vipDiscount=25, VIP700→vipDiscount=49, VIP1000→vipDiscount=100
@@ -2508,9 +2508,9 @@ price=만원. 텍스트에 가격 있으면 사용, 없으면 null.
 ━━━━━━━━━━━━━━━━━━━━━━━━
 18. 복합 결제 상세
 ━━━━━━━━━━━━━━━━━━━━━━━━
-"=200(카100,현100)" → payMethods:[{method:"카드",amt:100},{method:"현금(자진)",amt:100}]
+"=200(카100,현100)" → payMethods:[{method:"카드",amt:100},{method:"현금",amt:100}]
 "=200(카150,알리50)" → payMethods:[{method:"카드",amt:150},{method:"알리페이",amt:50}]
-"카" → 카드 | "현,자진" or "현자진" → 현금(자진) | "이체" or "현영" → 이체(현영)
+"카" → 카드 | "현", "현,자진", "현자진", "현영" → 현금 | "이체", "계좌", "이체,현영", "계좌,현영" → 계좌이체
 "알리" → 알리페이 | "위챗" → 위챗 | "제로" → 제로페이
 "미수N" → misu=N (미수금)
 결제수단이 안 보이면 payMethods=[] 비워두기`;
@@ -2543,13 +2543,13 @@ const AI_FEWSHOT_EXAMPLES = [
   { role: 'assistant', content: '<analysis>\n미라젯38.5 → 미라젯1 price=38.5\n(리투오1병88 → 리투오1 price=88\n리쥬란HB2cc77 → 리쥬란HB qty=2 price=77\n/이마포함얼전 → 메모, 무시)\nLDM27.5 → LDM1 price=27.5\n</analysis>\n{"treatments":[{"item":"미라젯","qty":1,"price":38.5},{"item":"리투오","qty":1,"price":88},{"item":"리쥬란HB","qty":2,"price":77},{"item":"LDM","qty":1,"price":27.5}],"totalAmount":231,"payMethods":[{"method":"카드","amt":231}],"misu":0,"vipDiscount":0,"credit":0}' },
   // ━━━ 9. 입술필러(수입)=필러, 턱보톡스(국)=보톡스 — +경계 넘어 브랜드 전파 안함! ━━━
   { role: 'user', content: '입술필러1cc(수입)55+턱보톡스(국)16.5=71.5m(현,자진)' },
-  { role: 'assistant', content: '<analysis>\n입술필러1cc(수입)55 → 필러(수입)1 price=55\n턱보톡스(국)16.5 → 보톡스(국산)1 price=16.5\n★(수입)은 필러에만, (국)은 보톡스에만!\n</analysis>\n{"treatments":[{"item":"필러(수입)","qty":1,"price":55},{"item":"보톡스(국산)","qty":1,"price":16.5}],"totalAmount":71.5,"payMethods":[{"method":"현금(자진)","amt":71.5}],"misu":0,"vipDiscount":0,"credit":0}' },
+  { role: 'assistant', content: '<analysis>\n입술필러1cc(수입)55 → 필러(수입)1 price=55\n턱보톡스(국)16.5 → 보톡스(국산)1 price=16.5\n★(수입)은 필러에만, (국)은 보톡스에만!\n</analysis>\n{"treatments":[{"item":"필러(수입)","qty":1,"price":55},{"item":"보톡스(국산)","qty":1,"price":16.5}],"totalAmount":71.5,"payMethods":[{"method":"현금","amt":71.5}],"misu":0,"vipDiscount":0,"credit":0}' },
   // ━━━ 10. 이벤트그룹(개별price=null), 온다100KJ=1, 힐로웨이브2cc=1 ━━━
   { role: 'user', content: '5월e 티타튠2회+미라젯쥬베룩2회 247.5+온다100KJ143+힐로웨이브2cc66-예약금=453.2m(알리)' },
   { role: 'assistant', content: '<analysis>\n5월e 티타튠2회 → 티타튠2 price=null(이벤트묶음)\n미라젯쥬베룩2회 → 미라젯2+쥬베룩볼륨2 price=null(이벤트)\n247.5 → 묶음총가\n온다100KJ143 → 온다 qty=1(얼굴) price=143(명시)\n힐로웨이브2cc66 → 힐로웨이브 qty=2÷2=1 price=66\n-예약금 → 예약금제외1\n</analysis>\n{"treatments":[{"item":"티타튠","qty":2,"price":null},{"item":"미라젯","qty":2,"price":null},{"item":"쥬베룩볼륨","qty":2,"price":null},{"item":"온다","qty":1,"price":143},{"item":"힐로웨이브","qty":1,"price":66},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":453.2,"payMethods":[{"method":"알리페이","amt":453.2}],"misu":0,"vipDiscount":0,"credit":0}' },
   // ━━━ 11. 4월e 복합이벤트, 티타늄40KJ=1, 소프150샷=3, 리투오/쥬브아셀→쥬브아셀만, 포에버영=BBL ━━━
   { role: 'user', content: '4월e 티타늄40kj+소프웨이브150샷 209+4월e 리투오/쥬브아셀3회+bbl(포에버영)3회 242+미라젯3회49.5-0.5할인=500M(이체)' },
-  { role: 'assistant', content: '<analysis>\n티타늄40kj → 티타늄 qty=1(얼굴)\n소프웨이브150샷 → 소프웨이브(50샷) qty=150÷50=3\n209 → 이벤트묶음가\n리투오/쥬브아셀3회 → 쥬브아셀만 qty=3\nbbl(포에버영)3회 → BBL qty=3\n242 → 이벤트묶음가\n미라젯3회49.5 → 미라젯3 price=49.5\n-0.5할인 → 할인차감1 price=0.5\n</analysis>\n{"treatments":[{"item":"티타늄","qty":1,"price":null},{"item":"소프웨이브(50샷)","qty":3,"price":null},{"item":"쥬브아셀","qty":3,"price":null},{"item":"BBL","qty":3,"price":null},{"item":"미라젯","qty":3,"price":49.5},{"item":"할인차감","qty":1,"price":0.5}],"totalAmount":500,"payMethods":[{"method":"이체(현영)","amt":500}],"misu":0,"vipDiscount":0,"credit":0}' },
+  { role: 'assistant', content: '<analysis>\n티타늄40kj → 티타늄 qty=1(얼굴)\n소프웨이브150샷 → 소프웨이브(50샷) qty=150÷50=3\n209 → 이벤트묶음가\n리투오/쥬브아셀3회 → 쥬브아셀만 qty=3\nbbl(포에버영)3회 → BBL qty=3\n242 → 이벤트묶음가\n미라젯3회49.5 → 미라젯3 price=49.5\n-0.5할인 → 할인차감1 price=0.5\n</analysis>\n{"treatments":[{"item":"티타늄","qty":1,"price":null},{"item":"소프웨이브(50샷)","qty":3,"price":null},{"item":"쥬브아셀","qty":3,"price":null},{"item":"BBL","qty":3,"price":null},{"item":"미라젯","qty":3,"price":49.5},{"item":"할인차감","qty":1,"price":0.5}],"totalAmount":500,"payMethods":[{"method":"계좌이체","amt":500}],"misu":0,"vipDiscount":0,"credit":0}' },
   // ━━━ 12. BBL여드름, 제네시스+PTT, 리쥬란4cc÷2=2, 미라젯+쥬베룩=쥬베룩볼륨, 진정관리=피부관리 ━━━
   { role: 'user', content: 'BBL여드름49.5+제네시스ptt38.5+미라젯+리쥬란4cc+쥬베룩2cc+진정관리+진정팩148.5-예약금제외=233.2m(위챗)' },
   { role: 'assistant', content: '<analysis>\nBBL여드름49.5 → BBL(여드름)1 price=49.5\n제네시스ptt38.5 → 제네시스+PTT qty=1 price=38.5\n미라젯 → 미라젯1\n리쥬란4cc → 리쥬란 qty=4÷2=2\n쥬베룩2cc → 미라젯있으니 쥬베룩볼륨1\n진정관리+진정팩 → 피부관리1 (중복=1건)\n148.5 → 묶음가\n-예약금제외 → 예약금제외1\n</analysis>\n{"treatments":[{"item":"BBL(여드름)","qty":1,"price":49.5},{"item":"제네시스+PTT","qty":1,"price":38.5},{"item":"미라젯","qty":1,"price":null},{"item":"리쥬란","qty":2,"price":null},{"item":"쥬베룩볼륨","qty":1,"price":null},{"item":"피부관리","qty":1,"price":null},{"item":"예약금제외","qty":1,"price":0}],"totalAmount":233.2,"payMethods":[{"method":"위챗","amt":233.2}],"misu":0,"vipDiscount":0,"credit":0}' },
@@ -2579,7 +2579,7 @@ const AI_FEWSHOT_EXAMPLES = [
   { role: 'assistant', content: '<analysis>\n문신제거2회66 → 문신제거 qty=2 price=66\n수면비22 → 수면비1 price=22\n</analysis>\n{"treatments":[{"item":"문신제거","qty":2,"price":66},{"item":"수면비","qty":1,"price":22}],"totalAmount":88,"payMethods":[{"method":"카드","amt":88}],"misu":0,"vipDiscount":0,"credit":0}' },
   // ━━━ 21. -N차감=할인차감, 적립금차감, 복합결제(카+현) ━━━
   { role: 'user', content: '소프웨이브300샷396+리쥬란4cc110-100차감-30적립금차감=376m(카200,현176)' },
-  { role: 'assistant', content: '<analysis>\n소프웨이브300샷396 → 소프웨이브(50샷) qty=6 price=396\n리쥬란4cc110 → 리쥬란 qty=4÷2=2 price=110\n-100차감 → 할인차감1 price=100\n-30적립금차감 → 적립금차감1 price=0\n=376m(카200,현176) → 복합결제\n</analysis>\n{"treatments":[{"item":"소프웨이브(50샷)","qty":6,"price":396},{"item":"리쥬란","qty":2,"price":110},{"item":"할인차감","qty":1,"price":100},{"item":"적립금차감","qty":1,"price":0}],"totalAmount":376,"payMethods":[{"method":"카드","amt":200},{"method":"현금(자진)","amt":176}],"misu":0,"vipDiscount":0,"credit":0}' },
+  { role: 'assistant', content: '<analysis>\n소프웨이브300샷396 → 소프웨이브(50샷) qty=6 price=396\n리쥬란4cc110 → 리쥬란 qty=4÷2=2 price=110\n-100차감 → 할인차감1 price=100\n-30적립금차감 → 적립금차감1 price=0\n=376m(카200,현176) → 복합결제\n</analysis>\n{"treatments":[{"item":"소프웨이브(50샷)","qty":6,"price":396},{"item":"리쥬란","qty":2,"price":110},{"item":"할인차감","qty":1,"price":100},{"item":"적립금차감","qty":1,"price":0}],"totalAmount":376,"payMethods":[{"method":"카드","amt":200},{"method":"현금","amt":176}],"misu":0,"vipDiscount":0,"credit":0}' },
   // ━━━ 22. 줄기세포60cc+하이쿡스+수면비, 자가엑소좀≠엑소좀 ━━━
   { role: 'user', content: '줄기세포60cc198+하이쿡스+자가엑소좀165+수면비22=385m(카)' },
   { role: 'assistant', content: '<analysis>\n줄기세포60cc198 → 줄기세포60cc qty=1 price=198\n하이쿡스 → 하이쿡스1 price=0(재료)\n자가엑소좀165 → 자가엑소좀1 price=165 (엑소좀55와 다른 항목!)\n수면비22 → 수면비1 price=22\n</analysis>\n{"treatments":[{"item":"줄기세포60cc","qty":1,"price":198},{"item":"하이쿡스","qty":1,"price":0},{"item":"자가엑소좀","qty":1,"price":165},{"item":"수면비","qty":1,"price":22}],"totalAmount":385,"payMethods":[{"method":"카드","amt":385}],"misu":0,"vipDiscount":0,"credit":0}' },
@@ -2643,7 +2643,7 @@ const AI_FEWSHOT_EXAMPLES = [
   { role: 'assistant', content: '<analysis>\n미라젯38.5 → 미라젯1 price=38.5\n리투오(또는쥬브아셀)88 → ★함정! "또는"이니까 쥬브아셀만! → 쥬브아셀1 price=88\n코레지셀핏33 → 코레지셀핏1 price=33\n</analysis>\n{"treatments":[{"item":"미라젯","qty":1,"price":38.5},{"item":"쥬브아셀","qty":1,"price":88},{"item":"코레지셀핏","qty":1,"price":33}],"totalAmount":159.5,"payMethods":[{"method":"카드","amt":159.5}],"misu":0,"vipDiscount":0,"credit":0}' },
   // ━━━ 41. 줄기세포240cc+하이쿡스+수면비, 수액+NAD ━━━
   { role: 'user', content: '줄기세포240cc506+하이쿡스+수면비22+수액8.8+NAD16.5=553.3m(이체)' },
-  { role: 'assistant', content: '<analysis>\n줄기세포240cc506 → 줄기세포240cc qty=1 price=506\n하이쿡스 → 하이쿡스1 price=0(재료)\n수면비22 → 수면비1 price=22\n수액8.8 → 수액1 price=8.8\nNAD16.5 → NAD1 price=16.5\n</analysis>\n{"treatments":[{"item":"줄기세포240cc","qty":1,"price":506},{"item":"하이쿡스","qty":1,"price":0},{"item":"수면비","qty":1,"price":22},{"item":"수액","qty":1,"price":8.8},{"item":"NAD","qty":1,"price":16.5}],"totalAmount":553.3,"payMethods":[{"method":"이체(현영)","amt":553.3}],"misu":0,"vipDiscount":0,"credit":0}' },
+  { role: 'assistant', content: '<analysis>\n줄기세포240cc506 → 줄기세포240cc qty=1 price=506\n하이쿡스 → 하이쿡스1 price=0(재료)\n수면비22 → 수면비1 price=22\n수액8.8 → 수액1 price=8.8\nNAD16.5 → NAD1 price=16.5\n</analysis>\n{"treatments":[{"item":"줄기세포240cc","qty":1,"price":506},{"item":"하이쿡스","qty":1,"price":0},{"item":"수면비","qty":1,"price":22},{"item":"수액","qty":1,"price":8.8},{"item":"NAD","qty":1,"price":16.5}],"totalAmount":553.3,"payMethods":[{"method":"계좌이체","amt":553.3}],"misu":0,"vipDiscount":0,"credit":0}' },
   // ━━━ 42. 5월e 복합이벤트 + 상품권차감, 제로페이 ━━━
   { role: 'user', content: '5월e 울쎄라200샷+티타늄40kj+미라젯쥬베룩 280-20상품권차감=260m(제로)' },
   { role: 'assistant', content: '<analysis>\n5월e → 이벤트그룹\n울쎄라200샷 → 울쎄라(100샷) qty=2\n티타늄40kj → 티타늄 qty=1(얼굴)\n미라젯쥬베룩 → 미라젯1 + 쥬베룩볼륨1\n280 → 이벤트묶음가\n-20상품권차감 → 상품권차감1 price=0\n</analysis>\n{"treatments":[{"item":"울쎄라(100샷)","qty":2,"price":null},{"item":"티타늄","qty":1,"price":null},{"item":"미라젯","qty":1,"price":null},{"item":"쥬베룩볼륨","qty":1,"price":null},{"item":"상품권차감","qty":1,"price":0}],"totalAmount":260,"payMethods":[{"method":"제로페이","amt":260}],"misu":0,"vipDiscount":0,"credit":0}' },
@@ -4933,9 +4933,9 @@ function extractPayment(text){
   if(!text) return {method:'',items:[]};
   // 환불: 결제방식 자동 설정 (환불후재결제+위약금은 제외)
   if(/환불/i.test(text) && !/환불\s*후\s*재결제/i.test(text) && !/위약금/i.test(text)){
-    // 제로환불 → 제로페이, 그 외 → 이체(현영)
+    // 제로환불 → 제로페이, 그 외 → 계좌이체
     const isZero = /제로/i.test(text);
-    const refundMethod = isZero ? '제로페이' : '이체(현영)';
+    const refundMethod = isZero ? '제로페이' : '계좌이체';
     const refM = text.match(/([\d,.]+)\s*만\s*원/i) || text.match(/[=＝]\s*([\d,.]+)\s*[mM]/i) || text.match(/([\d,.]+)\s*[mM]/i);
     let amt = refM ? -parseFloat(refM[1].replace(/,/g,'')) : 0;
     // 괄호 안 금액도 추출: "예약금환불(4/16 제로환불 3.3)" → 3.3
@@ -5178,13 +5178,11 @@ function extractPayment(text){
 function normalizePayMethod(s){
   s = s.trim().toLowerCase();
   if(/카드|카$/.test(s)) return '카드';
-  if(/현금|현\+자진|현,자진|현자진|현금자진/.test(s)) return '현금(자진)';
-  if(/이체\+현영|이체.*현영|현영/.test(s)) return '이체(현영)';
-  if(/이체\+자진|이체.*자진|자진.*이체/.test(s)) return '이체(현영)';  // 자진→현영 통합
-  if(/이체/.test(s)) return '이체(현영)';  // 단순 이체→현영 통합
+  if(/이체|계좌/.test(s)) return '계좌이체';  // 이체·계좌(+현영/자진 붙어도) = 계좌이체
+  if(/현금|현\+자진|현,자진|현자진|현금자진|현영/.test(s)) return '현금';  // 현영 단독 = 현금 (현영은 수단 아님)
   if(/위[챗쳇]+|wechat/.test(s)) return '위챗';
   if(/알리/.test(s)) return '알리페이';
-  if(/자진/.test(s)) return '현금(자진)';
+  if(/자진/.test(s)) return '현금';
   if(/미수/.test(s)) return '미수';
   if(/제로|zero/.test(s)) return '제로페이';
   return null;
@@ -5918,6 +5916,13 @@ function _applyRegexFallbackAndRenderTable(){
     var payChange = _isPayChg && (r.treatments||[]).some(function(t){ return (t.item||'') !== '결제방법 변경'; })
       ? '결제수단 변경 — 시술 대신 \'결제방법 변경\' 한 줄로(+행 수량 1 / −행 수량 −1)' : '';
     if(payChange) warnings.push({text:payChange, color:'#c084fc'});
+    // 현금 ↔ 계좌이체 구분 (2026-11-01 원장): 결제내역의 이체·계좌 표기와 결제수단이 안 맞으면 경고 (마이너스 행·'이체예정'은 제외)
+    var _pm = ((r.paymentMethods||{}).items||[]).map(function(p){ return p.method; });
+    var _txtXfer = /이체|계좌/.test(_pt.replace(/(이체|계좌)(예정|할|하기로)/g,''));
+    if((Number(r.amount)||0) <= 0) {}
+    else if(_txtXfer && _pm.indexOf('계좌이체') < 0) warnings.push({text:'결제내역에 이체·계좌 — 결제수단에 계좌이체 없음', color:'#facc15'});
+    else if(!_txtXfer && _pm.indexOf('계좌이체') >= 0) warnings.push({text:'결제수단 계좌이체 — 결제내역에 이체·계좌 표기 없음', color:'#facc15'});
+    if(_pm.some(function(m){ return /\(/.test(m||''); })) warnings.push({text:'결제수단 이름은 현금/계좌이체로(괄호 없이)', color:'#facc15'});
     // 환불·취소(마이너스) 행 = 돌려준 시술명 + 마이너스 수량 (2-22, 2026-11-01 원장): 시술 개수·재료비가 상계되게
     if((Number(r.amount)||0) < 0){
       var _tx = r.treatments||[];
@@ -6278,7 +6283,7 @@ function renderIEPayList(idx){
   const amt = parseFloat(document.getElementById('ie-amount')?.value)||0;
   const sum = Math.round(items.reduce((s,i)=>s+(parseFloat(i.amt)||0),0)*100)/100;
   const ok = Math.abs(sum-amt)<0.1;
-  const PAY_OPTIONS=['카드','현금(자진)','이체(현영)','위챗','알리페이'];
+  const PAY_OPTIONS=['카드','현금','계좌이체','위챗','알리페이','제로페이'];
 
   list.innerHTML = items.map((it,i)=>`
     <span style="display:inline-flex;align-items:center;gap:4px;background:#0f172a;border:1px solid var(--border);border-radius:20px;padding:4px 6px 4px 10px;font-size:12px">
@@ -6816,7 +6821,7 @@ function showPaymentMethod(payInfo){
   if(!payInfo) payInfo = {methods:[], splitDetails:[]};
   el.style.display='block';
 
-  const PAY_OPTIONS = ['카드','현금(자진)','이체(현영)','위챗','알리페이','미수'];
+  const PAY_OPTIONS = ['카드','현금','계좌이체','위챗','알리페이','제로페이','미수'];
   const total = parseFloat(document.getElementById('f-amount')?.value)||0;
 
   // 내부 데이터 정규화
@@ -7898,7 +7903,7 @@ function renderEditPayList(){
   const amt = parseFloat(document.getElementById('edit-amount')?.value)||0;
   const sum = Math.round(items.reduce((s,i)=>s+(parseFloat(i.amt)||0),0)*100)/100;
   const ok = Math.abs(sum-amt)<0.1;
-  const PAY_OPTIONS=['카드','현금(자진)','이체(현영)','위챗','알리페이'];
+  const PAY_OPTIONS=['카드','현금','계좌이체','위챗','알리페이','제로페이'];
 
   list.innerHTML = items.map((it,i)=>`
     <span style="display:inline-flex;align-items:center;gap:4px;background:#0f172a;border:1px solid var(--border);border-radius:20px;padding:4px 6px 4px 10px;font-size:12px">
