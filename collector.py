@@ -27,8 +27,8 @@ HD_CONFIRMED = os.environ.get("HD_CONFIRMED", "0")  # "1"이면 현대카드를 
 COLLECTION   = os.environ.get("FIRESTORE_COLLECTION", "card_expenses")
 
 SVC = ServiceType.PRODUCT if ENV in ("api","prod","product") else ServiceType.DEMO
-ORG_NAME = {"0301":"KB국민","0302":"현대","0303":"삼성","0305":"IBK기업(비씨)","0311":"롯데","0313":"하나","0306":"신한"}
-MAX_MONTHS = {"0301":12,"0303":12,"0313":18,"0311":6,"0302":3,"0305":9,"0306":12}
+ORG_NAME = {"0301":"KB국민","0302":"현대","0303":"삼성","0305":"IBK기업(비씨)","0311":"롯데","0313":"하나","0306":"신한","0309":"우리"}
+MAX_MONTHS = {"0301":12,"0303":12,"0313":18,"0311":6,"0302":3,"0305":9,"0306":12,"0309":6}
 PATH = "/v1/kr/card/p/account/approval-list"
 CARD_CONF = {}   # Firestore codef_private/<org> {cardNo, cardPassword} — 2026-10 하나카드가 cardNo 필수로 바뀜(CF-12401 reqCardNo). 클라이언트 규칙상 접근 불가(관리자 SDK만)
 ORG_ERRORS = {}  # 2026-10-19 기관별 오류 기록 → card_sync_log.errors (하나 CF-12401이 2주 넘게 조용히 묻혔던 것 재발 방지)
